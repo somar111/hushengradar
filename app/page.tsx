@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-[rgb(253,253,252)] text-gray-900 font-[family-name:var(--font-geist)]">
+    <div className="min-h-screen bg-[rgb(254,252,246)] text-gray-900 font-[family-name:var(--font-geist)]">
       {/* Nav */}
       <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-10 flex items-center justify-between px-6 py-2.5 rounded-full bg-[rgb(227,227,226)]/80 backdrop-blur-md border border-gray-300/50 shadow-sm w-[90%] max-w-3xl">
         <span className="text-3xl tracking-tight" style={{ fontFamily: "'smiley-sans', sans-serif" }}>呼声雷达</span>
@@ -14,7 +14,7 @@ export default function Home() {
       {/* Hero */}
       <main className="flex flex-col items-center justify-center px-8 pt-40 pb-12 text-center">
         <div className="max-w-2xl mx-auto">
-          <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-6 leading-[1.1]">
+          <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-6 leading-[1.2]">
             App 开发者的
             <br />
             <span className="text-violet-600/75">评论交互中枢</span>
