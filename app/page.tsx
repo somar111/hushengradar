@@ -2,110 +2,72 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col font-[family-name:var(--font-geist)]">
+    <div className="min-h-screen bg-[rgb(253,253,252)] text-gray-900 font-[family-name:var(--font-geist)]">
       {/* Nav */}
-      <nav className="flex items-center justify-between px-8 py-5 border-b border-white/5">
+      <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-10 flex items-center justify-between px-6 py-2.5 rounded-full bg-[rgb(227,227,226)]/80 backdrop-blur-md border border-gray-300/50 shadow-sm w-[90%] max-w-3xl">
+        <span className="text-3xl tracking-tight" style={{ fontFamily: "'smiley-sans', sans-serif" }}>呼声雷达</span>
         <div className="flex items-center gap-2">
-          <span className="text-lg">📡</span>
-          <span className="font-semibold tracking-tight">呼声雷达</span>
+          <a href="/demo" className="text-base font-medium text-white bg-gray-900 hover:bg-gray-700 px-6 py-2.5 rounded-full transition-colors">查看 Demo ↗</a>
         </div>
-        <Link
-          href="/demo"
-          className="text-sm text-gray-400 hover:text-white transition-colors"
-        >
-          查看 Demo →
-        </Link>
       </nav>
 
       {/* Hero */}
-      <main className="flex-1 flex flex-col items-center justify-center px-8 py-24 text-center">
+      <main className="flex flex-col items-center justify-center px-8 pt-40 pb-12 text-center">
         <div className="max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 rounded-full px-4 py-1.5 text-sm text-indigo-400 mb-10">
-            <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse" />
-            Demo 版本现已上线
-          </div>
-
           <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-6 leading-[1.1]">
-            出海 App 的
+            App 开发者的
             <br />
-            <span className="text-indigo-400">评论管理中枢</span>
+            <span className="text-violet-600/75">评论交互中枢</span>
           </h1>
 
-          <p className="text-lg text-gray-400 mb-3 leading-relaxed">
-            连接 App Store 与 Google Play 官方开发者 API
-          </p>
-          <p className="text-base text-gray-500 mb-12 max-w-lg mx-auto leading-relaxed">
+          <div className="flex items-center justify-center gap-3 mb-6 text-gray-500">
+            <span className="text-sm">支持</span>
+            <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7"/>
+            <img src="/Google_Play_2022_icon.svg.png" alt="Google Play" className="w-7 h-7"/>
+          </div>
+          <p className="text-base text-gray-500 mb-8 max-w-lg mx-auto leading-relaxed">
             AI 深度分析差评趋势，自动生成多语言回复建议
             <br />
             一个界面，告别平台切换
           </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              href="/demo"
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-8 py-3 rounded-lg transition-colors text-sm w-full sm:w-auto"
-            >
-              查看 Demo →
-            </Link>
-            <a
-              href="mailto:crystalismm@proton.me"
-              className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
-            >
-              寻求合作 →
-            </a>
+          <div className="flex flex-col items-center justify-center gap-3 mb-12">
+            <a href="/demo" className="text-base font-medium text-white bg-gray-900 hover:bg-gray-700 px-6 py-2.5 rounded-full transition-colors">查看 Demo ↗</a>
+            <a href="/about" className="text-base text-gray-600 hover:text-gray-900 px-6 py-2.5 rounded-full bg-black/8 hover:bg-black/12 transition-colors">关于本项目</a>
           </div>
+
         </div>
       </main>
 
       {/* Features */}
       <section className="px-8 pb-20 max-w-4xl mx-auto w-full">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <FeatureCard
-            icon="🔗"
-            title="官方 API 接入"
-            desc="通过 App Store Connect 和 Google Play 官方开发者 API 获取数据，安全合规，无需爬虫"
+            title="官方渠道接入"
+            desc="App Store Connect API + Google Cloud 服务账号，通过官方渠道获取数据，安全合规，无需爬虫"
           />
           <FeatureCard
-            icon="🤖"
             title="AI 深度分析"
-            desc="自动提取 Top 差评问题、功能愿望清单、营销金句，支持版本对比分析"
+            desc="自动提取 Top 差评问题、功能愿望清单，支持版本对比分析"
           />
           <FeatureCard
-            icon="💬"
-            title="多语言一键回复"
-            desc="AI 生成英日韩多语言回复建议，在同一界面审核并一键提交，无需切换平台"
+            title="多语言查看&一键回复"
+            desc="AI 生成多语言回复建议，在同一界面审核并一键提交，无需切换平台"
+          />
+          <FeatureCard
+            title="更多功能"
+            desc="恶评监控、周报、自定义预警通知..."
           />
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="border-t border-white/5 px-8 py-6 text-center text-sm text-gray-600">
-        寻求技术合作 ·{" "}
-        <a
-          href="mailto:crystalismm@proton.me"
-          className="text-gray-500 hover:text-gray-400 transition-colors"
-        >
-          crystalismm@proton.me
-        </a>
-      </footer>
     </div>
   );
 }
 
-function FeatureCard({
-  icon,
-  title,
-  desc,
-}: {
-  icon: string;
-  title: string;
-  desc: string;
-}) {
+function FeatureCard({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="bg-gray-900 border border-white/5 rounded-xl p-6">
-      <div className="text-2xl mb-3">{icon}</div>
-      <h3 className="font-semibold text-white mb-2 text-sm">{title}</h3>
-      <p className="text-sm text-gray-400 leading-relaxed">{desc}</p>
+    <div className="bg-violet-50/60 backdrop-blur-md border border-violet-100/70 rounded-xl p-6 shadow-sm">
+      <h3 className="font-semibold text-gray-900 mb-2 text-base">{title}</h3>
+      <p className="text-sm text-gray-500 leading-relaxed">{desc}</p>
     </div>
   );
 }

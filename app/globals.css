@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'smiley-sans';
+  src: url('/fonts/SmileySans-Oblique.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
+.font-smiley {
+  font-family: 'smiley-sans', sans-serif;
+}
+
 :root {
   --font-geist: var(--font-geist);
 }
