@@ -50,8 +50,8 @@ export default function Home() {
             desc="自动提取 Top 差评问题、功能愿望清单，版本对比分析，以及问 AI 关于评论区的任何问题！"
           />
           <FeatureCard
-            title="多语言查看&一键回复"
-            desc="自带 AI 多语言翻译，AI 生成多语言回复建议，在同一界面查看、回复，无需切换平台"
+            title="多语言查看与回复"
+            desc="自带 AI 多语言翻译，AI 生成多语言回复建议，在同一界面查看、一键回复，无需切换平台"
           />
           <FeatureCard
             title="更多功能"
