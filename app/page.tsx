@@ -4,7 +4,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[rgb(254,252,246)] text-gray-900 font-[family-name:var(--font-geist)]">
       {/* Nav */}
-      <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-10 flex items-center justify-between px-6 py-2.5 rounded-full bg-[rgb(227,227,226)]/80 backdrop-blur-md border border-gray-300/50 shadow-sm w-[90%] max-w-3xl">
+      <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-10 flex items-center justify-between px-6 py-2.5 rounded-full bg-[rgb(227,227,226)]/60 backdrop-blur-md border border-gray-300/50 shadow-sm w-[90%] max-w-3xl">
         <span className="text-3xl tracking-tight" style={{ fontFamily: "'smiley-sans', sans-serif" }}>呼声雷达</span>
         <div className="flex items-center gap-2">
           <a href="/demo" className="text-base font-medium text-white bg-gray-900 hover:bg-gray-700 px-6 py-2.5 rounded-full transition-colors">查看 Demo ↗</a>
@@ -14,7 +14,7 @@ export default function Home() {
       {/* Hero */}
       <main className="flex flex-col items-center justify-center px-8 pt-40 pb-12 text-center">
         <div className="max-w-2xl mx-auto">
-          <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-6 leading-[1.2]">
+          <h1 className="text-4xl sm:text-6xl font-bold tracking-tight mb-6 leading-[1.2]">
             App 开发者的
             <br />
             <span className="text-violet-600/75">AI 评论交互中心</span>
@@ -47,7 +47,7 @@ export default function Home() {
           />
           <FeatureCard
             title="AI 深度分析"
-            desc="自动提取 Top 差评问题、功能愿望清单，版本对比分析，以及问 AI 关于评论区的任何问题！"
+            desc="自动提取 Top 差评问题、功能愿望清单，版本对比分析，以及询问 AI 关于评论区的任何问题！"
           />
           <FeatureCard
             title="多语言查看与回复"
@@ -65,7 +65,7 @@ export default function Home() {
 
 function FeatureCard({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="bg-violet-50 border border-violet-100 rounded-xl p-6 shadow-sm min-h-36">
+    <div className="rounded-xl p-6 min-h-36" style={{ background: 'linear-gradient(145deg, rgba(252,250,255,0.98) 0%, rgba(233,227,254,0.65) 100%)', border: '0.5px solid rgba(255,255,255,0.9)', boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,1), inset 1px 0 0 rgba(255,255,255,0.6), inset 0 -1px 0 rgba(139,92,246,0.12), 0 8px 24px rgba(139,92,246,0.1)' }}>
       <h3 className="font-semibold text-gray-900 mb-2 text-base">{title}</h3>
       <p className="text-sm text-gray-500 leading-relaxed">{desc}</p>
     </div>
