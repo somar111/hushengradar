@@ -5,8 +5,8 @@ import "./globals.css";
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 
 export const metadata: Metadata = {
-  title: "呼声雷达 | 出海 App 评论管理平台",
-  description: "连接 App Store 与 Google Play 官方开发者 API，AI 分析评论趋势，一键生成多语言回复",
+  title: "呼声雷达 | 全球 App 评论管理平台",
+  description: "全球 App 开发者的评论交互中枢。AI 分析差评趋势，多语言查看与一键回复，一个界面告别平台切换。",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
