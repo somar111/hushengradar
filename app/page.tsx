@@ -47,11 +47,11 @@ export default function Home() {
           />
           <FeatureCard
             title="AI 深度分析"
-            desc="自动提取 Top 差评问题、功能愿望清单，支持版本对比分析"
+            desc="自动提取 Top 差评问题、功能愿望清单，版本对比分析，以及问 AI 关于评论区的任何问题！"
           />
           <FeatureCard
             title="多语言查看&一键回复"
-            desc="AI 生成多语言回复建议，在同一界面审核并一键提交，无需切换平台"
+            desc="自带 AI 多语言翻译，AI 生成多语言回复建议，在同一界面查看、回复，无需切换平台"
           />
           <FeatureCard
             title="更多功能"
