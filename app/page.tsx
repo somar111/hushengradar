@@ -65,7 +65,7 @@ export default function Home() {
 
 function FeatureCard({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="bg-violet-50/60 backdrop-blur-md border border-violet-100/70 rounded-xl p-6 shadow-sm">
+    <div className="bg-violet-50 border border-violet-100 rounded-xl p-6 shadow-sm min-h-36">
       <h3 className="font-semibold text-gray-900 mb-2 text-base">{title}</h3>
       <p className="text-sm text-gray-500 leading-relaxed">{desc}</p>
     </div>
