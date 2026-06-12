@@ -21,7 +21,7 @@ export default function Home() {
           </h1>
 
           <div className="flex items-center justify-center gap-3 mb-6 text-gray-500">
-            <span className="text-sm">支持</span>
+            <span className="text-base">支持</span>
             <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7"/>
             <img src="/Google_Play_2022_icon.svg.png" alt="Google Play" className="w-7 h-7"/>
           </div>
