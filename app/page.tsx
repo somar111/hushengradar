@@ -17,7 +17,7 @@ export default function Home() {
           <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-6 leading-[1.2]">
             App 开发者的
             <br />
-            <span className="text-violet-600/75">评论交互中枢</span>
+            <span className="text-violet-600/75">AI 评论交互中枢</span>
           </h1>
 
           <div className="flex items-center justify-center gap-3 mb-6 text-gray-500">
