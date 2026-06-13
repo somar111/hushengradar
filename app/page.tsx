@@ -14,21 +14,22 @@ export default function Home() {
       {/* Hero */}
       <main className="flex flex-col items-center justify-center px-8 pt-40 pb-12 text-center">
         <div className="max-w-2xl mx-auto">
-          <h1 className="text-4xl sm:text-6xl font-bold tracking-tight mb-6 leading-[1.2]">
-            App 开发者的
+          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight mb-6 leading-[1.4]">
+            App 开发者们：
             <br />
-            <span className="text-violet-600/75">AI 评论交互中心</span>
+            <span className="text-violet-600/75">评论区本不该让你这么费力</span>
           </h1>
 
-          <div className="flex items-center justify-center gap-3 mb-6 text-gray-500">
-            <span className="text-base">支持</span>
-            <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7"/>
-            <img src="/Google_Play_2022_icon.svg.png" alt="Google Play" className="w-7 h-7"/>
+          <div className="flex flex-col items-center justify-center gap-2 mb-6">
+            <div className="flex items-center justify-center gap-3 text-gray-500">
+              <span className="text-base">支持</span>
+              <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7"/>
+              <img src="/Google_Play_2022_icon.svg.png" alt="Google Play" className="w-7 h-7"/>
+            </div>
+            <span className="text-xs text-gray-400">官方渠道接入，安全合规</span>
           </div>
           <p className="text-base text-gray-500 mb-8 max-w-lg mx-auto leading-relaxed">
-            AI 深度分析差评趋势，自动生成多语言回复建议
-            <br />
-            一个界面，告别平台切换
+            {'“原本每天 1 小时翻评论，现在 5 分钟看完AI精准洞察”'}
           </p>
           <div className="flex flex-col items-center justify-center gap-3 mb-12">
             <a href="/demo" className="text-base font-medium text-white bg-gray-900 hover:bg-gray-700 px-6 py-2.5 rounded-full transition-colors">查看 Demo ↗</a>
@@ -40,22 +41,18 @@ export default function Home() {
 
       {/* Features */}
       <section className="px-8 pb-20 max-w-4xl mx-auto w-full">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <FeatureCard
-            title="官方渠道接入"
-            desc="App Store Connect API + Google Cloud 服务账号，通过官方渠道获取数据，安全合规，无需爬虫"
+            title="用户需求一目了然"
+            desc="大量纯抱怨、语言混杂、毫无分类——真正有价值的反馈就这样淹没在噪音里。AI 自动提炼差评原因、整理功能愿望清单、对比版本口碑，还能直接问它评论区的任何问题"
           />
           <FeatureCard
-            title="AI 深度分析"
-            desc="自动提取 Top 差评问题、功能愿望清单，版本对比分析，以及询问 AI 关于评论区的任何问题！"
+            title="再也不被多语言评论困扰"
+            desc="所有语言的评论自动翻译成目标语言集中查看，AI 按用户原语言生成回复，一键发送。双平台、多市场，再也不用来回切"
           />
           <FeatureCard
-            title="多语言查看与回复"
-            desc="自带 AI 多语言翻译，AI 生成多语言回复建议，在同一界面查看、一键回复，无需切换平台"
-          />
-          <FeatureCard
-            title="更多功能"
-            desc="恶评监控、周报、自定义预警通知..."
+            title="还有这些"
+            desc="恶意差评实时预警、每周自动生成口碑周报、关键指标自定义通知——重要的事会主动来找你，不用你盯着"
           />
         </div>
       </section>
