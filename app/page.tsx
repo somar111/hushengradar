@@ -16,9 +16,11 @@ export default function Home() {
         <div className="max-w-2xl mx-auto">
           <h1 className="text-4xl sm:text-5xl font-bold tracking-tight mb-6 leading-[1.4]">
             App 开发者们：
-            <br />
-            <span className="text-violet-600/75">评论区本不该让你这么费力</span>
           </h1>
+          <blockquote className="border-l-4 border-violet-400/60 pl-4 mb-6 text-left">
+            <p className="text-2xl sm:text-3xl font-bold text-violet-600/75 leading-snug">用户的声音，不该这么难听见</p>
+            <p className="text-2xl sm:text-3xl font-bold text-violet-600/75 leading-snug mt-1">查看、汇总、回复——一个地方搞定</p>
+          </blockquote>
 
           <div className="flex flex-col items-center justify-center gap-2 mb-6">
             <div className="flex items-center justify-center gap-3 text-gray-500">
