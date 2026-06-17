@@ -1,6 +1,6 @@
 # 呼声雷达 VoiceRadar
 
-AI 驱动的应用评论监控分析工具，支持 App Store、Google Play、Steam 三端合一。
+AI 驱动的应用评论监控分析工具，支持 App Store、Google Play 双平台。
 
 ## 本地开发
 
