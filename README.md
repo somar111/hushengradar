@@ -1,10 +1,10 @@
-# 呼声雷达 VoiceRadar
+# VoiceRadar
 
-AI 驱动的应用评论监控分析工具，支持 App Store、Google Play 双平台。
+AI-powered app review monitoring and analysis tool for App Store and Google Play.
 
-## 技术栈
+## Tech Stack
 
 - Next.js 16 + Tailwind CSS
 - Supabase (PostgreSQL)
 - DeepSeek V3 API
-- Cloudflare Pages 部署
+- Cloudflare Pages
