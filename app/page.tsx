@@ -28,7 +28,7 @@ export default function Home() {
               <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7"/>
               <img src="/Google_Play_2022_icon.svg.png" alt="Google Play" className="w-7 h-7"/>
             </div>
-            <span className="text-xs text-gray-400">官方渠道接入，安全合规</span>
+            <span className="text-xs text-gray-400">官方渠道接入，安全可靠</span>
           </div>
           <p className="text-base text-gray-500 mb-8 max-w-lg mx-auto leading-relaxed">
             {'“原本每天 1 小时翻评论，现在 5 分钟看完AI精准洞察”'}
