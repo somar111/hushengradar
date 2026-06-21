@@ -1,93 +1,63 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ReferenceLine, ResponsiveContainer,
-} from "recharts";
-import {
-  ChevronLeft, ChevronRight, Store, Play, MapPin, Layers,
-  TrendingDown, GitCompare, ListTodo, MessageSquare, Reply,
-  Send, X, BarChart2, ChevronUp, PanelLeft, PanelRight,
+  Layers, Languages,
+  TrendingDown, GitCompare, ListTodo, Reply,
+  Send, X, BarChart2, PanelLeft, Search, Loader2, Settings,
 } from "lucide-react";
-
-// ─── 数据 ────────────────────────────────────────────────────
-
-const chartData = [
-  { date: "1/4", rating: 4.2 }, { date: "1/11", rating: 4.3 },
-  { date: "1/18", rating: 4.1 }, { date: "1/25", rating: 4.2 },
-  { date: "2/1", rating: 3.9 }, { date: "2/8", rating: 3.6 },
-  { date: "2/15", rating: 3.4 }, { date: "2/22", rating: 3.3 },
-  { date: "3/1", rating: 3.5 }, { date: "3/8", rating: 3.8 },
-  { date: "3/15", rating: 4.2 }, { date: "3/22", rating: 4.4 },
-  { date: "3/29", rating: 4.5 },
-];
-
-type Review = {
-  id: number;
-  platform: "appstore" | "googleplay";
-  version: "v2.0" | "v2.1" | "v2.2";
-  rating: 1 | 2 | 3 | 4 | 5;
-  author: string;
-  date: string;
-  country: string;
-  content: string;
-  translation: string | null;
-  type: "complaint" | "wishlist" | "praise";
-  aiReply: string;
-};
-
-const reviews: Review[] = [
-  {
-    id: 1, platform: "appstore", version: "v2.1", rating: 1,
-    author: "FrustratedFlyer99", date: "2024-02-05", country: "🇺🇸",
-    content: "The latest update completely BROKE the app. Battery drains to zero in under 2 hours and it crashes every time I try to book a hotel.",
-    translation: null, type: "complaint",
-    aiReply: "We're truly sorry — this is not acceptable. v2.1 introduced a background sync bug causing the battery drain and crash issues. These are fully fixed in v2.2, now available in the App Store.",
-  },
-  {
-    id: 2, platform: "appstore", version: "v2.2", rating: 5,
-    author: "HappyHiker_Tom", date: "2024-03-12", country: "🇺🇸",
-    content: "v2.2 fixed EVERYTHING. Battery is back to normal, no more crashes, maps load instantly. This is the best travel app on the market. 5 stars back!",
-    translation: null, type: "praise",
-    aiReply: "Tom, this made our whole team's day! We worked hard to make v2.2 right. Thank you for sticking with us through v2.1. Happy travels!",
-  },
-  {
-    id: 3, platform: "googleplay", version: "v2.1", rating: 2,
-    author: "tabi_sukii", date: "2024-02-12", country: "🇯🇵",
-    content: "v2.1にアップデートしてから電池の消耗がひどくなりました。以前は一日余裕で使えたのに、今は4時間で切れます。",
-    translation: "自从更新到 v2.1，耗电变得非常严重。以前可以用一整天，现在4小时就没电了。请尽快修复。",
-    type: "complaint",
-    aiReply: "この度はご不便をおかけして大変申し訳ございません。v2.2 で完全に修正済みです。ぜひアップデートをお試しください。",
-  },
-];
-
-const complaintsData = [
-  { rank: 1, issue: "电池续航骤降", detail: "提及率 68%，v2.1 后每小时耗电达 30%，是 v2.0 的 3 倍" },
-  { rank: 2, issue: "酒店预订模块崩溃", detail: "提及率 54%，点击酒店预订后 App 直接闪退，影响核心功能" },
-  { rank: 3, issue: "地图加载极慢", detail: "提及率 41%，v2.0 即时加载退化为 5–10 秒，离线模式失效" },
-  { rank: 4, issue: "UI 改版令人困惑", detail: "提及率 29%，货币换算器入口被移除，常用功能藏在三级菜单" },
-];
-
-const wishlistData = [
-  { rank: 1, feature: "火车票预订", count: "47 次提及", detail: "日本、欧洲用户需求最强，尤其是 JR Pass 整合" },
-  { rank: 2, feature: "东南亚离线地图扩展", count: "38 次提及", detail: "缅甸、老挝、柬埔寨偏远地区覆盖不足" },
-  { rank: 3, feature: "多货币开销追踪", count: "31 次提及", detail: "旅行者希望在 App 内直接记录各地消费，自动换算" },
-];
-
-const presetQAs: Record<string, string> = {
-  "最近差评主要集中在哪些问题？": "1. **电池续航骤降**：提及率 68%\n2. **酒店预订崩溃**：提及率 54%\n3. **地图加载极慢**：提及率 41%",
-  "v2.1 和 v2.2 有什么区别？": "v2.1 发布后评分从 4.2 跌至 3.3，差评率高达 47%。v2.2 修复全部问题，评分回升至 4.5，差评率降至 8%。",
-  "用户最想要什么新功能？": "1. **火车票预订**（47 次提及）\n2. **东南亚离线地图**（38 次）\n3. **多货币开销追踪**（31 次）",
-};
+import { type ReviewRow } from "@/lib/supabase";
 
 // ─── 类型 ────────────────────────────────────────────────────
 
-type RightPanel = "complaints" | "comparison" | "wishlist" | "reply";
-type MobileTab = "filter" | "analyze" | "feature";
-type Platform = "all" | "appstore" | "googleplay";
-type Version = "all" | "v2.0" | "v2.1" | "v2.2";
+// locale 只是"用哪组 lang/country 参数抓到这条"，不代表真实评论语言，纯展示用
+const localeLabels: Record<string, string> = {
+  en_us: "英语 · 美国",
+  id_id: "印尼语 · 印尼",
+  es_mx: "西班牙语 · 墨西哥",
+  ar_sa: "阿拉伯语 · 沙特",
+  pt_br: "葡萄牙语 · 巴西",
+  hi_in: "印地语 · 印度",
+};
+
+type Stats = {
+  total: number;
+  dateRange: { from: string | null; to: string | null };
+  ratingDist: Record<string, number>;
+  tagCounts: Record<string, { label: string; count: number; summary: string | null }>;
+  localeCounts: Record<string, number>;
+  versionStats: { version: string; count: number; avgRating: number }[];
+  officialReplyRate: number;
+};
+
+type RightPanel = "complaints" | "comparison" | "demands" | "reply";
+type MobileTab = "filter" | "analyze";
+type Platform = "googleplay" | "appstore";
+type TargetLang = "zh" | "en";
+type TranslateScope = "non_target" | "non_zh_en";
+
+type TranslateSettings = {
+  enabled: boolean;
+  targetLang: TargetLang;
+  scope: TranslateScope;
+};
+
+const PAGE_SIZE = 200;
+
+function getDisplayContent(r: ReviewRow, s: TranslateSettings): { text: string; translated: boolean } {
+  if (!s.enabled) return { text: r.content, translated: false };
+  const lang = r.detected_lang;
+  if (s.scope === "non_zh_en" && (lang === "zh" || lang === "en")) {
+    return { text: r.content, translated: false };
+  }
+  if (s.targetLang === "zh") {
+    if (lang === "zh" || !r.translated_zh) return { text: r.content, translated: false };
+    return { text: r.translated_zh, translated: true };
+  }
+  if (lang === "en" || !r.translated_en) return { text: r.content, translated: false };
+  return { text: r.translated_en, translated: true };
+}
 
 // ─── 子组件 ──────────────────────────────────────────────────
 
@@ -100,215 +70,430 @@ function Stars({ rating }: { rating: number }) {
 }
 
 function GlassPanel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`bg-[#181a1f] ${className}`}>{children}</div>;
+}
+
+function DonutPercent({ percent, size = 40, color = "#8b5cf6" }: { percent: number; size?: number; color?: string }) {
+  const r = size / 2 - 3;
+  const c = 2 * Math.PI * r;
+  const offset = c * (1 - Math.min(percent, 100) / 100);
   return (
-    <div className={`bg-[#181a1f] ${className}`}>
-      {children}
-    </div>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-none">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#ffffff14" strokeWidth={3} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={3}
+        strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={size * 0.26} fontWeight={600}>
+        {Math.round(percent)}%
+      </text>
+    </svg>
   );
+}
+
+function fmtDate(iso: string | null) {
+  return iso ? iso.slice(0, 10) : "—";
+}
+
+function localeLabel(locale: string | null) {
+  if (!locale) return "未知";
+  return localeLabels[locale] || locale;
 }
 
 // ─── 主组件 ─────────────────────────────────────────────────
 
 export default function DemoPage() {
   const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
   const [activePanel, setActivePanel] = useState<RightPanel>("complaints");
-  const [platform, setPlatform] = useState<Platform>("all");
-  const [version, setVersion] = useState<Version>("all");
+  const [platform, setPlatform] = useState<Platform>("googleplay");
+  const [locale, setLocale] = useState<string | undefined>(undefined);
+  const [tagFilter, setTagFilter] = useState<string | undefined>(undefined);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [mobileTab, setMobileTab] = useState<MobileTab>("analyze");
+  const [translateSettings, setTranslateSettings] = useState<TranslateSettings>({
+    enabled: true,
+    targetLang: "zh",
+    scope: "non_target",
+  });
+  const [showTranslateSettings, setShowTranslateSettings] = useState(false);
+
+  const [stats, setStats] = useState<Stats | null>(null);
+
+  const [reviews, setReviews] = useState<ReviewRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  const [selectedReview, setSelectedReview] = useState<ReviewRow | null>(null);
+  const [aiReply, setAiReply] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<{ q: string; a: string }[]>([]);
-  const [selectedReview, setSelectedReview] = useState<Review | null>(null);
-  const [replyInput, setReplyInput] = useState("");
-  const [submittedReplies, setSubmittedReplies] = useState<number[]>([]);
-  const [showToast, setShowToast] = useState(false);
-  const [mobileTab, setMobileTab] = useState<MobileTab>("analyze");
 
   const isReplyMode = activePanel === "reply";
+
+  // 拉统计数据
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (locale) params.set("locale", locale);
+    fetch(`/api/demo/stats?${params}`).then((r) => r.json()).then(setStats);
+  }, [locale]);
+
+  // 拉评论列表（筛选/翻页变化时）
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (locale) params.set("locale", locale);
+    if (tagFilter) params.set("tag", tagFilter);
+    if (search) params.set("q", search);
+    params.set("page", String(page));
+    params.set("pageSize", String(PAGE_SIZE));
+    fetch(`/api/demo/reviews?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setReviews(data.items);
+        setTotal(data.total);
+      })
+      .finally(() => setLoading(false));
+  }, [locale, tagFilter, search, page]);
+
+  // 切筛选条件时回到第一页
+  useEffect(() => { setPage(1); }, [locale, tagFilter, search]);
+
+  // 预设问答（基于真实统计生成，统计加载完才有内容）
+  const presetQAs = useMemo(() => {
+    if (!stats) return {};
+    const topTags = Object.entries(stats.tagCounts).sort((a, b) => b[1].count - a[1].count);
+    const worstVersion = [...stats.versionStats].filter((v) => v.count >= 5).sort((a, b) => a.avgRating - b.avgRating)[0];
+    const topTagLine = topTags.slice(0, 3).map(([, t], i) => `${i + 1}. **${t.label}**：${t.count} 条`).join("\n");
+    return {
+      "最近一周用户主要在反馈什么问题？": topTagLine || "暂无数据",
+      "哪个版本评价最差？": worstVersion
+        ? `版本 ${worstVersion.version}：均分 ${worstVersion.avgRating} ★（${worstVersion.count} 条评论）`
+        : "样本里版本评论数太少，暂无法判断",
+      "官方回复率怎么样？": `过去一周 ${stats.total} 条评论中，${stats.officialReplyRate}% 收到了 WPS 官方回复。`,
+    } as Record<string, string>;
+  }, [stats]);
 
   function handleSendChat() {
     const q = chatInput.trim();
     if (!q) return;
-    const a = presetQAs[q] ?? "基于当前评论数据分析：建议重点关注 v2.1 差评集中期（2月1日–3月7日）的用户诉求，以及 v2.2 修复后的正向评价趋势。";
+    const a = presetQAs[q] ?? "这是基于过去一周公开评论抽样的真实统计 Demo，目前只能回答左侧预设问题；接入真实账号后可以追问任意问题。";
     setChatMessages((prev) => [...prev, { q, a }]);
     setChatInput("");
   }
 
-  function handleSelectReview(r: Review) {
+  function handleSelectReview(r: ReviewRow) {
     setSelectedReview(r);
-    setReplyInput(r.aiReply);
+    setAiReply("");
+    setAiError("");
   }
 
-  function handleSubmitReply() {
+  async function handleGenerateAiReply() {
     if (!selectedReview) return;
-    setSubmittedReplies((prev) => [...prev, selectedReview.id]);
-    setShowToast(true);
-    setSelectedReview(null);
-    setReplyInput("");
-    setTimeout(() => setShowToast(false), 3000);
+    setAiLoading(true);
+    setAiError("");
+    try {
+      const res = await fetch("/api/demo/ai-reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: selectedReview.content,
+          rating: selectedReview.rating,
+          tags: selectedReview.ai_tags,
+          author: selectedReview.author,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAiError(data.error || "生成失败");
+      } else {
+        setAiReply(data.reply);
+      }
+    } catch {
+      setAiError("请求失败，请重试");
+    } finally {
+      setAiLoading(false);
+    }
   }
 
-  const filteredReviews = reviews.filter((r) => {
-    if (platform !== "all" && r.platform !== platform) return false;
-    if (version !== "all" && r.version !== version) return false;
-    return true;
-  });
+  function jumpToTag(tag: string) {
+    setTagFilter(tag);
+    setLocale(undefined);
+    setActivePanel("reply");
+    setMobileTab("analyze");
+  }
 
   const rightPanelItems: { key: RightPanel; label: string; icon: React.ReactNode }[] = [
-    { key: "complaints", label: "Top 抱怨", icon: <TrendingDown size={14} /> },
+    { key: "complaints", label: "Top 反馈", icon: <TrendingDown size={14} /> },
     { key: "comparison", label: "版本分析", icon: <GitCompare size={14} /> },
-    { key: "wishlist", label: "愿望清单", icon: <ListTodo size={14} /> },
+    { key: "demands", label: "诉求清单", icon: <ListTodo size={14} /> },
     { key: "reply", label: "评论回复", icon: <Reply size={14} /> },
   ];
+
+  const totalTagCount = stats ? Object.values(stats.tagCounts).reduce((a, b) => a + b.count, 0) : 0;
+  const avgRating = stats
+    ? Math.round(
+        (Object.entries(stats.ratingDist).reduce((sum, [k, v]) => sum + Number(k) * v, 0) / stats.total) * 100
+      ) / 100
+    : null;
 
   // ── 中间区域：分析结果 ──
   const AnalyzeResult = (
     <div className="flex-1 overflow-y-auto px-6 py-5">
-      {activePanel === "complaints" && (
+      {activePanel === "complaints" && stats && (
         <div>
-          <p className="text-white/65 text-[14px] mb-4">v2.1 发布后共收到 247 条差评，差评率从 12% 飙升至 47%。AI 提取核心问题：</p>
+          <p className="text-white/65 text-[14px] mb-4">
+            过去一周（{fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)}）共 {stats.total} 条公开评论，AI 按问题类型聚类（点击查看该类全部真实评论）：
+          </p>
           <div className="flex flex-col gap-3">
-            {complaintsData.map((item) => (
-              <div key={item.rank} className="bg-[#1e2026] rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-white/45 text-[14px] font-mono">#{item.rank}</span>
-                  <span className="text-white/90 text-[16px] font-medium">{item.issue}</span>
-                </div>
-                <p className="text-white/65 text-[14px] leading-relaxed">{item.detail}</p>
-              </div>
-            ))}
+            {Object.entries(stats.tagCounts)
+              .sort((a, b) => b[1].count - a[1].count)
+              .map(([tag, t], i) => {
+                const pct = (t.count / stats.total) * 100;
+                return (
+                  <button key={tag} onClick={() => jumpToTag(tag)}
+                    className="text-left bg-[#1e2026] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
+                    <DonutPercent percent={pct} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-white/45 text-[14px] font-mono">#{i + 1}</span>
+                        <span className="text-white/90 text-[16px] font-medium">{t.label}</span>
+                      </div>
+                      <p className="text-white/55 text-[13px] leading-relaxed">
+                        {t.count} 条评论{t.summary ? t.summary : "，点击查看全部真实评论 →"}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
           </div>
+          <p className="text-white/25 text-[12px] mt-4 leading-relaxed">
+            数据来源：Google Play 公开评论抽样（非 WPS 官方授权接入），DeepSeek 真实分类，共 {totalTagCount} 次标签命中（一条评论可能命中多个类型）。
+          </p>
         </div>
       )}
 
-      {activePanel === "comparison" && (
+      {activePanel === "comparison" && stats && (
         <div>
           <div className="flex items-baseline gap-3 mb-1">
-            <span className="text-[42px] font-bold text-white">4.5</span>
-            <span className="text-white/55 text-[16px]">当前评分</span>
-            <span className="text-emerald-400 text-[16px]">↑ +1.2 vs 最低点</span>
+            <span className="text-[42px] font-bold text-white">{avgRating}</span>
+            <span className="text-white/55 text-[16px]">过去一周平均分</span>
           </div>
-          <p className="text-white/45 text-[14px] mb-5">TravelMate · 2024年1月–3月 · 全平台</p>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" />
-              <XAxis dataKey="date" tick={{ fill: "#ffffff40", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis domain={[3, 5]} tick={{ fill: "#ffffff40", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: "#1a1a1a", border: "1px solid #ffffff15", borderRadius: 8, color: "#fff" }} formatter={(v: unknown) => [`${v} ★`, "评分"]} />
-              <ReferenceLine x="2/1" stroke="#ef4444" strokeDasharray="4 2" label={{ value: "v2.1", fill: "#ef4444", fontSize: 10, position: "top" }} />
-              <ReferenceLine x="3/8" stroke="#10b981" strokeDasharray="4 2" label={{ value: "v2.2", fill: "#10b981", fontSize: 10, position: "top" }} />
-              <Line type="monotone" dataKey="rating" stroke="#8b5cf6" strokeWidth={2} dot={{ fill: "#8b5cf6", r: 3 }} activeDot={{ r: 5 }} />
-            </LineChart>
-          </ResponsiveContainer>
-          <div className="grid grid-cols-2 gap-3 mt-5 mb-4">
-            {[
-              { label: "v2.1", rating: 3.3, negative: 47, color: "red" },
-              { label: "v2.2", rating: 4.5, negative: 8, color: "emerald" },
-            ].map(({ label, rating, negative, color }) => (
-              <div key={label} className={`bg-[#1e2026] rounded-xl p-4 border-l-2 ${color === "red" ? "border-red-500/60" : "border-emerald-500/60"}`}>
-                <div className={`text-[14px] font-mono mb-2 ${color === "red" ? "text-red-400" : "text-emerald-400"}`}>{label}</div>
-                <div className={`text-[28px] font-bold mb-0.5 ${color === "red" ? "text-red-400" : "text-emerald-400"}`}>{rating} <span className="text-yellow-400 text-[14px]">★</span></div>
-                <div className="text-white/45 text-[13px] mb-2">平均评分</div>
-                <div className={`text-lg font-bold mb-0.5 ${color === "red" ? "text-red-400" : "text-emerald-400"}`}>{negative}%</div>
-                <div className="text-white/45 text-[13px]">差评率</div>
+          <p className="text-white/45 text-[14px] mb-5">
+            WPS Office · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按版本号统计（仅统计评论里带版本号的 {stats.versionStats.reduce((s, v) => s + v.count, 0)} 条）
+          </p>
+          <div className="flex items-end gap-2 h-[200px] px-1 border-b border-white/10 relative">
+            {avgRating && (
+              <div className="absolute left-0 right-0 border-t border-dashed border-violet-400/50 flex items-center"
+                style={{ bottom: `${(avgRating / 5) * 180}px` }}>
+                <span className="text-violet-400 text-[10px] bg-[#181a1f] px-1 -translate-y-1/2">整体均分 {avgRating}</span>
               </div>
-            ))}
-          </div>
-          <div className="bg-emerald-950/30 rounded-xl p-4">
-            <p className="text-emerald-400 text-[14px] font-medium mb-1">AI 结论</p>
-            <p className="text-white/70 text-[14px] leading-relaxed">v2.2 修复使评分回升 +1.2，差评率从 47% 降至 8%。用户诉求已从「修 bug」转向「加功能」，产品可进入正向迭代阶段。</p>
-          </div>
-        </div>
-      )}
-
-      {activePanel === "wishlist" && (
-        <div>
-          <p className="text-white/65 text-[14px] mb-4">基于全量评论分析，用户最强烈的功能愿望：</p>
-          <div className="flex flex-col gap-3">
-            {wishlistData.map((item) => (
-              <div key={item.rank} className="bg-[#1e2026] rounded-xl p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-white/90 text-[16px] font-medium">{item.feature}</span>
-                  <span className="text-white/70 text-[14px]">{item.count}</span>
+            )}
+            {stats.versionStats.map((v) => {
+              const color = v.avgRating < 3 ? "#ef4444" : v.avgRating < 4 ? "#f59e0b" : "#10b981";
+              return (
+                <div key={v.version} className="group relative flex-1 flex flex-col items-center justify-end h-full min-w-0">
+                  <div className="absolute -top-5 text-white/55 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                    {v.avgRating} ★ · {v.count} 条
+                  </div>
+                  <div className="w-full rounded-t transition-opacity group-hover:opacity-80"
+                    style={{ height: `${(v.avgRating / 5) * 180}px`, backgroundColor: color, minHeight: 2 }} />
+                  <div className="text-white/40 text-[10px] font-mono mt-1.5 -rotate-45 origin-top-left whitespace-nowrap translate-x-2">
+                    {v.version}
+                  </div>
                 </div>
-                <p className="text-white/65 text-[14px] leading-relaxed">{item.detail}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
+          <p className="text-white/25 text-[12px] mt-3 leading-relaxed">
+            App Store 端 Apple 官方 API 不返回评论对应版本号，只能靠评论日期 vs 版本发布时间线做推断分析，这里展示的是 Google Play 真实版本字段统计。
+          </p>
         </div>
       )}
 
+      {activePanel === "demands" && stats && (
+        <div>
+          <p className="text-white/65 text-[14px] mb-4">
+            真实数据画像：按 AI 分类命中量排序，"退钱"（billing）和"修 bug"是这一周最大的诉求，"求加新功能"（feature_request）只占很小一部分：
+          </p>
+          <div className="flex flex-col gap-3">
+            {Object.entries(stats.tagCounts)
+              .sort((a, b) => b[1].count - a[1].count)
+              .map(([tag, t], i) => {
+                const pct = (t.count / stats.total) * 100;
+                return (
+                  <button key={tag} onClick={() => jumpToTag(tag)}
+                    className="text-left bg-[#1e2026] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
+                    <DonutPercent percent={pct} color="#10b981" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-white/90 text-[16px] font-medium">#{i + 1} {t.label}</span>
+                      <p className="text-white/55 text-[13px] leading-relaxed">{t.count} 条评论{t.summary ?? ""}</p>
+                    </div>
+                  </button>
+                );
+              })}
+          </div>
+          <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+            <p className="text-emerald-400 text-[14px] font-medium mb-1">真实结论</p>
+            <p className="text-white/70 text-[14px] leading-relaxed">
+              扣费投诉（{stats.tagCounts.billing?.count ?? 0} 条）+ bug 反馈（{stats.tagCounts.bug?.count ?? 0} 条）合计占这周评论的 {Math.round((((stats.tagCounts.billing?.count ?? 0) + (stats.tagCounts.bug?.count ?? 0)) / stats.total) * 100)}%，而求加新功能只有 {stats.tagCounts.feature_request?.count ?? 0} 条（{Math.round(((stats.tagCounts.feature_request?.count ?? 0) / stats.total) * 1000) / 10}%）——先堵住扣费和 bug 这两个出血口，比做新功能性价比更高。
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 
   // ── 中间区域：回复模式 ──
   const ReplyResult = (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex gap-2 px-4 pt-4 pb-2 flex-none">
-        {(["all", "v2.0", "v2.1", "v2.2"] as Version[]).map((v) => (
-          <button key={v} onClick={() => setVersion(v)}
-            className={`px-3 py-1 rounded-full text-[13px] font-mono transition-colors ${version === v ? "bg-white/15 text-white/90" : "text-white/45 hover:text-white/70 hover:bg-white/8"}`}>
-            {v === "all" ? "全部" : v}
+      {tagFilter && stats?.tagCounts[tagFilter] && (
+        <div className="flex items-center gap-4 px-4 pt-4 flex-none">
+          <DonutPercent percent={(stats.tagCounts[tagFilter].count / stats.total) * 100} size={48} />
+          <div className="min-w-0">
+            <p className="text-white/90 text-[15px] font-medium">{stats.tagCounts[tagFilter].label}</p>
+            <p className="text-white/55 text-[13px] leading-relaxed">
+              {stats.tagCounts[tagFilter].count} 条评论{stats.tagCounts[tagFilter].summary ?? ""}
+            </p>
+          </div>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2 px-4 pt-4 pb-2 flex-none">
+        <div className="relative flex-1 min-w-[160px]">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30" />
+          <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput.trim())}
+            placeholder="搜索评论内容/作者..."
+            className="w-full bg-[#1e2026] border border-white/14 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/25 outline-none focus:border-white/30" />
+        </div>
+        {tagFilter && (
+          <button onClick={() => setTagFilter(undefined)}
+            className="flex items-center gap-1 px-3 py-1 rounded-full text-[12px] bg-white/15 text-white/90">
+            {stats?.tagCounts[tagFilter]?.label ?? tagFilter} <X size={11} />
           </button>
-        ))}
+        )}
+        {search && (
+          <button onClick={() => { setSearch(""); setSearchInput(""); }}
+            className="flex items-center gap-1 px-3 py-1 rounded-full text-[12px] bg-white/15 text-white/90">
+            "{search}" <X size={11} />
+          </button>
+        )}
+        <div className="relative">
+          <button onClick={() => setShowTranslateSettings((v) => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-colors ${
+              translateSettings.enabled ? "bg-white/12 text-white/80" : "bg-white/6 text-white/45"
+            }`}>
+            <Settings size={12} />翻译
+          </button>
+          {showTranslateSettings && (
+            <div className="absolute right-0 top-full mt-1.5 z-10 w-56 bg-[#1e2026] border border-white/14 rounded-xl p-3 shadow-xl flex flex-col gap-3">
+              <label className="flex items-center justify-between text-[13px] text-white/80">
+                启用翻译
+                <input type="checkbox" checked={translateSettings.enabled}
+                  onChange={(e) => setTranslateSettings((s) => ({ ...s, enabled: e.target.checked }))} />
+              </label>
+              <div>
+                <p className="text-white/35 text-[11px] uppercase tracking-wider mb-1.5">目标语言</p>
+                {([["zh", "中文"], ["en", "英文"]] as const).map(([v, label]) => (
+                  <label key={v} className="flex items-center gap-2 text-[13px] text-white/70 py-0.5">
+                    <input type="radio" checked={translateSettings.targetLang === v}
+                      onChange={() => setTranslateSettings((s) => ({ ...s, targetLang: v }))} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <div>
+                <p className="text-white/35 text-[11px] uppercase tracking-wider mb-1.5">翻译范围</p>
+                {([
+                  ["non_target", "翻译所有非目标语言"],
+                  ["non_zh_en", "只翻译非中英文（保留英文原文）"],
+                ] as const).map(([v, label]) => (
+                  <label key={v} className="flex items-center gap-2 text-[13px] text-white/70 py-0.5">
+                    <input type="radio" checked={translateSettings.scope === v}
+                      onChange={() => setTranslateSettings((s) => ({ ...s, scope: v }))} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {filteredReviews.map((r) => {
-            const isSelected = selectedReview?.id === r.id;
-            const isSubmitted = submittedReplies.includes(r.id);
-            return (
-              <button key={r.id} onClick={() => handleSelectReview(r)}
-                className={`text-left rounded-xl p-4 transition-all ${
-                  isSubmitted ? "bg-emerald-950/20 opacity-50"
-                  : isSelected ? "ring-1 ring-white/25 bg-white/12"
-                  : "bg-[#1e2026] hover:bg-white/10"
-                }`}>
-                <div className="flex items-center justify-between mb-2">
-                  <Stars rating={r.rating} />
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-white/45 text-[12px]">{r.country}</span>
-                    <span className={`text-[12px] px-1.5 py-0.5 rounded font-mono ${
-                      r.version === "v2.1" ? "bg-red-950/50 text-red-400" : r.version === "v2.2" ? "bg-emerald-950/50 text-emerald-400" : "bg-[#2a2c32] text-white/55"
-                    }`}>{r.version}</span>
+        {loading ? (
+          <div className="flex items-center justify-center h-full text-white/30"><Loader2 className="animate-spin" size={20} /></div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {reviews.map((r) => {
+              const isSelected = selectedReview?.id === r.id;
+              const display = getDisplayContent(r, translateSettings);
+              return (
+                <button key={r.id} onClick={() => handleSelectReview(r)}
+                  className={`text-left rounded-xl p-4 transition-all ${
+                    isSelected ? "ring-1 ring-white/25 bg-white/12" : "bg-[#1e2026] hover:bg-white/10"
+                  }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <Stars rating={r.rating ?? 0} />
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-white/45 text-[12px]">{localeLabel(r.locale)}</span>
+                      {r.app_version && (
+                        <span className="text-[12px] px-1.5 py-0.5 rounded font-mono bg-[#2a2c32] text-white/55">{r.app_version}</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <p className="text-white/70 text-[14px] leading-relaxed line-clamp-3 mb-2">{r.content}</p>
-                {r.translation && (
-                  <p className="text-white/55 text-[13px] leading-relaxed line-clamp-2 border-t border-white/5 pt-2">{r.translation}</p>
-                )}
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-white/45 text-[12px]">{r.date}</span>
-                  {isSubmitted && <span className="text-emerald-400 text-[12px]">已回复</span>}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 回复输入 */}
-      <div className="border-t border-white/14 p-4">
-        {selectedReview && (
-          <div className="bg-white/8 rounded-lg px-3 py-2 mb-3 flex items-start justify-between gap-2">
-            <div>
-              <p className="text-white/70 text-[13px] mb-0.5">AI 回复建议 · {selectedReview.author} {selectedReview.country}</p>
-              <p className="text-white/60 text-[14px] leading-relaxed line-clamp-2">{selectedReview.aiReply}</p>
-            </div>
-            <button onClick={() => { setSelectedReview(null); setReplyInput(""); }} className="text-white/20 hover:text-white/65 transition-colors">
-              <X size={14} />
-            </button>
+                  <p className="text-white/70 text-[14px] leading-relaxed line-clamp-3 mb-1">{display.text}</p>
+                  {display.translated && <p className="text-white/25 text-[11px] mb-2">已自动翻译</p>}
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-white/45 text-[12px]">{r.author} · {fmtDate(r.review_date)}</span>
+                    {r.official_reply && <span className="text-white/35 text-[12px]">有官方回复</span>}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
-        <div className="flex gap-2">
-          <input type="text" value={replyInput} onChange={(e) => setReplyInput(e.target.value)}
-            placeholder={selectedReview ? "编辑回复内容..." : "点击评论卡片查看 AI 回复建议"}
-            className="flex-1 bg-[#1e2026] border border-white/14 rounded-lg px-3 py-2 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/30 transition-colors" />
-          <button onClick={handleSubmitReply} disabled={!selectedReview}
-            className="bg-[rgb(55,57,62)] hover:bg-[rgb(75,78,84)] disabled:opacity-25 disabled:cursor-not-allowed text-white text-[16px] px-4 rounded-lg transition-colors font-medium flex items-center gap-1.5">
-            <Send size={13} />
-            提交
-          </button>
-        </div>
+        {!loading && total > PAGE_SIZE && (
+          <div className="flex items-center justify-center gap-3 mt-4 text-[13px] text-white/55">
+            <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">上一页</button>
+            <span>第 {page} / {Math.ceil(total / PAGE_SIZE)} 页 · 共 {total} 条</span>
+            <button disabled={page >= Math.ceil(total / PAGE_SIZE)} onClick={() => setPage((p) => p + 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">下一页</button>
+          </div>
+        )}
+      </div>
+
+      {/* 回复详情 / AI 回复 */}
+      <div className="border-t border-white/14 p-4">
+        {selectedReview ? (
+          <div className="flex flex-col gap-2">
+            {selectedReview.official_reply && (
+              <div className="bg-white/5 rounded-lg px-3 py-2">
+                <p className="text-white/45 text-[12px] mb-0.5">WPS 官方曾这样回复（公开信息，模板化覆盖海量评论）</p>
+                <p className="text-white/55 text-[13px] leading-relaxed line-clamp-2">{selectedReview.official_reply}</p>
+              </div>
+            )}
+            <div className="bg-white/8 rounded-lg px-3 py-2">
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <p className="text-white/70 text-[13px]">呼声雷达 AI 针对这条的个性化回复建议</p>
+                <button onClick={() => setSelectedReview(null)} className="text-white/20 hover:text-white/65 transition-colors"><X size={14} /></button>
+              </div>
+              {aiReply ? (
+                <p className="text-white/85 text-[14px] leading-relaxed whitespace-pre-line">{aiReply}</p>
+              ) : (
+                <button onClick={handleGenerateAiReply} disabled={aiLoading}
+                  className="flex items-center gap-1.5 text-[13px] text-white/70 bg-white/10 hover:bg-white/15 disabled:opacity-50 px-3 py-1.5 rounded-lg transition-colors">
+                  {aiLoading && <Loader2 size={12} className="animate-spin" />}
+                  {aiLoading ? "生成中..." : "生成 AI 回复建议"}
+                </button>
+              )}
+              {aiError && <p className="text-red-400 text-[12px] mt-1.5">{aiError}</p>}
+            </div>
+          </div>
+        ) : (
+          <p className="text-white/25 text-[14px] px-1">点击左侧评论卡片，查看 AI 回复建议</p>
+        )}
       </div>
     </div>
   );
@@ -324,7 +509,6 @@ export default function DemoPage() {
         </Link>
       </div>
       <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1">
-        {/* 始终渲染 toggle 行，内容 fade */}
         <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between border-b border-white/14 flex-none">
           <button onClick={() => setLeftOpen(!leftOpen)}
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
@@ -334,88 +518,64 @@ export default function DemoPage() {
         </div>
         <div className={`flex-1 flex flex-col overflow-hidden transition-opacity duration-150 ${leftOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
           <div className="py-2 flex items-center justify-center gap-3">
-            <button onClick={() => setPlatform(platform === "appstore" ? "all" : "appstore")}
-              className={`p-2.5 rounded-xl transition-colors ${platform === "appstore" ? "bg-white/12" : "hover:bg-white/10"}`}>
-              <img src="/App_Store_(iOS).svg.png" alt="App Store" className={`w-7 h-7 transition-opacity ${platform === "appstore" ? "opacity-100" : "opacity-75"}`} />
+            <button onClick={() => setPlatform("googleplay")}
+              className={`p-2.5 rounded-xl transition-colors ${platform === "googleplay" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
+              <img src="/Google_Play_2022_icon.svg.png" alt="Google Play" className="w-7 h-7" />
             </button>
-            <button onClick={() => setPlatform(platform === "googleplay" ? "all" : "googleplay")}
-              className={`p-2.5 rounded-xl transition-colors ${platform === "googleplay" ? "bg-white/12" : "hover:bg-white/10"}`}>
-              <img src="/Google_Play_2022_icon.svg.png" alt="Google Play" className={`w-7 h-7 transition-opacity ${platform === "googleplay" ? "opacity-100" : "opacity-75"}`} />
+            <button onClick={() => setPlatform("appstore")} title="暂无数据"
+              className={`p-2.5 rounded-xl transition-colors relative ${platform === "appstore" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
+              <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7 opacity-40" />
             </button>
           </div>
           <div className="border-t border-white/10" />
-          <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-4 text-[14px]">
-            <div>
-              <p className="text-white/35 uppercase tracking-wider text-[12px] mb-1.5 px-1">地区</p>
-              {["北美", "欧洲", "东南亚", "日本", "韩国"].map((r) => (
-                <button key={r} className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg text-white/55 hover:text-white/70 hover:bg-white/10 transition-colors">
-                  <MapPin size={12} />
-                  <span>{r}</span>
+          <div className="py-2 px-3 flex items-center justify-center">
+            <span className="px-3 py-1 rounded-full text-[12px] font-mono bg-white/15 text-white/90">最近一周（实时抓取）</span>
+          </div>
+          <div className="border-t border-white/10" />
+          {platform === "googleplay" ? (
+            <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1 text-[14px]">
+              <p className="text-white/35 uppercase tracking-wider text-[12px] mb-1.5 px-1">地区/语言批次 · Google Play</p>
+              <button onClick={() => setLocale(undefined)}
+                className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${!locale ? "bg-white/12 text-white/80" : "text-white/55 hover:text-white/70 hover:bg-white/10"}`}>
+                <Languages size={12} /><span>全部 {stats ? `(${stats.total})` : ""}</span>
+              </button>
+              {stats && Object.entries(stats.localeCounts).sort((a, b) => b[1] - a[1]).map(([l, count]) => (
+                <button key={l} onClick={() => setLocale(l)}
+                  className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${locale === l ? "bg-white/12 text-white/80" : "text-white/55 hover:text-white/70 hover:bg-white/10"}`}>
+                  <Languages size={12} /><span>{localeLabel(l)} ({count})</span>
                 </button>
               ))}
             </div>
-          </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center px-3">
+              <p className="text-white/25 text-[12px] text-center leading-relaxed">App Store 这次没有抓取公开评论数据，暂不支持筛选</p>
+            </div>
+          )}
         </div>
       </GlassPanel>
     </div>
   );
 
-  // ── 右栏 ──
-  const RightPanel = (
-    <GlassPanel className={`flex-none flex flex-col overflow-hidden rounded-2xl transition-[width] duration-200 ease-in-out ${rightOpen ? "w-48" : "w-12"}`}>
-      {/* 始终渲染 header 行 */}
-      <div className="px-3 pt-3 pb-2.5 border-b border-white/14 flex items-center justify-between flex-none">
-        <span className={`text-white/55 text-[13px] uppercase tracking-wider whitespace-nowrap overflow-hidden transition-all duration-150 ${rightOpen ? "opacity-100 max-w-[100px]" : "opacity-0 max-w-0"}`}>功能</span>
-        <button onClick={() => setRightOpen(!rightOpen)}
-          className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
-          <PanelRight size={20} strokeWidth={1.5} />
-        </button>
-      </div>
-      <div className={`flex-1 overflow-y-auto p-2 flex flex-col gap-2 transition-opacity duration-150 ${rightOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-        <div className="bg-[#1e2026] rounded-xl p-1.5 flex flex-col gap-0.5">
-          {rightPanelItems.filter(i => i.key !== "reply").map((item) => (
+  // ── 中栏 ──
+  const CenterPanel = (
+    <GlassPanel className="flex-1 flex flex-col overflow-hidden rounded-2xl min-w-0">
+      <div className="px-3 py-2.5 border-b border-white/14 flex items-center justify-between flex-none gap-3">
+        <div className="flex items-center gap-1 overflow-x-auto">
+          {rightPanelItems.map((item) => (
             <button key={item.key} onClick={() => setActivePanel(item.key)}
-              className={`flex items-center gap-2.5 w-full text-left px-3 py-2.5 rounded-lg text-[14px] transition-colors ${
-                activePanel === item.key ? "bg-white/12 text-white/90" : "text-white/55 hover:text-white/70 hover:bg-white/10"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] whitespace-nowrap transition-colors ${
+                activePanel === item.key ? "bg-white/12 text-white/90" : "text-white/45 hover:text-white/70 hover:bg-white/8"
               }`}>
               {item.icon}
               <span className="font-medium">{item.label}</span>
             </button>
           ))}
         </div>
-        {rightPanelItems.filter(i => i.key === "reply").map((item) => (
-          <button key={item.key} onClick={() => setActivePanel(item.key)}
-            className={`flex items-center gap-2.5 w-full text-left px-3 py-2.5 rounded-xl text-[14px] transition-colors ${
-              activePanel === item.key ? "bg-white/12 text-white/90" : "text-white/55 hover:text-white/70 hover:bg-white/10"
-            }`}>
-            {item.icon}
-            <span className="font-medium">{item.label}</span>
-          </button>
-        ))}
-      </div>
-    </GlassPanel>
-  );
-
-  // ── 中栏 ──
-  const CenterPanel = (
-    <GlassPanel className="flex-1 flex flex-col overflow-hidden rounded-2xl min-w-0">
-      {/* 顶部标题栏 */}
-      <div className="px-5 py-3 border-b border-white/14 flex items-center justify-between flex-none">
-        <div className="flex items-center gap-2">
-          <span className="text-white/90 text-[16px] font-medium">
-            {rightPanelItems.find(i => i.key === activePanel)?.label}
-          </span>
-          {isReplyMode && (
-            <span className="text-[12px] text-white/60 border border-white/20 rounded-full px-2 py-0.5">回复模式</span>
-          )}
-        </div>
-        <span className="text-white/35 text-[14px]">{filteredReviews.length} 条评论</span>
+        <span className="text-white/35 text-[14px] flex-none">{stats ? `${stats.total} 条评论` : "加载中..."}</span>
       </div>
 
-      {/* 内容区 */}
       {isReplyMode ? ReplyResult : AnalyzeResult}
 
-      {/* Chat 输入（非回复模式） */}
       {!isReplyMode && (
         <div className="border-t border-white/14 p-4 flex-none">
           {chatMessages.length > 0 && (
@@ -428,6 +588,14 @@ export default function DemoPage() {
               ))}
             </div>
           )}
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {Object.keys(presetQAs).map((q) => (
+              <button key={q} onClick={() => { setChatInput(q); }}
+                className="text-[12px] px-2.5 py-1 rounded-full bg-white/8 hover:bg-white/14 text-white/55 transition-colors">
+                {q}
+              </button>
+            ))}
+          </div>
           <div className="flex gap-2">
             <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
@@ -447,22 +615,11 @@ export default function DemoPage() {
     <div className="h-screen flex flex-col font-[family-name:var(--font-geist)] overflow-hidden"
       style={{ background: "#0b0c0e" }}>
 
-      {/* Toast */}
-      {showToast && (
-        <div className="fixed top-4 right-4 z-50 bg-emerald-900/80 border border-emerald-500/30 text-emerald-300 text-[16px] px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2">
-          <span className="text-emerald-400">✓</span>
-          回复已提交
-        </div>
-      )}
-
-      {/* 桌面布局 */}
       <div className="hidden md:flex flex-1 overflow-hidden p-3 gap-3">
         {LeftPanel}
         {CenterPanel}
-        {RightPanel}
       </div>
 
-      {/* 手机布局 */}
       <div className="flex md:hidden flex-1 flex-col overflow-hidden">
         <div className="flex-1 overflow-hidden p-3">
           {mobileTab === "filter" && (
@@ -471,52 +628,39 @@ export default function DemoPage() {
               <div className="flex flex-col gap-5">
                 <div>
                   <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">平台</p>
-                  {(["all", "appstore", "googleplay"] as Platform[]).map((p) => (
+                  {(["googleplay", "appstore"] as Platform[]).map((p) => (
                     <button key={p} onClick={() => setPlatform(p)}
                       className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${platform === p ? "bg-white/12 text-white/90" : "text-white/65 hover:bg-white/10"}`}>
-                      {p === "all" ? "全部" : p === "appstore" ? "App Store" : "Google Play"}
+                      {p === "appstore" ? "App Store（暂无数据）" : "Google Play"}
                     </button>
                   ))}
                 </div>
-                <div>
-                  <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">地区</p>
-                  {["北美", "欧洲", "东南亚", "日本", "韩国"].map((r) => (
-                    <button key={r} className="flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] text-white/65 hover:bg-white/10 transition-colors">
-                      <MapPin size={13} />{r}
+                {platform === "googleplay" && stats && (
+                  <div>
+                    <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">地区/语言批次 · Google Play</p>
+                    <button onClick={() => setLocale(undefined)}
+                      className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${!locale ? "bg-white/12 text-white/90" : "text-white/65 hover:bg-white/10"}`}>
+                      <Languages size={13} />全部 ({stats.total})
                     </button>
-                  ))}
-                </div>
+                    {Object.entries(stats.localeCounts).sort((a, b) => b[1] - a[1]).map(([l, count]) => (
+                      <button key={l} onClick={() => setLocale(l)}
+                        className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${locale === l ? "bg-white/12 text-white/90" : "text-white/65 hover:bg-white/10"}`}>
+                        <Languages size={13} />{localeLabel(l)} ({count})
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </GlassPanel>
           )}
 
           {mobileTab === "analyze" && CenterPanel}
-
-          {mobileTab === "feature" && (
-            <GlassPanel className="h-full rounded-2xl overflow-y-auto p-3">
-              <p className="text-white/55 text-[14px] uppercase tracking-wider mb-3 px-1">功能</p>
-              <div className="flex flex-col gap-1">
-                {rightPanelItems.map((item) => (
-                  <button key={item.key}
-                    onClick={() => { setActivePanel(item.key); setMobileTab("analyze"); }}
-                    className={`flex items-center gap-3 w-full text-left px-4 py-3.5 rounded-xl text-[16px] transition-colors ${
-                      activePanel === item.key ? "bg-white/12 text-white/90" : "text-white/65 hover:bg-white/10"
-                    }`}>
-                    {item.icon}
-                    <span>{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </GlassPanel>
-          )}
         </div>
 
-        {/* 底部 Tab */}
         <div className="bg-[#181a1f] border-t border-white/10 flex">
           {([
             { key: "filter", label: "筛选", icon: <Layers size={18} /> },
             { key: "analyze", label: "分析", icon: <BarChart2 size={18} /> },
-            { key: "feature", label: "功能", icon: <ListTodo size={18} /> },
           ] as { key: MobileTab; label: string; icon: React.ReactNode }[]).map((tab) => (
             <button key={tab.key} onClick={() => setMobileTab(tab.key)}
               className={`flex-1 flex flex-col items-center py-3 gap-1 text-[13px] transition-colors ${mobileTab === tab.key ? "text-white/80" : "text-white/35"}`}>

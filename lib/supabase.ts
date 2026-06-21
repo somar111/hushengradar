@@ -1,0 +1,52 @@
+import { createClient } from "@supabase/supabase-js";
+
+// 只在服务端用（route handler / 脚本），用 service role key，绕过 RLS
+export function getServiceSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !key) {
+    throw new Error("Supabase 环境变量未配置（NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SECRET_KEY）");
+  }
+  return createClient(url, key);
+}
+
+export type AppRow = {
+  id: string;
+  platform: "google_play" | "app_store" | "steam";
+  external_id: string;
+  display_name: string;
+  context: string | null;
+  last_fetched_at: string | null;
+  created_at: string;
+};
+
+export type AiTag = { key: string; label: string };
+
+export type ReviewRow = {
+  id: string;
+  app_id: string;
+  source: string;
+  locale: string | null;
+  author: string | null;
+  rating: number | null;
+  review_date: string;
+  app_version: string | null;
+  content: string;
+  official_reply: string | null;
+  official_reply_date: string | null;
+  ai_tags: AiTag[];
+  ai_classified_at: string | null;
+  fetched_at: string;
+  detected_lang: string | null;
+  translated_zh: string | null;
+  translated_en: string | null;
+  translated_at: string | null;
+};
+
+export type TagSummaryRow = {
+  app_id: string;
+  tag_key: string;
+  summary: string;
+  sample_size: number;
+  generated_at: string;
+};
