@@ -12,7 +12,11 @@ import { type ReviewRow, type AppRow } from "@/lib/supabase";
 // ─── 类型 ────────────────────────────────────────────────────
 
 // locale 只是"用哪组 lang/country 参数抓到这条"，不代表真实评论语言，纯展示用
-const localeLabels: Record<string, string> = {
+//
+// 短称覆盖表：只收录想要更口语化短名的地区（"印尼"比"印度尼西亚"顺口，"沙特"比"沙特阿拉伯"顺口）。
+// 没收录的地区会自动 fallback 到 Intl.DisplayNames 生成，所以这张表是锦上添花的可选项，
+// 不是必需维护项——以后 apps.target_locales 里加任何新地区，名字都不会退化成裸 code。
+const localeLabelOverrides: Record<string, string> = {
   en_us: "英语 · 美国",
   id_id: "印尼语 · 印尼",
   es_mx: "西班牙语 · 墨西哥",
@@ -28,6 +32,15 @@ const localeLabels: Record<string, string> = {
   ja_jp: "日语 · 日本",
   ko_kr: "韩语 · 韩国",
 };
+
+let languageNames: Intl.DisplayNames | null = null;
+let regionNames: Intl.DisplayNames | null = null;
+try {
+  languageNames = new Intl.DisplayNames(["zh"], { type: "language" });
+  regionNames = new Intl.DisplayNames(["zh"], { type: "region" });
+} catch {
+  // 老浏览器没有 Intl.DisplayNames，fallback 失效时退化成裸 code，不影响功能
+}
 
 type Stats = {
   total: number;
@@ -105,7 +118,16 @@ function fmtDate(iso: string | null) {
 
 function localeLabel(locale: string | null) {
   if (!locale) return "未知";
-  return localeLabels[locale] || locale;
+  if (localeLabelOverrides[locale]) return localeLabelOverrides[locale];
+  const [lang, country] = locale.split("_");
+  if (languageNames && regionNames && lang && country) {
+    try {
+      return `${languageNames.of(lang)} · ${regionNames.of(country.toUpperCase())}`;
+    } catch {
+      // code 不被识别（比如自定义/小众组合），退化成裸 code
+    }
+  }
+  return locale;
 }
 
 // ─── 主组件 ─────────────────────────────────────────────────
