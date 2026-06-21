@@ -14,7 +14,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm ci
+      # 用 install 不用 ci：npm ci 对 optional peer dependency 的校验在不同 npm 版本间不一致，
+      # 本地 npm 生成的 lock 文件在 CI 的 npm 版本下会被判定"不同步"，install 会自动协调，不死板校验
+      - run: npm install
       - run: node scripts/cron-fetch.mjs
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
