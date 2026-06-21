@@ -353,15 +353,23 @@ export default function DemoPage() {
         </div>
       )}
 
-      {activePanel === "demands" && stats && (
-        <div>
-          <p className="text-white/65 text-[14px] mb-4">
-            真实数据画像：按 AI 分类命中量排序，"退钱"（billing）和"修 bug"是{timeRangeLabel}最大的诉求，"求加新功能"（feature_request）只占很小一部分：
-          </p>
-          <div className="flex flex-col gap-3">
-            {Object.entries(stats.tagCounts)
-              .sort((a, b) => b[1].count - a[1].count)
-              .map(([tag, t], i) => {
+      {activePanel === "demands" && stats && (() => {
+        // 不假定哪两个 tag 是最大诉求——"求加新功能"和"正面评价"排除在外，剩下按真实命中量取前二，
+        // 换一个 App（最大问题可能是广告或登录而不是扣费/bug）这段结论照样成立
+        const sorted = Object.entries(stats.tagCounts).sort((a, b) => b[1].count - a[1].count);
+        const topComplaints = sorted.filter(([tag]) => tag !== "praise" && tag !== "feature_request").slice(0, 2);
+        const topComplaintsLabel = topComplaints.map(([, t]) => t.label).join("和");
+        const topComplaintsCount = topComplaints.reduce((sum, [, t]) => sum + t.count, 0);
+        const topComplaintsPct = stats.total ? Math.round((topComplaintsCount / stats.total) * 100) : 0;
+        const featureReq = stats.tagCounts.feature_request;
+        const featureReqPct = stats.total ? Math.round(((featureReq?.count ?? 0) / stats.total) * 1000) / 10 : 0;
+        return (
+          <div>
+            <p className="text-white/65 text-[14px] mb-4">
+              真实数据画像：按 AI 分类命中量排序，{topComplaintsLabel ? `"${topComplaintsLabel}"是${timeRangeLabel}最大的诉求` : "暂无足够数据"}，"求加新功能"只占很小一部分：
+            </p>
+            <div className="flex flex-col gap-3">
+              {sorted.map(([tag, t], i) => {
                 const pct = (t.count / stats.total) * 100;
                 return (
                   <button key={tag} onClick={() => jumpToTag(tag)}
@@ -374,15 +382,18 @@ export default function DemoPage() {
                   </button>
                 );
               })}
+            </div>
+            {topComplaints.length > 0 && (
+              <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                <p className="text-emerald-400 text-[14px] font-medium mb-1">真实结论</p>
+                <p className="text-white/70 text-[14px] leading-relaxed">
+                  {topComplaintsLabel}合计占{timeRangeLabel}评论的 {topComplaintsPct}%，而求加新功能只有 {featureReq?.count ?? 0} 条（{featureReqPct}%）——先堵住{topComplaintsLabel}这类问题，比做新功能性价比更高。
+                </p>
+              </div>
+            )}
           </div>
-          <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-            <p className="text-emerald-400 text-[14px] font-medium mb-1">真实结论</p>
-            <p className="text-white/70 text-[14px] leading-relaxed">
-              扣费投诉（{stats.tagCounts.billing?.count ?? 0} 条）+ bug 反馈（{stats.tagCounts.bug?.count ?? 0} 条）合计占{timeRangeLabel}评论的 {Math.round((((stats.tagCounts.billing?.count ?? 0) + (stats.tagCounts.bug?.count ?? 0)) / stats.total) * 100)}%，而求加新功能只有 {stats.tagCounts.feature_request?.count ?? 0} 条（{Math.round(((stats.tagCounts.feature_request?.count ?? 0) / stats.total) * 1000) / 10}%）——先堵住扣费和 bug 这两个出血口，比做新功能性价比更高。
-            </p>
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 

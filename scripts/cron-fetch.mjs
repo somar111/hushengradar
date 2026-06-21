@@ -2,7 +2,7 @@
 // 通用脚本，不绑定任何具体 App；加新 App 只需要在 apps 表插一行，这个脚本自动覆盖到它。
 import { createClient } from "@supabase/supabase-js";
 import gplayPkg from "google-play-scraper";
-import { BASELINE_CATEGORIES, buildClassifyPrompt, buildSummaryPrompt, sanitizeTagKey } from "../lib/promptKit.mjs";
+import { BASELINE_CATEGORIES, buildClassifyPrompt, buildSummaryPrompt, buildTranslatePrompt, sanitizeTagKey } from "../lib/promptKit.mjs";
 
 const BASELINE_KEYS = new Set(BASELINE_CATEGORIES.map((c) => c.key));
 
@@ -21,11 +21,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const DEFAULT_LOOKBACK_DAYS = 30; // 某个 locale 还没有水位线时（新 App 或新加的 locale），往回抓多久
 
-// 注意：这份列表是早期探索时随手试的几个语言/地区组合，不是按任何 App 的真实用户分布定的，
-// 后来直接沿用进了通用脚本。2026-06-21 实测发现法语/德语/俄语/越南语/泰语/土耳其语市场对 WPS
-// 也有大量评论但完全没覆盖到，所以扩充了这份默认列表。长期来看这应该做成 apps 表的per-App配置
-// （比如 apps.target_locales），而不是所有 App 共用同一份硬编码列表——不同 App 的真实活跃市场不一样。
-const LOCALES = [
+// 没在 apps.target_locales 配置过语言/地区列表的 App，用这份兜底（2026-06-21 探索阶段试出来的组合，
+// 不代表任何特定市场分布）。每个 App 真实活跃市场不一样，新 App 接入时应该在 apps 表里配自己的
+// target_locales，不要依赖这份全局默认值。
+const FALLBACK_LOCALES = [
   ["en", "us"], ["id", "id"], ["es", "mx"], ["ar", "sa"], ["pt", "br"], ["hi", "in"],
   ["fr", "fr"], ["de", "de"], ["ru", "ru"], ["vi", "vn"], ["th", "th"], ["tr", "tr"],
   ["ja", "jp"], ["ko", "kr"],
@@ -88,14 +87,7 @@ async function classifyReview(content, rating, appContext, existingCustomTags = 
 }
 
 async function detectAndTranslate(content) {
-  const systemPrompt = [
-    "你是翻译助手。给你一条应用商店评论原文，请：",
-    "1. 识别它真实使用的语言，输出 ISO 639-1 两位代码（如 en/zh/id/es/ar/pt/hi）。",
-    "2. 如果原文不是中文，把它翻译成简体中文；如果原文已经是中文，translated_zh 填 null。",
-    "3. 如果原文不是英文，把它翻译成英文；如果原文已经是英文，translated_en 填 null。",
-    "翻译要忠实原意，不要润色、不要补充原文没有的内容。",
-    '只输出 JSON：{"detected_lang": "...", "translated_zh": "..."或null, "translated_en": "..."或null}，不要输出其他文字。',
-  ].join("\n");
+  const systemPrompt = buildTranslatePrompt();
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_API_KEY}` },
@@ -176,8 +168,9 @@ async function processApp(app) {
   const newWatermarks = {};
 
   // 1. 多语言批次抓增量，每个 locale 用各自的水位线
+  const locales = app.target_locales?.length ? app.target_locales : FALLBACK_LOCALES;
   let fetched = [];
-  for (const [lang, country] of LOCALES) {
+  for (const [lang, country] of locales) {
     const localeKey = `${lang}_${country}`;
     const since = watermarks[localeKey]
       ? new Date(watermarks[localeKey])

@@ -18,6 +18,8 @@ export type AppRow = {
   context: string | null;
   last_fetched_at: string | null;
   locale_watermarks: Record<string, string>;
+  // 该 App 要抓取的语言/地区批次，[lang, country] 数组；为空则 cron-fetch.mjs 用内置默认列表兜底
+  target_locales: [string, string][] | null;
   created_at: string;
 };
 
