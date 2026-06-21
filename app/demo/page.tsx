@@ -7,7 +7,7 @@ import {
   TrendingDown, GitCompare, ListTodo, Reply,
   Send, X, BarChart2, PanelLeft, Search, Loader2, Settings,
 } from "lucide-react";
-import { type ReviewRow } from "@/lib/supabase";
+import { type ReviewRow, type AppRow } from "@/lib/supabase";
 
 // ─── 类型 ────────────────────────────────────────────────────
 
@@ -44,6 +44,7 @@ type MobileTab = "filter" | "analyze";
 type Platform = "googleplay" | "appstore";
 type TargetLang = "zh" | "en";
 type TranslateScope = "non_target" | "non_zh_en";
+type TimeRange = "week" | "month";
 
 type TranslateSettings = {
   enabled: boolean;
@@ -113,6 +114,9 @@ export default function DemoPage() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [activePanel, setActivePanel] = useState<RightPanel>("complaints");
   const [platform, setPlatform] = useState<Platform>("googleplay");
+  const [apps, setApps] = useState<AppRow[]>([]);
+  const [selectedAppId, setSelectedAppId] = useState<string | undefined>(undefined);
+  const [timeRange, setTimeRange] = useState<TimeRange>("week");
   const [locale, setLocale] = useState<string | undefined>(undefined);
   const [tagFilter, setTagFilter] = useState<string | undefined>(undefined);
   const [searchInput, setSearchInput] = useState("");
@@ -142,17 +146,40 @@ export default function DemoPage() {
 
   const isReplyMode = activePanel === "reply";
 
+  const since = useMemo(() => {
+    const days = timeRange === "week" ? 7 : 30;
+    return new Date(Date.now() - days * 86400000).toISOString();
+  }, [timeRange]);
+  const timeRangeLabel = timeRange === "week" ? "最近一周" : "最近一月";
+  const selectedApp = apps.find((a) => a.id === selectedAppId);
+  const appName = selectedApp?.display_name ?? "App";
+
+  // 拉 App 列表，默认选第一个
+  useEffect(() => {
+    fetch("/api/demo/apps").then((r) => r.json()).then((data) => {
+      setApps(data.apps);
+      if (data.apps.length && !selectedAppId) setSelectedAppId(data.apps[0].id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 拉统计数据
   useEffect(() => {
+    if (!selectedAppId) return;
     const params = new URLSearchParams();
+    params.set("appId", selectedAppId);
+    params.set("since", since);
     if (locale) params.set("locale", locale);
     fetch(`/api/demo/stats?${params}`).then((r) => r.json()).then(setStats);
-  }, [locale]);
+  }, [selectedAppId, locale, since]);
 
   // 拉评论列表（筛选/翻页变化时）
   useEffect(() => {
+    if (!selectedAppId) return;
     setLoading(true);
     const params = new URLSearchParams();
+    params.set("appId", selectedAppId);
+    params.set("since", since);
     if (locale) params.set("locale", locale);
     if (tagFilter) params.set("tag", tagFilter);
     if (search) params.set("q", search);
@@ -165,10 +192,10 @@ export default function DemoPage() {
         setTotal(data.total);
       })
       .finally(() => setLoading(false));
-  }, [locale, tagFilter, search, page]);
+  }, [selectedAppId, locale, tagFilter, search, page, since]);
 
   // 切筛选条件时回到第一页
-  useEffect(() => { setPage(1); }, [locale, tagFilter, search]);
+  useEffect(() => { setPage(1); }, [selectedAppId, locale, tagFilter, search, since]);
 
   // 预设问答（基于真实统计生成，统计加载完才有内容）
   const presetQAs = useMemo(() => {
@@ -177,18 +204,18 @@ export default function DemoPage() {
     const worstVersion = [...stats.versionStats].filter((v) => v.count >= 5).sort((a, b) => a.avgRating - b.avgRating)[0];
     const topTagLine = topTags.slice(0, 3).map(([, t], i) => `${i + 1}. **${t.label}**：${t.count} 条`).join("\n");
     return {
-      "最近一周用户主要在反馈什么问题？": topTagLine || "暂无数据",
+      [`${timeRangeLabel}用户主要在反馈什么问题？`]: topTagLine || "暂无数据",
       "哪个版本评价最差？": worstVersion
         ? `版本 ${worstVersion.version}：均分 ${worstVersion.avgRating} ★（${worstVersion.count} 条评论）`
         : "样本里版本评论数太少，暂无法判断",
-      "官方回复率怎么样？": `过去一周 ${stats.total} 条评论中，${stats.officialReplyRate}% 收到了 WPS 官方回复。`,
+      "官方回复率怎么样？": `${timeRangeLabel} ${stats.total} 条评论中，${stats.officialReplyRate}% 收到了 ${appName} 官方回复。`,
     } as Record<string, string>;
-  }, [stats]);
+  }, [stats, timeRangeLabel, appName]);
 
   function handleSendChat() {
     const q = chatInput.trim();
     if (!q) return;
-    const a = presetQAs[q] ?? "这是基于过去一周公开评论抽样的真实统计 Demo，目前只能回答左侧预设问题；接入真实账号后可以追问任意问题。";
+    const a = presetQAs[q] ?? `这是基于${timeRangeLabel}公开评论抽样的真实统计 Demo，目前只能回答左侧预设问题；接入真实账号后可以追问任意问题。`;
     setChatMessages((prev) => [...prev, { q, a }]);
     setChatInput("");
   }
@@ -213,6 +240,7 @@ export default function DemoPage() {
           tags: selectedReview.ai_tags,
           author: selectedReview.author,
           officialReply: selectedReview.official_reply,
+          appId: selectedAppId,
         }),
       });
       const data = await res.json();
@@ -255,7 +283,7 @@ export default function DemoPage() {
       {activePanel === "complaints" && stats && (
         <div>
           <p className="text-white/65 text-[14px] mb-4">
-            过去一周（{fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)}）共 {stats.total} 条公开评论，AI 按问题类型聚类（点击查看该类全部真实评论）：
+            {timeRangeLabel}（{fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)}）共 {stats.total} 条公开评论，AI 按问题类型聚类（点击查看该类全部真实评论）：
           </p>
           <div className="flex flex-col gap-3">
             {Object.entries(stats.tagCounts)
@@ -280,7 +308,7 @@ export default function DemoPage() {
               })}
           </div>
           <p className="text-white/25 text-[12px] mt-4 leading-relaxed">
-            数据来源：Google Play 公开评论抽样（非 WPS 官方授权接入），DeepSeek 真实分类，共 {totalTagCount} 次标签命中（一条评论可能命中多个类型）。
+            数据来源：Google Play 公开评论抽样（非 {appName} 官方授权接入），DeepSeek 真实分类，共 {totalTagCount} 次标签命中（一条评论可能命中多个类型）。
           </p>
         </div>
       )}
@@ -289,10 +317,10 @@ export default function DemoPage() {
         <div>
           <div className="flex items-baseline gap-3 mb-1">
             <span className="text-[42px] font-bold text-white">{avgRating}</span>
-            <span className="text-white/55 text-[16px]">过去一周平均分</span>
+            <span className="text-white/55 text-[16px]">{timeRangeLabel}平均分</span>
           </div>
           <p className="text-white/45 text-[14px] mb-5">
-            WPS Office · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按版本号统计（仅统计评论里带版本号的 {stats.versionStats.reduce((s, v) => s + v.count, 0)} 条）
+            {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按版本号统计（仅统计评论里带版本号的 {stats.versionStats.reduce((s, v) => s + v.count, 0)} 条）
           </p>
           <div className="flex items-end gap-2 h-[200px] px-1 border-b border-white/10 relative">
             {avgRating && (
@@ -326,7 +354,7 @@ export default function DemoPage() {
       {activePanel === "demands" && stats && (
         <div>
           <p className="text-white/65 text-[14px] mb-4">
-            真实数据画像：按 AI 分类命中量排序，"退钱"（billing）和"修 bug"是这一周最大的诉求，"求加新功能"（feature_request）只占很小一部分：
+            真实数据画像：按 AI 分类命中量排序，"退钱"（billing）和"修 bug"是{timeRangeLabel}最大的诉求，"求加新功能"（feature_request）只占很小一部分：
           </p>
           <div className="flex flex-col gap-3">
             {Object.entries(stats.tagCounts)
@@ -348,7 +376,7 @@ export default function DemoPage() {
           <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
             <p className="text-emerald-400 text-[14px] font-medium mb-1">真实结论</p>
             <p className="text-white/70 text-[14px] leading-relaxed">
-              扣费投诉（{stats.tagCounts.billing?.count ?? 0} 条）+ bug 反馈（{stats.tagCounts.bug?.count ?? 0} 条）合计占这周评论的 {Math.round((((stats.tagCounts.billing?.count ?? 0) + (stats.tagCounts.bug?.count ?? 0)) / stats.total) * 100)}%，而求加新功能只有 {stats.tagCounts.feature_request?.count ?? 0} 条（{Math.round(((stats.tagCounts.feature_request?.count ?? 0) / stats.total) * 1000) / 10}%）——先堵住扣费和 bug 这两个出血口，比做新功能性价比更高。
+              扣费投诉（{stats.tagCounts.billing?.count ?? 0} 条）+ bug 反馈（{stats.tagCounts.bug?.count ?? 0} 条）合计占{timeRangeLabel}评论的 {Math.round((((stats.tagCounts.billing?.count ?? 0) + (stats.tagCounts.bug?.count ?? 0)) / stats.total) * 100)}%，而求加新功能只有 {stats.tagCounts.feature_request?.count ?? 0} 条（{Math.round(((stats.tagCounts.feature_request?.count ?? 0) / stats.total) * 1000) / 10}%）——先堵住扣费和 bug 这两个出血口，比做新功能性价比更高。
             </p>
           </div>
         </div>
@@ -479,7 +507,7 @@ export default function DemoPage() {
           <div className="flex flex-col gap-2">
             {selectedReview.official_reply && (
               <div className="bg-white/5 rounded-lg px-3 py-2">
-                <p className="text-white/45 text-[12px] mb-0.5">WPS 官方曾这样回复（公开信息，模板化覆盖海量评论）</p>
+                <p className="text-white/45 text-[12px] mb-0.5">{appName} 官方曾这样回复（公开信息，模板化覆盖海量评论）</p>
                 <p className="text-white/55 text-[13px] leading-relaxed line-clamp-2">{selectedReview.official_reply}</p>
               </div>
             )}
@@ -537,8 +565,22 @@ export default function DemoPage() {
             </button>
           </div>
           <div className="border-t border-white/10" />
-          <div className="py-2 px-3 flex items-center justify-center">
-            <span className="px-3 py-1 rounded-full text-[12px] font-mono bg-white/15 text-white/90">最近一周（实时抓取）</span>
+          <div className="py-2 px-3">
+            <select value={selectedAppId ?? ""} onChange={(e) => setSelectedAppId(e.target.value)}
+              className="w-full bg-white/8 hover:bg-white/12 transition-colors rounded-lg px-2.5 py-1.5 text-[13px] text-white/85 outline-none cursor-pointer">
+              {apps.map((a) => (
+                <option key={a.id} value={a.id} className="bg-[#1e2026]">{a.display_name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="border-t border-white/10" />
+          <div className="py-2 px-3 flex items-center justify-center gap-1.5">
+            {(["week", "month"] as TimeRange[]).map((t) => (
+              <button key={t} onClick={() => setTimeRange(t)}
+                className={`px-3 py-1 rounded-full text-[12px] font-mono transition-colors ${timeRange === t ? "bg-white/15 text-white/90" : "text-white/45 hover:text-white/70 hover:bg-white/8"}`}>
+                {t === "week" ? "最近一周" : "最近一月"}
+              </button>
+            ))}
           </div>
           <div className="border-t border-white/10" />
           {platform === "googleplay" ? (
@@ -635,6 +677,26 @@ export default function DemoPage() {
             <GlassPanel className="h-full rounded-2xl overflow-y-auto p-4">
               <p className="text-white/55 text-[14px] uppercase tracking-wider mb-4">筛选条件</p>
               <div className="flex flex-col gap-5">
+                <div>
+                  <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">App</p>
+                  <select value={selectedAppId ?? ""} onChange={(e) => setSelectedAppId(e.target.value)}
+                    className="w-full bg-white/8 rounded-lg px-3 py-2 text-[16px] text-white/85 outline-none">
+                    {apps.map((a) => (
+                      <option key={a.id} value={a.id} className="bg-[#1e2026]">{a.display_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">时间范围</p>
+                  <div className="flex gap-2">
+                    {(["week", "month"] as TimeRange[]).map((t) => (
+                      <button key={t} onClick={() => setTimeRange(t)}
+                        className={`px-3 py-1.5 rounded-full text-[14px] font-mono transition-colors ${timeRange === t ? "bg-white/15 text-white/90" : "text-white/55 hover:bg-white/10"}`}>
+                        {t === "week" ? "最近一周" : "最近一月"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div>
                   <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">平台</p>
                   {(["googleplay", "appstore"] as Platform[]).map((p) => (

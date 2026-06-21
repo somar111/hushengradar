@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { generateReplySuggestion } from "@/lib/classify";
-import { getDefaultApp } from "@/lib/reviews";
+import { getApp, getDefaultApp } from "@/lib/reviews";
 
 export async function POST(request: NextRequest) {
   if (!process.env.DEEPSEEK_API_KEY) {
@@ -10,8 +10,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { content, rating, tags, author, officialReply } = await request.json();
-  const app = await getDefaultApp();
+  const { content, rating, tags, author, officialReply, appId } = await request.json();
+  const app = appId ? await getApp(appId) : await getDefaultApp();
 
   try {
     const reply = await generateReplySuggestion({

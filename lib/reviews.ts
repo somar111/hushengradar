@@ -1,5 +1,12 @@
 import { getServiceSupabase, type ReviewRow, type AppRow } from "./supabase";
 
+export async function listApps(): Promise<AppRow[]> {
+  const supabase = getServiceSupabase();
+  const { data, error } = await supabase.from("apps").select("*").order("created_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function getDefaultApp(): Promise<AppRow> {
   const supabase = getServiceSupabase();
   const { data, error } = await supabase
@@ -12,12 +19,20 @@ export async function getDefaultApp(): Promise<AppRow> {
   return data;
 }
 
+export async function getApp(appId: string): Promise<AppRow> {
+  const supabase = getServiceSupabase();
+  const { data, error } = await supabase.from("apps").select("*").eq("id", appId).single();
+  if (error) throw error;
+  return data;
+}
+
 export async function queryReviews(opts: {
   appId: string;
   tag?: string;
   locale?: string;
   rating?: number;
   q?: string;
+  since?: string;
   page: number;
   pageSize: number;
 }): Promise<{ items: ReviewRow[]; total: number }> {
@@ -31,6 +46,7 @@ export async function queryReviews(opts: {
   if (opts.locale) query = query.eq("locale", opts.locale);
   if (opts.rating) query = query.eq("rating", opts.rating);
   if (opts.q) query = query.or(`content.ilike.%${opts.q}%,author.ilike.%${opts.q}%`);
+  if (opts.since) query = query.gte("review_date", opts.since);
 
   const from = (opts.page - 1) * opts.pageSize;
   const { data, error, count } = await query
@@ -42,7 +58,7 @@ export async function queryReviews(opts: {
 }
 
 // 拉全量字段做统计用，超过单次 1000 条上限就分页拉完（按当前体量够用，不做过度设计）
-async function fetchAllForStats(appId: string, locale?: string) {
+async function fetchAllForStats(appId: string, locale?: string, since?: string) {
   const supabase = getServiceSupabase();
   const all: ReviewRow[] = [];
   let from = 0;
@@ -53,6 +69,7 @@ async function fetchAllForStats(appId: string, locale?: string) {
       .select("rating, locale, ai_tags, app_version, official_reply, review_date")
       .eq("app_id", appId);
     if (locale) query = query.eq("locale", locale);
+    if (since) query = query.gte("review_date", since);
     const { data, error } = await query.range(from, from + pageSize - 1);
     if (error) throw error;
     all.push(...((data ?? []) as ReviewRow[]));
@@ -62,10 +79,10 @@ async function fetchAllForStats(appId: string, locale?: string) {
   return all;
 }
 
-export async function computeStats(appId: string, locale?: string) {
+export async function computeStats(appId: string, locale?: string, since?: string) {
   const supabase = getServiceSupabase();
 
-  // localeCounts 始终基于该 App 全量计算，方便侧边栏任何时候都能显示各批次真实条数
+  // localeCounts 始终基于该 App 全量计算（不受 since 影响），方便侧边栏任何时候都能显示各批次真实条数
   const { data: localeRows, error: localeErr } = await supabase
     .from("reviews")
     .select("locale")
@@ -77,7 +94,7 @@ export async function computeStats(appId: string, locale?: string) {
     localeCounts[l] = (localeCounts[l] || 0) + 1;
   }
 
-  // 摘要是按全量样本生成的，不分 locale（避免每个 locale 都单独算一份摘要），筛了 locale 也复用同一份
+  // 摘要是按全量样本生成的，不分 locale/时间范围（避免每种筛选组合都单独算一份摘要），筛了照样复用同一份
   const { data: summaryRows, error: summaryErr } = await supabase
     .from("tag_summaries")
     .select("tag_key, summary")
@@ -86,7 +103,7 @@ export async function computeStats(appId: string, locale?: string) {
   const summaryMap: Record<string, string> = {};
   for (const s of summaryRows ?? []) summaryMap[s.tag_key] = s.summary;
 
-  const scoped = await fetchAllForStats(appId, locale);
+  const scoped = await fetchAllForStats(appId, locale, since);
   const total = scoped.length;
   const ratingDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   const tagCounts: Record<string, { label: string; count: number; summary: string | null }> = {};
