@@ -332,7 +332,7 @@ export default function DemoPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-white/45 text-[14px] font-mono">#{i + 1}</span>
-                        <span className="text-white/90 text-[16px] font-medium">{t.label}</span>
+                        <span className="text-white/95 text-[17px] font-semibold">{t.label}</span>
                       </div>
                       <p className="text-white/55 text-[13px] leading-relaxed">
                         {t.count} 条评论{t.summary ? t.summary : "，点击查看全部真实评论 →"}
@@ -409,7 +409,7 @@ export default function DemoPage() {
                     className="text-left bg-[#1e2026] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
                     <DonutPercent percent={pct} color="#10b981" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-white/90 text-[16px] font-medium">#{i + 1} {t.label}</span>
+                      <span className="text-white/95 text-[17px] font-semibold">#{i + 1} {t.label}</span>
                       <p className="text-white/55 text-[13px] leading-relaxed">{t.count} 条评论{t.summary ?? ""}</p>
                     </div>
                   </button>
@@ -418,7 +418,7 @@ export default function DemoPage() {
             </div>
             {topComplaints.length > 0 && (
               <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                <p className="text-emerald-400 text-[14px] font-medium mb-1">真实结论</p>
+                <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
                 <p className="text-white/70 text-[14px] leading-relaxed">
                   {topComplaintsLabel}合计占{timeRangeLabel}评论的 {topComplaintsPct}%，而求加新功能只有 {featureReq?.count ?? 0} 条（{featureReqPct}%）——先堵住{topComplaintsLabel}这类问题，比做新功能性价比更高。
                 </p>
@@ -450,7 +450,7 @@ export default function DemoPage() {
           <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput.trim())}
             placeholder="搜索评论内容/作者..."
-            className="w-full bg-[#1e2026] border border-white/14 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/25 outline-none focus:border-white/30" />
+            className="w-full bg-[#1e2026] border border-white/20 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/25 outline-none focus:border-white/40" />
         </div>
         {tagFilter && (
           <button onClick={() => setTagFilter(undefined)}
@@ -472,7 +472,7 @@ export default function DemoPage() {
             <Settings size={12} />翻译
           </button>
           {showTranslateSettings && (
-            <div className="absolute right-0 top-full mt-1.5 z-10 w-56 bg-[#1e2026] border border-white/14 rounded-xl p-3 shadow-xl flex flex-col gap-3">
+            <div className="absolute right-0 top-full mt-1.5 z-10 w-56 bg-[#1e2026] border border-white/20 rounded-xl p-3 shadow-xl flex flex-col gap-3">
               <label className="flex items-center justify-between text-[13px] text-white/80">
                 启用翻译
                 <input type="checkbox" checked={translateSettings.enabled}
@@ -524,9 +524,9 @@ export default function DemoPage() {
                   <div className="flex items-center justify-between mb-2">
                     <Stars rating={r.rating ?? 0} />
                     <div className="flex items-center gap-1.5">
-                      <span className="text-white/45 text-[12px]">{localeLabel(r.locale)}</span>
+                      <span className="text-white/45 text-[11px]">{localeLabel(r.locale)}</span>
                       {r.app_version && (
-                        <span className="text-[12px] px-1.5 py-0.5 rounded font-mono bg-[#2a2c32] text-white/55">{r.app_version}</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded font-mono bg-[#2a2c32] text-white/55">{r.app_version}</span>
                       )}
                     </div>
                   </div>
@@ -539,8 +539,8 @@ export default function DemoPage() {
                   )}
                   {display.translated && <p className="text-white/25 text-[11px] mb-2">已自动翻译</p>}
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-white/45 text-[12px]">{r.author} · {fmtDate(r.review_date)}</span>
-                    {r.official_reply && <span className="text-white/35 text-[12px]">有官方回复</span>}
+                    <span className="text-white/45 text-[11px]">{r.author} · {fmtDate(r.review_date)}</span>
+                    {r.official_reply && <span className="text-white/35 text-[11px]">有官方回复</span>}
                   </div>
                 </button>
               );
@@ -557,7 +557,7 @@ export default function DemoPage() {
       </div>
 
       {/* 回复详情 / AI 回复 */}
-      <div className="border-t border-white/14 p-4">
+      <div className="bg-black/15 p-4">
         {selectedReview ? (
           <div className="flex flex-col gap-2">
             {(() => {
@@ -581,13 +581,13 @@ export default function DemoPage() {
             })()}
             {selectedReview.official_reply && (
               <div className="bg-white/5 rounded-lg px-3 py-2">
-                <p className="text-white/45 text-[12px] mb-0.5">{appName} 官方曾这样回复（公开信息，模板化覆盖海量评论）</p>
+                <p className="text-white/50 text-[12px] font-medium mb-0.5">{appName} 官方曾这样回复（公开信息，模板化覆盖海量评论）</p>
                 <p className="text-white/55 text-[13px] leading-relaxed line-clamp-2">{selectedReview.official_reply}</p>
               </div>
             )}
             <div className="bg-white/8 rounded-lg px-3 py-2">
               <div className="flex items-start justify-between gap-2 mb-1">
-                <p className="text-white/70 text-[13px]">呼声雷达 AI 针对这条的个性化回复建议</p>
+                <p className="text-white/70 text-[13px] font-medium">呼声雷达 AI 针对这条的个性化回复建议</p>
                 <button onClick={() => setSelectedReview(null)} className="text-white/20 hover:text-white/65 transition-colors"><X size={14} /></button>
               </div>
               {aiReply ? (
@@ -620,12 +620,12 @@ export default function DemoPage() {
         </Link>
       </div>
       <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1">
-        <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between border-b border-white/14 flex-none">
+        <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between bg-black/15 flex-none">
           <button onClick={() => setLeftOpen(!leftOpen)}
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
             <PanelLeft size={20} strokeWidth={1.5} />
           </button>
-          <span className={`text-white/65 text-[13px] font-medium transition-opacity duration-150 ${leftOpen ? "opacity-100" : "opacity-0"}`}>筛选</span>
+          <span className={`text-white/70 text-[13px] font-semibold transition-opacity duration-150 ${leftOpen ? "opacity-100" : "opacity-0"}`}>筛选</span>
         </div>
         <div className={`flex-1 flex flex-col overflow-hidden transition-opacity duration-150 ${leftOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
           <div className="py-2 flex items-center justify-center gap-3">
@@ -638,7 +638,6 @@ export default function DemoPage() {
               <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7 opacity-40" />
             </button>
           </div>
-          <div className="border-t border-white/10" />
           <div className="py-2 px-3">
             <select value={selectedAppId ?? ""} onChange={(e) => setSelectedAppId(e.target.value)}
               className="w-full bg-white/8 hover:bg-white/12 transition-colors rounded-lg px-2.5 py-1.5 text-[13px] text-white/85 outline-none cursor-pointer">
@@ -647,7 +646,6 @@ export default function DemoPage() {
               ))}
             </select>
           </div>
-          <div className="border-t border-white/10" />
           <div className="py-2 px-3 flex items-center justify-center gap-1.5">
             {(["week", "month"] as TimeRange[]).map((t) => (
               <button key={t} onClick={() => setTimeRange(t)}
@@ -656,7 +654,6 @@ export default function DemoPage() {
               </button>
             ))}
           </div>
-          <div className="border-t border-white/10" />
           {platform === "googleplay" ? (
             <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1 text-[14px]">
               <p className="text-white/35 uppercase tracking-wider text-[12px] mb-1.5 px-1">地区/语言批次 · Google Play</p>
@@ -684,7 +681,7 @@ export default function DemoPage() {
   // ── 中栏 ──
   const CenterPanel = (
     <GlassPanel className="flex-1 flex flex-col overflow-hidden rounded-2xl min-w-0">
-      <div className="px-3 py-2.5 border-b border-white/14 flex items-center justify-between flex-none gap-3">
+      <div className="px-3 py-2.5 bg-black/15 flex items-center justify-between flex-none gap-3">
         <div className="flex items-center gap-1 overflow-x-auto">
           {rightPanelItems.map((item) => (
             <button key={item.key} onClick={() => setActivePanel(item.key)}
@@ -692,17 +689,17 @@ export default function DemoPage() {
                 activePanel === item.key ? "bg-white/12 text-white/90" : "text-white/45 hover:text-white/70 hover:bg-white/8"
               }`}>
               {item.icon}
-              <span className="font-medium">{item.label}</span>
+              <span className={activePanel === item.key ? "font-semibold" : "font-medium"}>{item.label}</span>
             </button>
           ))}
         </div>
-        <span className="text-white/35 text-[14px] flex-none">{stats ? `${stats.total} 条评论` : "加载中..."}</span>
+        <span className="text-white/35 text-[13px] flex-none">{stats ? `${stats.total} 条评论` : "加载中..."}</span>
       </div>
 
       {isReplyMode ? ReplyResult : AnalyzeResult}
 
       {!isReplyMode && (
-        <div className="border-t border-white/14 p-4 flex-none">
+        <div className="bg-black/15 p-4 flex-none">
           {chatMessages.length > 0 && (
             <div className="mb-3 max-h-36 overflow-y-auto flex flex-col gap-2">
               {chatMessages.map((m, i) => (
@@ -725,7 +722,7 @@ export default function DemoPage() {
             <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
               placeholder="问我关于这款 App 的任何问题..."
-              className="flex-1 bg-[#1e2026] border border-white/14 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/30 transition-colors" />
+              className="flex-1 bg-[#1e2026] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors" />
             <button onClick={handleSendChat}
               className="bg-[rgb(55,57,62)] hover:bg-[rgb(75,78,84)] text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-[16px] font-medium">
               <Send size={13} />
@@ -802,7 +799,7 @@ export default function DemoPage() {
           {mobileTab === "analyze" && CenterPanel}
         </div>
 
-        <div className="bg-[#181a1f] border-t border-white/10 flex">
+        <div className="bg-[#181a1f] flex">
           {([
             { key: "filter", label: "筛选", icon: <Layers size={18} /> },
             { key: "analyze", label: "分析", icon: <BarChart2 size={18} /> },
