@@ -57,40 +57,46 @@ export async function queryReviews(opts: {
   return { items: data ?? [], total: count ?? 0 };
 }
 
-// 拉全量字段做统计用，超过单次 1000 条上限就分页拉完（按当前体量够用，不做过度设计）
-async function fetchAllForStats(appId: string, locale?: string, since?: string) {
-  const supabase = getServiceSupabase();
-  const all: ReviewRow[] = [];
+// Supabase/PostgREST 单次查询默认最多返回 1000 行，不分页会悄悄截断（这个项目已经在
+// cron-fetch.mjs 里踩过一次这个坑，这里是同一类查询的另一处，必须统一走这个分页 helper）。
+type SupabaseQuery<T> = { range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }> };
+async function fetchAllRows<T>(query: SupabaseQuery<T>, pageSize = 1000): Promise<T[]> {
+  const all: T[] = [];
   let from = 0;
-  const pageSize = 1000;
   while (true) {
-    let query = supabase
-      .from("reviews")
-      .select("rating, locale, ai_tags, app_version, official_reply, review_date")
-      .eq("app_id", appId);
-    if (locale) query = query.eq("locale", locale);
-    if (since) query = query.gte("review_date", since);
     const { data, error } = await query.range(from, from + pageSize - 1);
     if (error) throw error;
-    all.push(...((data ?? []) as ReviewRow[]));
+    all.push(...(data ?? []));
     if (!data || data.length < pageSize) break;
     from += pageSize;
   }
   return all;
 }
 
+type StatsFields = Pick<ReviewRow, "rating" | "locale" | "ai_tags" | "app_version" | "official_reply" | "review_date">;
+
+// 拉全量字段做统计用
+async function fetchAllForStats(appId: string, locale?: string, since?: string) {
+  const supabase = getServiceSupabase();
+  let query = supabase
+    .from("reviews")
+    .select("rating, locale, ai_tags, app_version, official_reply, review_date")
+    .eq("app_id", appId);
+  if (locale) query = query.eq("locale", locale);
+  if (since) query = query.gte("review_date", since);
+  return fetchAllRows<StatsFields>(query);
+}
+
 export async function computeStats(appId: string, locale?: string, since?: string) {
   const supabase = getServiceSupabase();
 
   // localeCounts 始终基于该 App 全量计算（不受 since 影响），方便侧边栏任何时候都能显示各批次真实条数
-  const { data: localeRows, error: localeErr } = await supabase
-    .from("reviews")
-    .select("locale")
-    .eq("app_id", appId);
-  if (localeErr) throw localeErr;
+  const localeRows = await fetchAllRows<{ locale: string | null }>(
+    supabase.from("reviews").select("locale").eq("app_id", appId)
+  );
   const localeCounts: Record<string, number> = {};
-  for (const r of localeRows ?? []) {
-    const l = (r as { locale: string | null }).locale ?? "unknown";
+  for (const r of localeRows) {
+    const l = r.locale ?? "unknown";
     localeCounts[l] = (localeCounts[l] || 0) + 1;
   }
 
