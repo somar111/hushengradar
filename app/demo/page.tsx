@@ -162,6 +162,7 @@ export default function DemoPage() {
   const [aiReply, setAiReply] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<{ q: string; a: string }[]>([]);
@@ -246,6 +247,16 @@ export default function DemoPage() {
     setSelectedReview(r);
     setAiReply("");
     setAiError("");
+  }
+
+  function toggleExpand(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function handleGenerateAiReply() {
@@ -501,7 +512,10 @@ export default function DemoPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {reviews.map((r) => {
               const isSelected = selectedReview?.id === r.id;
+              const isExpanded = expandedIds.has(r.id);
               const display = getDisplayContent(r, translateSettings);
+              // 没法精确算渲染后是否真的被截断，用字数估个大概，宁可偶尔多显示一次"展开"也不要漏掉真正被截断的
+              const mayBeTruncated = display.text.length > 70;
               return (
                 <button key={r.id} onClick={() => handleSelectReview(r)}
                   className={`text-left rounded-xl p-4 transition-all ${
@@ -516,7 +530,13 @@ export default function DemoPage() {
                       )}
                     </div>
                   </div>
-                  <p className="text-white/70 text-[14px] leading-relaxed line-clamp-3 mb-1">{display.text}</p>
+                  <p className={`text-white/70 text-[14px] leading-relaxed mb-1 ${isExpanded ? "" : "line-clamp-3"}`}>{display.text}</p>
+                  {mayBeTruncated && (
+                    <span onClick={(e) => toggleExpand(r.id, e)}
+                      className="text-white/35 hover:text-white/60 text-[12px] mb-1 inline-block">
+                      {isExpanded ? "收起" : "展开全文"}
+                    </span>
+                  )}
                   {display.translated && <p className="text-white/25 text-[11px] mb-2">已自动翻译</p>}
                   <div className="flex items-center justify-between mt-2">
                     <span className="text-white/45 text-[12px]">{r.author} · {fmtDate(r.review_date)}</span>
@@ -540,6 +560,25 @@ export default function DemoPage() {
       <div className="border-t border-white/14 p-4">
         {selectedReview ? (
           <div className="flex flex-col gap-2">
+            {(() => {
+              const display = getDisplayContent(selectedReview, translateSettings);
+              return (
+                <div className="bg-white/5 rounded-lg px-3 py-2">
+                  <p className="text-white/45 text-[12px] mb-0.5">评论原文</p>
+                  <p className="text-white/80 text-[13px] leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
+                    {selectedReview.content}
+                  </p>
+                  {display.translated && (
+                    <>
+                      <p className="text-white/45 text-[12px] mt-2 mb-0.5">译文</p>
+                      <p className="text-white/70 text-[13px] leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
+                        {display.text}
+                      </p>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             {selectedReview.official_reply && (
               <div className="bg-white/5 rounded-lg px-3 py-2">
                 <p className="text-white/45 text-[12px] mb-0.5">{appName} 官方曾这样回复（公开信息，模板化覆盖海量评论）</p>
