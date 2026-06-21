@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Layers, Languages,
   TrendingDown, GitCompare, ListTodo, Reply,
-  Send, X, BarChart2, PanelLeft, Search, Loader2, Settings,
+  Send, X, BarChart2, PanelLeft, Search, Loader2, Settings, ChevronDown,
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
 
@@ -150,6 +150,7 @@ export default function DemoPage() {
     scope: "non_target",
   });
   const [showTranslateSettings, setShowTranslateSettings] = useState(false);
+  const [showAppMenu, setShowAppMenu] = useState(false);
 
   const [stats, setStats] = useState<Stats | null>(null);
 
@@ -638,13 +639,24 @@ export default function DemoPage() {
               <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7 opacity-40" />
             </button>
           </div>
-          <div className="py-2 px-3">
-            <select value={selectedAppId ?? ""} onChange={(e) => setSelectedAppId(e.target.value)}
-              className="w-full bg-white/8 hover:bg-white/12 transition-colors rounded-lg px-2.5 py-1.5 text-[13px] text-white/85 outline-none cursor-pointer">
-              {apps.map((a) => (
-                <option key={a.id} value={a.id} className="bg-[#1e2026]">{a.display_name}</option>
-              ))}
-            </select>
+          <div className="py-2 px-3 relative">
+            <button onClick={() => setShowAppMenu((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 bg-white/8 hover:bg-white/12 transition-colors rounded-lg px-2.5 py-1.5 text-[13px] text-white/85">
+              <span className="truncate">{selectedApp?.display_name ?? "选择 App"}</span>
+              <ChevronDown size={14} className={`flex-none text-white/45 transition-transform ${showAppMenu ? "rotate-180" : ""}`} />
+            </button>
+            {showAppMenu && (
+              <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#1e2026] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
+                {apps.map((a) => (
+                  <button key={a.id} onClick={() => { setSelectedAppId(a.id); setShowAppMenu(false); }}
+                    className={`text-left px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
+                      a.id === selectedAppId ? "bg-white/12 text-white/90" : "text-white/70 hover:bg-white/8"
+                    }`}>
+                    {a.display_name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="py-2 px-3 flex items-center justify-center gap-1.5">
             {(["week", "month"] as TimeRange[]).map((t) => (
@@ -656,7 +668,7 @@ export default function DemoPage() {
           </div>
           {platform === "googleplay" ? (
             <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1 text-[14px]">
-              <p className="text-white/35 uppercase tracking-wider text-[12px] mb-1.5 px-1">地区/语言批次 · Google Play</p>
+              <p className="text-white/35 uppercase tracking-wider text-[12px] mb-1.5 px-1">地区/语言批次</p>
               <button onClick={() => setLocale(undefined)}
                 className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${!locale ? "bg-white/12 text-white/80" : "text-white/55 hover:text-white/70 hover:bg-white/10"}`}>
                 <Languages size={12} /><span>全部 {stats ? `(${allLocalesTotal})` : ""}</span>
@@ -779,7 +791,7 @@ export default function DemoPage() {
                 </div>
                 {platform === "googleplay" && stats && (
                   <div>
-                    <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">地区/语言批次 · Google Play</p>
+                    <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">地区/语言批次</p>
                     <button onClick={() => setLocale(undefined)}
                       className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${!locale ? "bg-white/12 text-white/90" : "text-white/65 hover:bg-white/10"}`}>
                       <Languages size={13} />全部 ({allLocalesTotal})

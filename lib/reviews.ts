@@ -49,7 +49,15 @@ export async function queryReviews(opts: {
   if (opts.tag) query = query.contains("ai_tag_keys", [opts.tag]);
   if (opts.locale) query = query.eq("locale", opts.locale);
   if (opts.rating) query = query.eq("rating", opts.rating);
-  if (opts.q) query = query.or(`content.ilike.%${opts.q}%,author.ilike.%${opts.q}%`);
+  if (opts.q) {
+    // 去掉逗号/括号：PostgREST 的 .or() 语法里这两个字符是分隔符/分组符，搜索词里混进来会被当成额外筛选条件解析
+    const safeQ = opts.q.replace(/[,()]/g, "");
+    if (safeQ) {
+      query = query.or(
+        `content.ilike.%${safeQ}%,author.ilike.%${safeQ}%,translated_zh.ilike.%${safeQ}%,translated_en.ilike.%${safeQ}%`
+      );
+    }
+  }
   if (opts.since) query = query.gte("review_date", opts.since);
 
   const from = (opts.page - 1) * opts.pageSize;
