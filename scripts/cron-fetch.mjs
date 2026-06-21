@@ -20,8 +20,15 @@ if (!SUPABASE_URL || !SUPABASE_KEY || !DEEPSEEK_API_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const DEFAULT_LOOKBACK_DAYS = 30; // 没有 last_fetched_at 时（新 App 第一次跑），往回抓多久
+
+// 注意：这份列表是早期探索时随手试的几个语言/地区组合，不是按任何 App 的真实用户分布定的，
+// 后来直接沿用进了通用脚本。2026-06-21 实测发现法语/德语/俄语/越南语/泰语/土耳其语市场对 WPS
+// 也有大量评论但完全没覆盖到，所以扩充了这份默认列表。长期来看这应该做成 apps 表的per-App配置
+// （比如 apps.target_locales），而不是所有 App 共用同一份硬编码列表——不同 App 的真实活跃市场不一样。
 const LOCALES = [
   ["en", "us"], ["id", "id"], ["es", "mx"], ["ar", "sa"], ["pt", "br"], ["hi", "in"],
+  ["fr", "fr"], ["de", "de"], ["ru", "ru"], ["vi", "vn"], ["th", "th"], ["tr", "tr"],
+  ["ja", "jp"], ["ko", "kr"],
 ];
 
 async function withRetry(fn, retries = 3) {

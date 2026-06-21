@@ -19,6 +19,14 @@ const localeLabels: Record<string, string> = {
   ar_sa: "阿拉伯语 · 沙特",
   pt_br: "葡萄牙语 · 巴西",
   hi_in: "印地语 · 印度",
+  fr_fr: "法语 · 法国",
+  de_de: "德语 · 德国",
+  ru_ru: "俄语 · 俄罗斯",
+  vi_vn: "越南语 · 越南",
+  th_th: "泰语 · 泰国",
+  tr_tr: "土耳其语 · 土耳其",
+  ja_jp: "日语 · 日本",
+  ko_kr: "韩语 · 韩国",
 };
 
 type Stats = {
