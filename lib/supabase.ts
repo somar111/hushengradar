@@ -17,6 +17,7 @@ export type AppRow = {
   display_name: string;
   context: string | null;
   last_fetched_at: string | null;
+  locale_watermarks: Record<string, string>;
   created_at: string;
 };
 

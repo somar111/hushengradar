@@ -19,7 +19,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY || !DEEPSEEK_API_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const DEFAULT_LOOKBACK_DAYS = 30; // 没有 last_fetched_at 时（新 App 第一次跑），往回抓多久
+const DEFAULT_LOOKBACK_DAYS = 30; // 某个 locale 还没有水位线时（新 App 或新加的 locale），往回抓多久
 
 // 注意：这份列表是早期探索时随手试的几个语言/地区组合，不是按任何 App 的真实用户分布定的，
 // 后来直接沿用进了通用脚本。2026-06-21 实测发现法语/德语/俄语/越南语/泰语/土耳其语市场对 WPS
@@ -169,16 +169,22 @@ async function processApp(app) {
     return;
   }
 
-  const since = app.last_fetched_at
-    ? new Date(app.last_fetched_at)
-    : new Date(Date.now() - DEFAULT_LOOKBACK_DAYS * 86400000);
-  console.log("抓取起点:", since.toISOString());
+  // 水位线按"locale"分开记，不是整个 App 共用一个：以后给这个 App 新增 locale，
+  // 新 locale 在 watermarks 里没有记录，自动按 DEFAULT_LOOKBACK_DAYS 全量回溯，
+  // 不会被"App 整体已经抓过"误判跳过（这是之前手动重置过一次才解决的坑，现在彻底修掉）。
+  const watermarks = { ...(app.locale_watermarks ?? {}) };
+  const newWatermarks = {};
 
-  // 1. 多语言批次抓增量
+  // 1. 多语言批次抓增量，每个 locale 用各自的水位线
   let fetched = [];
   for (const [lang, country] of LOCALES) {
+    const localeKey = `${lang}_${country}`;
+    const since = watermarks[localeKey]
+      ? new Date(watermarks[localeKey])
+      : new Date(Date.now() - DEFAULT_LOOKBACK_DAYS * 86400000);
     const batch = await withRetry(() => fetchReviewsSince(app.external_id, since, lang, country));
-    fetched.push(...batch.map((r) => ({ ...r, locale: `${lang}_${country}` })));
+    fetched.push(...batch.map((r) => ({ ...r, locale: localeKey })));
+    newWatermarks[localeKey] = new Date().toISOString();
     await new Promise((r) => setTimeout(r, 300));
   }
   const seen = new Set();
@@ -276,8 +282,11 @@ async function processApp(app) {
     console.log("没有新数据，跳过摘要刷新");
   }
 
-  // 5. 更新水位线
-  const { error: e4 } = await supabase.from("apps").update({ last_fetched_at: new Date().toISOString() }).eq("id", app.id);
+  // 5. 更新水位线（按 locale 分别记，last_fetched_at 留作"整体最后处理时间"的展示用途）
+  const { error: e4 } = await supabase.from("apps").update({
+    last_fetched_at: new Date().toISOString(),
+    locale_watermarks: { ...watermarks, ...newWatermarks },
+  }).eq("id", app.id);
   if (e4) throw e4;
   console.log(`${app.display_name} 处理完成`);
 }
