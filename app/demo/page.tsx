@@ -204,6 +204,7 @@ export default function DemoPage() {
           rating: selectedReview.rating,
           tags: selectedReview.ai_tags,
           author: selectedReview.author,
+          officialReply: selectedReview.official_reply,
         }),
       });
       const data = await res.json();

@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { content, rating, tags, author } = await request.json();
+  const { content, rating, tags, author, officialReply } = await request.json();
   const app = await getDefaultApp();
 
   try {
@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
       author,
       tags: tags ?? [],
       appContext: app.context,
+      officialReplyExample: officialReply ?? null,
     });
     return Response.json({ reply });
   } catch (e) {

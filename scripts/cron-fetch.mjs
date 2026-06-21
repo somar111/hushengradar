@@ -2,6 +2,9 @@
 // 通用脚本，不绑定任何具体 App；加新 App 只需要在 apps 表插一行，这个脚本自动覆盖到它。
 import { createClient } from "@supabase/supabase-js";
 import gplayPkg from "google-play-scraper";
+import { BASELINE_CATEGORIES, buildClassifyPrompt, buildSummaryPrompt, sanitizeTagKey } from "../lib/promptKit.mjs";
+
+const BASELINE_KEYS = new Set(BASELINE_CATEGORIES.map((c) => c.key));
 
 const gplay = gplayPkg.default ?? gplayPkg;
 const SORT_NEWEST = 2;
@@ -55,16 +58,8 @@ async function fetchReviewsSince(packageName, sinceDate, lang, country) {
   }));
 }
 
-async function classifyReview(content, rating, appContext) {
-  const baselineList = "billing(扣费/订阅投诉)、bug(功能故障)、ads(广告骚扰)、ui_regression(改版体验倒退)、paywall(付费墙限制)、login_sync(登录/同步问题)、feature_request(功能请求)、praise(正面评价)";
-  const systemPrompt = [
-    "你是应用商店评论分析助手，给一条用户评论打问题类型标签。",
-    `常见类型供参考：${baselineList}。`,
-    "如果评论内容不属于以上任何一种，可以自己创建一个新的 key（英文 snake_case）和对应的中文 label，不要硬塞进不合适的类型。",
-    "一条评论可以命中多个类型，也可以是空数组（比如内容完全中立、看不出明确诉求）。",
-    appContext ? `这款 App 的背景信息：${appContext}` : "",
-    '只输出 JSON，格式：{"tags": [{"key": "...", "label": "..."}]}，不要输出任何其他文字。',
-  ].filter(Boolean).join("\n");
+async function classifyReview(content, rating, appContext, existingCustomTags = []) {
+  const systemPrompt = buildClassifyPrompt({ appContext, existingCustomTags });
 
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -79,7 +74,10 @@ async function classifyReview(content, rating, appContext) {
   if (!res.ok) throw new Error(`DeepSeek分类 ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const parsed = JSON.parse(data.choices[0].message.content);
-  return Array.isArray(parsed.tags) ? parsed.tags : [];
+  if (!Array.isArray(parsed.tags)) return [];
+  return parsed.tags
+    .filter((t) => t && t.key && t.label)
+    .map((t) => ({ key: sanitizeTagKey(t.key), label: t.label }));
 }
 
 async function detectAndTranslate(content) {
@@ -107,12 +105,7 @@ async function detectAndTranslate(content) {
 }
 
 async function summarizeCluster(tagLabel, sampleContents, appContext) {
-  const systemPrompt = [
-    `下面是一批被归类为"${tagLabel}"的应用商店评论样本。`,
-    "请用一句简短中文短语概括这些评论具体在说什么，要紧贴样本内容，不要泛泛而谈，不要编造样本里没有的细节。",
-    "输出的短语要能直接接在「N 条评论」后面组成完整句子——不要重复「评论」「条」这些字，不要加引号或多余前后缀，不要输出数字统计。",
-    `这款 App 的背景信息：${appContext}`,
-  ].join("\n");
+  const systemPrompt = buildSummaryPrompt({ tagLabel, appContext });
   const userPrompt = sampleContents.map((c, i) => `${i + 1}. ${c}`).join("\n");
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -130,6 +123,35 @@ async function summarizeCluster(tagLabel, sampleContents, appContext) {
 
 function sampleDiverse(items, n) {
   return [...items].sort(() => Math.random() - 0.5).slice(0, n);
+}
+
+// Supabase/PostgREST 默认单次最多返回 1000 行，不分页会悄悄截断，必须循环拉完
+async function fetchAllRows(query, pageSize = 1000) {
+  const all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await query.range(from, from + pageSize - 1);
+    if (error) throw error;
+    all.push(...(data ?? []));
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
+async function runConcurrent(items, concurrency, fn) {
+  const queue = [...items];
+  let done = 0;
+  async function worker() {
+    while (queue.length) {
+      const item = queue.shift();
+      if (!item) break;
+      await fn(item);
+      done++;
+      if (done % 100 === 0) console.log(`  进度 ${done}/${items.length}`);
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, worker));
 }
 
 async function processApp(app) {
@@ -169,14 +191,28 @@ async function processApp(app) {
     }
   }
 
-  // 2. 分类所有未分类过的（包括这次新抓的 + 之前遗留的）
-  const { data: unclassified, error: e1 } = await supabase
-    .from("reviews").select("id, content, rating").eq("app_id", app.id).is("ai_classified_at", null);
-  if (e1) throw e1;
+  // 2. 分类所有未分类过的（包括这次新抓的 + 之前遗留的），分页拉全量 + 8 路并发
+  // 先看看这个 App 之前已经造过哪些自定义标签（不在 baseline 里的），喂给模型优先复用，
+  // 避免每次调用互不知情、造出一堆近义的碎标签。
+  const classifiedSample = await fetchAllRows(
+    supabase.from("reviews").select("ai_tags").eq("app_id", app.id).not("ai_classified_at", "is", null)
+  );
+  const existingCustomTagsMap = new Map();
+  for (const r of classifiedSample) {
+    for (const t of r.ai_tags ?? []) {
+      if (!BASELINE_KEYS.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
+    }
+  }
+  const existingCustomTags = [...existingCustomTagsMap.entries()].map(([key, label]) => ({ key, label }));
+  console.log(`已有自定义标签 ${existingCustomTags.length} 个`);
+
+  const unclassified = await fetchAllRows(
+    supabase.from("reviews").select("id, content, rating").eq("app_id", app.id).is("ai_classified_at", null)
+  );
   console.log(`待分类 ${unclassified.length} 条`);
-  for (const r of unclassified) {
+  await runConcurrent(unclassified, 8, async (r) => {
     try {
-      const tags = await withRetry(() => classifyReview(r.content, r.rating, app.context));
+      const tags = await withRetry(() => classifyReview(r.content, r.rating, app.context, existingCustomTags));
       const { error } = await supabase.from("reviews").update({
         ai_tags: tags, ai_tag_keys: tags.map((t) => t.key), ai_classified_at: new Date().toISOString(),
       }).eq("id", r.id);
@@ -184,14 +220,14 @@ async function processApp(app) {
     } catch (e) {
       console.error(`分类失败 id=${r.id}:`, e.message);
     }
-  }
+  });
 
-  // 3. 翻译所有未翻译过的
-  const { data: untranslated, error: e2 } = await supabase
-    .from("reviews").select("id, content").eq("app_id", app.id).is("translated_at", null);
-  if (e2) throw e2;
+  // 3. 翻译所有未翻译过的，同样分页拉全量 + 并发
+  const untranslated = await fetchAllRows(
+    supabase.from("reviews").select("id, content").eq("app_id", app.id).is("translated_at", null)
+  );
   console.log(`待翻译 ${untranslated.length} 条`);
-  for (const r of untranslated) {
+  await runConcurrent(untranslated, 8, async (r) => {
     try {
       const result = await withRetry(() => detectAndTranslate(r.content));
       const { error } = await supabase.from("reviews").update({
@@ -202,13 +238,13 @@ async function processApp(app) {
     } catch (e) {
       console.error(`翻译失败 id=${r.id}:`, e.message);
     }
-  }
+  });
 
   // 4. 重新生成所有标签的摘要（数据变了，摘要也要刷新）
   if (fetched.length > 0) {
-    const { data: allReviews, error: e3 } = await supabase
-      .from("reviews").select("content, ai_tags").eq("app_id", app.id);
-    if (e3) throw e3;
+    const allReviews = await fetchAllRows(
+      supabase.from("reviews").select("content, ai_tags").eq("app_id", app.id)
+    );
     const byTag = {};
     for (const r of allReviews) {
       for (const t of r.ai_tags ?? []) {

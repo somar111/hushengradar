@@ -1,41 +1,28 @@
-export type ClassifiedTag = { key: string; label: string };
+import { buildClassifyPrompt, buildReplyPrompt, sanitizeTagKey } from "./promptKit.mjs";
 
-const BASELINE_CATEGORIES = [
-  { key: "billing", label: "扣费/订阅投诉" },
-  { key: "bug", label: "功能故障" },
-  { key: "ads", label: "广告骚扰" },
-  { key: "ui_regression", label: "改版体验倒退" },
-  { key: "paywall", label: "付费墙限制" },
-  { key: "login_sync", label: "登录/同步问题" },
-  { key: "feature_request", label: "功能请求" },
-  { key: "praise", label: "正面评价" },
-];
+export type ClassifiedTag = { key: string; label: string };
 
 /**
  * 通用评论分类：不针对任何具体 App。appContext 是该 App 在 apps.context 里存的背景说明，
  * 换一个 App 只需要换这段 context，不需要改这个函数或 prompt 里的固定类别。
+ * existingCustomTags：这个 App 之前已经造过的自定义标签（不在 baseline 里的），传进去让模型优先复用，
+ * 避免每次调用互不知情、造出一堆近义的碎标签。
  */
 export async function classifyReview(opts: {
   content: string;
   rating: number;
   appContext?: string | null;
+  existingCustomTags?: ClassifiedTag[];
 }): Promise<ClassifiedTag[]> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY 未配置");
   }
 
-  const baselineList = BASELINE_CATEGORIES.map((c) => `${c.key}(${c.label})`).join("、");
-
-  const systemPrompt = [
-    "你是应用商店评论分析助手，给一条用户评论打问题类型标签。",
-    `常见类型供参考：${baselineList}。`,
-    "如果评论内容不属于以上任何一种，可以自己创建一个新的 key（英文 snake_case）和对应的中文 label，不要硬塞进不合适的类型。",
-    "一条评论可以命中多个类型，也可以是空数组（比如内容完全中立、看不出明确诉求）。",
-    opts.appContext ? `这款 App 的背景信息：${opts.appContext}` : "",
-    "只输出 JSON，格式：{\"tags\": [{\"key\": \"...\", \"label\": \"...\"}]}，不要输出任何其他文字。",
-  ].filter(Boolean).join("\n");
-
+  const systemPrompt = buildClassifyPrompt({
+    appContext: opts.appContext,
+    existingCustomTags: opts.existingCustomTags ?? [],
+  });
   const userPrompt = `评分：${opts.rating} 星\n评论内容：${opts.content}`;
 
   const res = await fetch("https://api.deepseek.com/chat/completions", {
@@ -68,7 +55,11 @@ export async function classifyReview(opts: {
     throw new Error(`DeepSeek 返回的不是合法 JSON：${raw}`);
   }
 
-  return Array.isArray(parsed.tags) ? parsed.tags : [];
+  if (!Array.isArray(parsed.tags)) return [];
+  // 清洗 key 格式（防止模型偶尔返回带空格/大写的 key，导致同义标签在筛选时悄悄失效）
+  return parsed.tags
+    .filter((t) => t && t.key && t.label)
+    .map((t) => ({ key: sanitizeTagKey(t.key), label: t.label }));
 }
 
 /**
@@ -116,7 +107,8 @@ export async function summarizeCluster(opts: {
 }
 
 /**
- * 给 AI 写个性化回复建议（呼声雷达的核心卖点功能，跟分类共用同一个通用 prompt 思路）。
+ * 给 AI 写个性化回复建议。officialReplyExample 是这条评论下（如果有）官方真实回复过的文本，
+ * 传进去让模型有真实联系方式/处理流程可参考，而不是在没有真实素材时凭空编造。
  */
 export async function generateReplySuggestion(opts: {
   content: string;
@@ -124,18 +116,17 @@ export async function generateReplySuggestion(opts: {
   author: string;
   tags: ClassifiedTag[];
   appContext?: string | null;
+  officialReplyExample?: string | null;
 }): Promise<string> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY 未配置");
   }
 
-  const systemPrompt = [
-    "你是呼声雷达的 AI 客服助手，帮助 App 开发者给应用商店用户评论写回复。",
-    "回复要具体回应评论里提到的问题，语气专业、有同理心，不要用千篇一律的模板话术。",
-    "用评论原文所使用的语言回复。直接输出回复正文，不要加多余的前后缀。",
-    opts.appContext ? `这款 App 的背景信息：${opts.appContext}` : "",
-  ].filter(Boolean).join("\n");
+  const systemPrompt = buildReplyPrompt({
+    appContext: opts.appContext,
+    officialReplyExample: opts.officialReplyExample,
+  });
 
   const userPrompt = `评论作者：${opts.author}\n评分：${opts.rating} 星\n问题类型：${opts.tags.map((t) => t.label).join("、") || "无"}\n评论内容：${opts.content}`;
 
