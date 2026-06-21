@@ -1,29 +1,33 @@
 import { getServiceSupabase, type ReviewRow, type AppRow } from "./supabase";
 
-export async function listApps(): Promise<AppRow[]> {
+// apps 表几乎不变（只有手动加新 App 时才变），缓存住省掉每次切筛选都白付一次 Supabase round trip
+const APPS_CACHE_TTL_MS = 5 * 60 * 1000;
+let appsCache: { apps: AppRow[]; fetchedAt: number } | null = null;
+
+async function getCachedApps(): Promise<AppRow[]> {
+  if (appsCache && Date.now() - appsCache.fetchedAt < APPS_CACHE_TTL_MS) return appsCache.apps;
   const supabase = getServiceSupabase();
   const { data, error } = await supabase.from("apps").select("*").order("created_at", { ascending: true });
   if (error) throw error;
-  return data ?? [];
+  appsCache = { apps: data ?? [], fetchedAt: Date.now() };
+  return appsCache.apps;
+}
+
+export async function listApps(): Promise<AppRow[]> {
+  return getCachedApps();
 }
 
 export async function getDefaultApp(): Promise<AppRow> {
-  const supabase = getServiceSupabase();
-  const { data, error } = await supabase
-    .from("apps")
-    .select("*")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
-  if (error) throw error;
-  return data;
+  const apps = await getCachedApps();
+  if (!apps[0]) throw new Error("没有任何 App，先在 apps 表里插入一条");
+  return apps[0];
 }
 
 export async function getApp(appId: string): Promise<AppRow> {
-  const supabase = getServiceSupabase();
-  const { data, error } = await supabase.from("apps").select("*").eq("id", appId).single();
-  if (error) throw error;
-  return data;
+  const apps = await getCachedApps();
+  const app = apps.find((a) => a.id === appId);
+  if (!app) throw new Error(`找不到 app: ${appId}`);
+  return app;
 }
 
 export async function queryReviews(opts: {
@@ -75,32 +79,19 @@ async function fetchAllRows<T>(query: SupabaseQuery<T>, pageSize = 1000): Promis
 
 type StatsFields = Pick<ReviewRow, "rating" | "locale" | "ai_tags" | "app_version" | "official_reply" | "review_date">;
 
-// 拉全量字段做统计用
-async function fetchAllForStats(appId: string, locale?: string, since?: string) {
-  const supabase = getServiceSupabase();
-  let query = supabase
-    .from("reviews")
-    .select("rating, locale, ai_tags, app_version, official_reply, review_date")
-    .eq("app_id", appId);
-  if (locale) query = query.eq("locale", locale);
-  if (since) query = query.gte("review_date", since);
-  return fetchAllRows<StatsFields>(query);
-}
+// cron 每天才跑一次抓取，统计用的全量行短期内不会变，缓存住避免每次点筛选按钮都把全表拉一遍重新聚合
+const STATS_CACHE_TTL_MS = 5 * 60 * 1000;
+const statsRowsCache = new Map<string, { rows: StatsFields[]; summaryMap: Record<string, string>; fetchedAt: number }>();
 
-export async function computeStats(appId: string, locale?: string, since?: string) {
-  const supabase = getServiceSupabase();
+async function getStatsRows(appId: string) {
+  const cached = statsRowsCache.get(appId);
+  if (cached && Date.now() - cached.fetchedAt < STATS_CACHE_TTL_MS) return cached;
 
-  // localeCounts 始终基于该 App 全量计算（不受 since 影响），方便侧边栏任何时候都能显示各批次真实条数
-  const localeRows = await fetchAllRows<{ locale: string | null }>(
-    supabase.from("reviews").select("locale").eq("app_id", appId)
+  const supabase = getServiceSupabase();
+  const rows = await fetchAllRows<StatsFields>(
+    supabase.from("reviews").select("rating, locale, ai_tags, app_version, official_reply, review_date").eq("app_id", appId)
   );
-  const localeCounts: Record<string, number> = {};
-  for (const r of localeRows) {
-    const l = r.locale ?? "unknown";
-    localeCounts[l] = (localeCounts[l] || 0) + 1;
-  }
 
-  // 摘要是按全量样本生成的，不分 locale/时间范围（避免每种筛选组合都单独算一份摘要），筛了照样复用同一份
   const { data: summaryRows, error: summaryErr } = await supabase
     .from("tag_summaries")
     .select("tag_key, summary")
@@ -109,7 +100,23 @@ export async function computeStats(appId: string, locale?: string, since?: strin
   const summaryMap: Record<string, string> = {};
   for (const s of summaryRows ?? []) summaryMap[s.tag_key] = s.summary;
 
-  const scoped = await fetchAllForStats(appId, locale, since);
+  const entry = { rows, summaryMap, fetchedAt: Date.now() };
+  statsRowsCache.set(appId, entry);
+  return entry;
+}
+
+export async function computeStats(appId: string, locale?: string, since?: string) {
+  const { rows: allRows, summaryMap } = await getStatsRows(appId);
+
+  // localeCounts 现在跟 total 用同一份 since 过滤，侧边栏批次条数才能和"全部"对得上
+  const sinceRows = since ? allRows.filter((r) => r.review_date >= since) : allRows;
+  const localeCounts: Record<string, number> = {};
+  for (const r of sinceRows) {
+    const l = r.locale ?? "unknown";
+    localeCounts[l] = (localeCounts[l] || 0) + 1;
+  }
+
+  const scoped = locale ? sinceRows.filter((r) => (r.locale ?? "unknown") === locale) : sinceRows;
   const total = scoped.length;
   const ratingDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   const tagCounts: Record<string, { label: string; count: number; summary: string | null }> = {};

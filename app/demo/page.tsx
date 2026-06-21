@@ -271,6 +271,8 @@ export default function DemoPage() {
   ];
 
   const totalTagCount = stats ? Object.values(stats.tagCounts).reduce((a, b) => a + b.count, 0) : 0;
+  // "全部"要跟当前选的 locale 无关，不能直接用 stats.total（那是按 locale 筛过的），用 localeCounts 求和才是真正的全量
+  const allLocalesTotal = stats ? Object.values(stats.localeCounts).reduce((a, b) => a + b, 0) : 0;
   const avgRating = stats
     ? Math.round(
         (Object.entries(stats.ratingDist).reduce((sum, [k, v]) => sum + Number(k) * v, 0) / stats.total) * 100
@@ -588,7 +590,7 @@ export default function DemoPage() {
               <p className="text-white/35 uppercase tracking-wider text-[12px] mb-1.5 px-1">地区/语言批次 · Google Play</p>
               <button onClick={() => setLocale(undefined)}
                 className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${!locale ? "bg-white/12 text-white/80" : "text-white/55 hover:text-white/70 hover:bg-white/10"}`}>
-                <Languages size={12} /><span>全部 {stats ? `(${stats.total})` : ""}</span>
+                <Languages size={12} /><span>全部 {stats ? `(${allLocalesTotal})` : ""}</span>
               </button>
               {stats && Object.entries(stats.localeCounts).sort((a, b) => b[1] - a[1]).map(([l, count]) => (
                 <button key={l} onClick={() => setLocale(l)}
@@ -711,7 +713,7 @@ export default function DemoPage() {
                     <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">地区/语言批次 · Google Play</p>
                     <button onClick={() => setLocale(undefined)}
                       className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${!locale ? "bg-white/12 text-white/90" : "text-white/65 hover:bg-white/10"}`}>
-                      <Languages size={13} />全部 ({stats.total})
+                      <Languages size={13} />全部 ({allLocalesTotal})
                     </button>
                     {Object.entries(stats.localeCounts).sort((a, b) => b[1] - a[1]).map(([l, count]) => (
                       <button key={l} onClick={() => setLocale(l)}
