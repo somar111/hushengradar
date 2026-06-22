@@ -570,7 +570,7 @@ function DemoPageInner() {
                   <p className="text-white/80 text-[14px] leading-relaxed">
                     当前主力版本 {versionConclusion.recent.version} 均分 {versionConclusion.recent.avgRating}，
                     {versionConclusion.diff <= -0.3
-                      ? `明显低于此前版本的加权均分 ${versionConclusion.olderAvg}（差 ${Math.abs(versionConclusion.diff)} 分）——版本质量在下滑，值得排查这个版本改了什么。`
+                      ? `明显低于此前版本的加权均分 ${versionConclusion.olderAvg}（差 ${Math.abs(versionConclusion.diff)} 分）——版本质量在下滑。`
                       : versionConclusion.diff >= 0.3
                       ? `明显高于此前版本的加权均分 ${versionConclusion.olderAvg}——版本质量在改善。`
                       : `跟此前版本的加权均分 ${versionConclusion.olderAvg} 基本持平，没有明显波动。`}
@@ -640,7 +640,10 @@ function DemoPageInner() {
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
                   <p className="text-white/80 text-[14px] leading-relaxed">
-                    {topComplaintsLabel}合计占{timeRangeLabel}评论的 {topComplaintsPct}%，而求加新功能只有 {featureReq?.count ?? 0} 条（{featureReqPct}%）——先堵住{topComplaintsLabel}这类问题，比做新功能性价比更高。
+                    {topComplaintsLabel}合计占{timeRangeLabel}评论的 {topComplaintsPct}%，求加新功能占 {featureReqPct}%（{featureReq?.count ?? 0} 条）——
+                    {topComplaintsPct > featureReqPct
+                      ? `投诉类反馈的声量明显大于功能请求。`
+                      : `功能请求的声量反而比${topComplaintsLabel}这类投诉更大。`}
                   </p>
                 </div>
               )}
@@ -693,7 +696,7 @@ function DemoPageInner() {
                   <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                     <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
                     <p className="text-white/80 text-[14px] leading-relaxed">
-                      {localeLabel(worstLocale.locale)}均分 {worstLocale.avgRating}（{worstLocale.count} 条），明显低于整体均分 {avgRating}——这个市场的真实满意度落后于其他地区，值得单独看看那边用户在反馈什么。
+                      {localeLabel(worstLocale.locale)}均分 {worstLocale.avgRating}（{worstLocale.count} 条），明显低于整体均分 {avgRating}——这个市场的真实满意度落后于其他地区。
                     </p>
                   </div>
                 )}
