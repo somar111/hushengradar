@@ -917,20 +917,22 @@ function DemoPageInner() {
 
   // ── 左栏 ──
   const LeftPanel = (
-    // 悬浮在右栏上方的独立面板，不再跟右栏共享一个 flex 行抢宽度——只用 transform 滑入/滑出，
-    // 右栏的宽度从头到尾不会因为这个面板开合而重新计算，自然没有"两个容器互相牵动"的跳动
-    <div className={`absolute left-3 top-3 bottom-3 w-52 z-10 flex flex-col gap-1.5 transition-transform duration-200 ease-in-out ${
-      leftOpen ? "translate-x-0" : "-translate-x-[120%] pointer-events-none"
-    }`}>
-      <div className="h-8 pl-11 flex items-center overflow-hidden flex-none">
+    <div className={`flex-none flex flex-col gap-1.5 overflow-hidden transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
+      <div className="h-8 w-52 flex items-center overflow-hidden flex-none">
         <Link href="/"
           className="px-2 text-xl tracking-tight text-white whitespace-nowrap"
           style={{ fontFamily: "'smiley-sans', sans-serif" }}>
           呼声雷达
         </Link>
       </div>
-      <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1 shadow-2xl">
-        <div className="px-3 pb-2.5 pt-2.5 flex items-center bg-white/4 flex-none">
+      {/* 固定宽度，不跟外层一起缩——外层靠 overflow-hidden 裁切，内层文字不会在动画过程中
+          重新换行 */}
+      <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1 w-52">
+        <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between bg-white/4 flex-none">
+          <button onClick={() => setLeftOpen(!leftOpen)}
+            className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
+            <PanelLeft size={20} strokeWidth={1.5} />
+          </button>
           <span className="text-white/70 text-[13px] font-semibold whitespace-nowrap">筛选</span>
         </div>
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -1000,8 +1002,7 @@ function DemoPageInner() {
     </div>
   );
 
-  // ── 中栏 ──（桌面端用的时候外面会再包一层 ml-14，给常驻展开/收起按钮让位；
-  // 这个组件本身不带那个 margin，因为移动端也复用它，没有那颗常驻按钮）
+  // ── 中栏 ──
   const CenterPanel = (
     <GlassPanel className="flex-1 flex flex-col overflow-hidden rounded-2xl min-w-0">
       <div className="px-3 py-2.5 bg-white/4 flex items-center justify-between flex-none gap-3">
@@ -1027,16 +1028,9 @@ function DemoPageInner() {
     <div className="h-screen flex flex-col font-[family-name:var(--font-geist)] overflow-hidden"
       style={{ background: "#242424" }}>
 
-      <div className="hidden md:flex flex-1 overflow-hidden p-3 relative">
-        {/* 常驻按钮，不在会滑走的面板里面，左栏收起后也还能点开 */}
-        <button onClick={() => setLeftOpen(!leftOpen)}
-          className="absolute left-3 top-3 z-20 text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors">
-          <PanelLeft size={20} strokeWidth={1.5} />
-        </button>
+      <div className="hidden md:flex flex-1 overflow-hidden p-3 gap-3">
         {LeftPanel}
-        <div className="flex-1 min-w-0 ml-14 flex">
-          {CenterPanel}
-        </div>
+        {CenterPanel}
       </div>
 
       <div className="flex md:hidden flex-1 flex-col overflow-hidden">
