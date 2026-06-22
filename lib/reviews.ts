@@ -129,11 +129,17 @@ export async function computeStats(appId: string, locale?: string, since?: strin
   const ratingDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   const tagCounts: Record<string, { label: string; count: number; summary: string | null }> = {};
   const versionMap = new Map<string, { count: number; ratingSum: number; dateSum: number }>();
+  const dailyMap = new Map<string, { count: number; ratingSum: number }>();
   let withOfficialReply = 0;
 
   for (const r of scoped) {
     if (r.rating) ratingDist[r.rating]++;
     if (r.official_reply) withOfficialReply++;
+    const day = r.review_date.slice(0, 10);
+    const d = dailyMap.get(day) ?? { count: 0, ratingSum: 0 };
+    d.count++;
+    d.ratingSum += r.rating ?? 0;
+    dailyMap.set(day, d);
     for (const t of r.ai_tags ?? []) {
       const entry = tagCounts[t.key] ?? { label: t.label, count: 0, summary: summaryMap[t.key] ?? null };
       entry.count++;
@@ -163,11 +169,16 @@ export async function computeStats(appId: string, locale?: string, since?: strin
 
   const dates = scoped.map((r) => r.review_date).filter(Boolean).sort();
 
+  const dailyRatings = [...dailyMap.entries()]
+    .map(([date, { count, ratingSum }]) => ({ date, avgRating: Math.round((ratingSum / count) * 100) / 100, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   return {
     total,
     dateRange: { from: dates[0] ?? null, to: dates[dates.length - 1] ?? null },
     ratingDist,
     tagCounts,
+    dailyRatings,
     localeCounts,
     versionStats,
     officialReplyRate: total ? Math.round((withOfficialReply / total) * 1000) / 10 : 0,

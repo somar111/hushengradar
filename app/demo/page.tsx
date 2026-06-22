@@ -49,6 +49,7 @@ type Stats = {
   tagCounts: Record<string, { label: string; count: number; summary: string | null }>;
   localeCounts: Record<string, number>;
   versionStats: { version: string; count: number; avgRating: number; avgDate: number }[];
+  dailyRatings: { date: string; avgRating: number; count: number }[];
   officialReplyRate: number;
 };
 
@@ -152,6 +153,47 @@ function PieBreakdown({
             onMouseEnter={() => onHoverKey?.(s.key)} onMouseLeave={() => onHoverKey?.(null)} />
         );
       })}
+    </svg>
+  );
+}
+
+// 评分随真实日期走的折线图：横轴按实际天数间距（不是均匀分类摆放），纵轴固定 1~5（评分本身的
+// 天然量程，不做自动缩放，避免轴范围操纵带来的误导）；点的大小/透明度按当天评论量加权，
+// 评论数少的那天视觉上自然淡一点小一点，不会被误读成强信号
+function RatingTrendChart({ points, height = 200 }: { points: { date: string; avgRating: number; count: number }[]; height?: number }) {
+  if (points.length === 0) {
+    return <div style={{ height }} className="flex items-center justify-center text-white/25 text-[13px]">暂无数据</div>;
+  }
+  const width = 1000;
+  const minTime = new Date(points[0].date).getTime();
+  const maxTime = new Date(points[points.length - 1].date).getTime();
+  const timeSpan = Math.max(maxTime - minTime, 86400000);
+  const x = (date: string) => ((new Date(date).getTime() - minTime) / timeSpan) * width;
+  const y = (rating: number) => height - ((rating - 1) / 4) * height;
+  const maxCount = Math.max(...points.map((p) => p.count), 1);
+  const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${x(p.date).toFixed(1)} ${y(p.avgRating).toFixed(1)}`).join(" ");
+  const labelEvery = points.length > 12 ? Math.ceil(points.length / 8) : 1;
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height + 22}`} className="w-full" style={{ height: height + 22 }} preserveAspectRatio="none">
+      <path d={pathD} fill="none" stroke={THEME_BLUE} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+      {points.map((p) => {
+        const r = 2.5 + (p.count / maxCount) * 4.5;
+        const opacity = 0.4 + (p.count / maxCount) * 0.6;
+        return (
+          <circle key={p.date} cx={x(p.date)} cy={y(p.avgRating)} r={r} fill={THEME_BLUE} opacity={opacity}>
+            <title>{p.date}：均分 {p.avgRating}，{p.count} 条评论</title>
+          </circle>
+        );
+      })}
+      {points.map((p, i) => (
+        i % labelEvery === 0 && (
+          <text key={p.date} x={x(p.date)} y={height + 16} fontSize={10} fill="#ffffff66"
+            textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}>
+            {p.date.slice(5)}
+          </text>
+        )
+      ))}
     </svg>
   );
 }
@@ -429,29 +471,9 @@ export default function DemoPage() {
                 <span className="text-white/55 text-[16px]">{timeRangeLabel}平均分</span>
               </div>
               <p className="text-white/45 text-[14px] mb-5">
-                {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按版本号统计，从旧到新排列（仅统计评论里带版本号的 {stats.versionStats.reduce((s, v) => s + v.count, 0)} 条）
+                {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），点的大小代表当天评论量
               </p>
-              <div className="flex items-end gap-4 h-[200px] px-1 border-b border-white/10 relative">
-                {avgRating && (
-                  <div className="absolute left-0 right-0 flex items-center"
-                    style={{ bottom: `${(avgRating / 5) * 180}px`, borderTop: `1px dashed ${THEME_BLUE}80` }}>
-                    <span className="text-[10px] bg-[#181a1f] px-1 -translate-y-1/2" style={{ color: THEME_BLUE }}>整体均分 {avgRating}</span>
-                  </div>
-                )}
-                {stats.versionStats.map((v) => (
-                  <div key={v.version} title={`${v.count} 条评论`} className="relative w-9 flex-none flex flex-col items-center justify-end h-full">
-                    <div className="text-white/70 text-[11px] font-medium mb-1 whitespace-nowrap">{v.avgRating}★</div>
-                    <div className="w-full rounded-t transition-opacity hover:opacity-80"
-                      style={{ height: `${(v.avgRating / 5) * 180}px`, backgroundColor: THEME_BLUE, minHeight: 2 }} />
-                    <div className="text-white/40 text-[10px] font-mono mt-1.5 -rotate-45 origin-top-left whitespace-nowrap translate-x-2">
-                      {v.version}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <p className="text-white/25 text-[12px] mt-3 leading-relaxed">
-                App Store 端 Apple 官方 API 不返回评论对应版本号，只能靠评论日期 vs 版本发布时间线做推断分析，这里展示的是 Google Play 真实版本字段统计。
-              </p>
+              <RatingTrendChart points={stats.dailyRatings} />
               {versionConclusion && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
@@ -462,6 +484,9 @@ export default function DemoPage() {
                       : versionConclusion.diff >= 0.3
                       ? `明显高于此前版本的加权均分 ${versionConclusion.olderAvg}——版本质量在改善。`
                       : `跟此前版本的加权均分 ${versionConclusion.olderAvg} 基本持平，没有明显波动。`}
+                  </p>
+                  <p className="text-white/25 text-[12px] mt-2 leading-relaxed">
+                    版本号本身不一定能按时间排序（不同 App 编号体系不一样，有的还并行维护多条分支），这里是用该版本评论的真实时间近似排出来的，App Store 端因为官方 API 不返回版本号，做不了这个分析。
                   </p>
                 </div>
               )}
