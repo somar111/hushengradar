@@ -919,16 +919,18 @@ function DemoPageInner() {
   // 外层宽度做动画（48↔208，只动 width 一个属性），内层按 leftOpen 整体切换分支——
   // 收起那支永远只有一个图标按钮，结构上不可能露出别的内容；展开那支固定 w-52，
   // 跟外层当前宽度无关，所以外层变宽的过程中它不会被压着重新换行
+  // 不做成悬浮卡片——左栏直接用自己的底色铺满整列，跟右栏之间不留缝、不加分割线，
+  // 单靠色块深浅区分两栏，贴近一般 LLM 网页版（ChatGPT/Claude）的平铺式布局
   const LeftPanel = (
-    <div className={`flex-none flex flex-col overflow-hidden transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
+    <div className={`flex-none flex flex-col overflow-hidden bg-[#1c1c1c] transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
       {!leftOpen ? (
         <button onClick={() => setLeftOpen(true)}
           className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors m-3 flex-none">
           <PanelLeft size={20} strokeWidth={1.5} />
         </button>
       ) : (
-      <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1 w-52">
-        <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between bg-white/4 flex-none">
+      <div className="flex flex-col overflow-hidden flex-1 w-52">
+        <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between flex-none">
           <button onClick={() => setLeftOpen(false)}
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
             <PanelLeft size={20} strokeWidth={1.5} />
@@ -998,14 +1000,14 @@ function DemoPageInner() {
             </div>
           )}
         </div>
-      </GlassPanel>
+      </div>
       )}
     </div>
   );
 
-  // ── 中栏 ──
+  // ── 中栏 ──（跟左栏一样不做卡片，直接铺底色，靠跟左栏不同的色块区分）
   const CenterPanel = (
-    <GlassPanel className="flex-1 flex flex-col overflow-hidden rounded-2xl min-w-0">
+    <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-[#242424]">
       <div className="px-3 py-2.5 bg-white/4 flex items-center justify-between flex-none gap-3">
         <div className="flex items-center gap-8 min-w-0">
           {/* 常驻 logo：不管左栏开合都看得到，不用跟着侧栏一起消失 */}
@@ -1032,14 +1034,13 @@ function DemoPageInner() {
       </div>
 
       {activePanel === "reply" ? ReplyResult : activePanel === "ask" ? AskResult : AnalyzeResult}
-    </GlassPanel>
+    </div>
   );
 
   return (
-    <div className="h-screen flex flex-col font-[family-name:var(--font-geist)] overflow-hidden"
-      style={{ background: "#1c1c1c" }}>
+    <div className="h-screen flex flex-col font-[family-name:var(--font-geist)] overflow-hidden">
 
-      <div className="hidden md:flex flex-1 overflow-hidden p-3 gap-3">
+      <div className="hidden md:flex flex-1 overflow-hidden">
         {LeftPanel}
         {CenterPanel}
       </div>
