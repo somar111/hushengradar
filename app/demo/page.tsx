@@ -553,9 +553,9 @@ function DemoPageInner() {
         const localeGapNotable = worstLocale && avgRating != null && worstLocale.avgRating <= avgRating - 0.3;
 
         return (
-          <div className="flex flex-col gap-4">
-            <div className="bg-[#2c2c2b] rounded-2xl p-5">
-              <p className="text-white/90 text-[15px] font-semibold mb-3">评分趋势</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+            <div className="bg-[#2c2c2b] rounded-3xl p-6">
+              <p className="text-white/90 text-[16px] font-semibold mb-4">评分趋势</p>
               <div className="flex items-baseline gap-3 mb-1">
                 <span className="text-[42px] font-bold text-white">{avgRating}</span>
                 <span className="text-white/68 text-[16px]">{timeRangeLabel}平均分</span>
@@ -582,8 +582,8 @@ function DemoPageInner() {
               )}
             </div>
 
-            <div className="bg-[#2c2c2b] rounded-2xl p-5">
-              <p className="text-white/90 text-[15px] font-semibold mb-3">评分分布</p>
+            <div className="bg-[#2c2c2b] rounded-3xl p-6">
+              <p className="text-white/90 text-[16px] font-semibold mb-4">评分分布</p>
               <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel} {ratingTotal} 条评论按星级分布：</p>
               <div className="flex flex-col gap-2">
                 {[5, 4, 3, 2, 1].map((star) => {
@@ -610,8 +610,8 @@ function DemoPageInner() {
               )}
             </div>
 
-            <div className="bg-[#2c2c2b] rounded-2xl p-5">
-              <p className="text-white/90 text-[15px] font-semibold mb-3">诉求占比</p>
+            <div className="bg-[#2c2c2b] rounded-3xl p-6">
+              <p className="text-white/90 text-[16px] font-semibold mb-4">诉求占比</p>
               <p className="text-white/75 text-[14px] mb-4">
                 真实数据画像：按 AI 分类命中量统计{timeRangeLabel}整体构成，点击任意一块跳转查看该类全部真实评论：
               </p>
@@ -646,8 +646,8 @@ function DemoPageInner() {
               )}
             </div>
 
-            <div className="bg-[#2c2c2b] rounded-2xl p-5">
-              <p className="text-white/90 text-[15px] font-semibold mb-3">官方回复覆盖率</p>
+            <div className="bg-[#2c2c2b] rounded-3xl p-6">
+              <p className="text-white/90 text-[16px] font-semibold mb-4">官方回复覆盖率</p>
               <p className="text-white/75 text-[14px] mb-4">
                 整体回复率 {stats.officialReplyRate}%，按问题类型拆开看哪类被回复得多、哪类被回复得少：
               </p>
@@ -674,8 +674,8 @@ function DemoPageInner() {
             </div>
 
             {!locale && (
-              <div className="bg-[#2c2c2b] rounded-2xl p-5">
-                <p className="text-white/90 text-[15px] font-semibold mb-3">地区满意度</p>
+              <div className="bg-[#2c2c2b] rounded-3xl p-6">
+                <p className="text-white/90 text-[16px] font-semibold mb-4">地区满意度</p>
                 <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列：</p>
                 <div className="flex flex-col gap-2">
                   {stats.localeRatings.map((l) => (
