@@ -246,8 +246,10 @@ async function processApp(app) {
     }
   });
 
-  // 4. 重新生成所有标签的摘要（数据变了，摘要也要刷新）
-  if (fetched.length > 0) {
+  // 4. 重新生成所有标签的摘要——不能只看"今天有没有抓到新评论"（fetched），重新分类老评论
+  // （unclassified > 0，比如批量重置 ai_classified_at 触发的全量重分类）同样会改变标签内容，
+  // 必须一起触发刷新，否则摘要会带着旧的（污染过的）样本继续放着，重分类等于白做
+  if (fetched.length > 0 || unclassified.length > 0) {
     const allReviews = await fetchAllRows(
       supabase.from("reviews").select("content, ai_tags").eq("app_id", app.id)
     );
