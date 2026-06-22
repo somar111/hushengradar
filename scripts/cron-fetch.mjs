@@ -2,7 +2,7 @@
 // 通用脚本，不绑定任何具体 App；加新 App 只需要在 apps 表插一行，这个脚本自动覆盖到它。
 import { createClient } from "@supabase/supabase-js";
 import gplayPkg from "google-play-scraper";
-import { UNIVERSAL_CATEGORIES, buildClassifyPrompt, buildSummaryPrompt, buildTranslatePrompt, sanitizeTagKey } from "../lib/promptKit.mjs";
+import { UNIVERSAL_CATEGORIES, buildClassifyPrompt, buildSummaryPrompt, buildTranslatePrompt, dedupeCrossLevelTags, sanitizeTagKey } from "../lib/promptKit.mjs";
 
 const UNIVERSAL_KEYS = new Set(UNIVERSAL_CATEGORIES.map((c) => c.key));
 
@@ -239,7 +239,12 @@ async function processApp(app) {
       const existingSubTags = Object.fromEntries(
         [...existingSubTagsMap.entries()].map(([parentKey, subs]) => [parentKey, [...subs.entries()].map(([key, label]) => ({ key, label }))])
       );
-      const tags = await withRetry(() => classifyReview(r.content, r.rating, app.context, seedCategories, existingCustomTags, existingSubTags));
+      const rawTags = await withRetry(() => classifyReview(r.content, r.rating, app.context, seedCategories, existingCustomTags, existingSubTags));
+      // 兜底修正：如果模型还是把"已知顶层类型"塞进了别的标签当子问题（比如把performance_issue
+      // 当成bug的子问题，但performance_issue本身已经是个顶层自定义标签），提升成独立顶层标签，
+      // 避免同一个概念同时以两种身份重复存在
+      const knownTopLevelKeys = new Set([...baselineKeys, ...existingCustomTagsMap.keys()]);
+      const tags = dedupeCrossLevelTags(rawTags, knownTopLevelKeys);
       for (const t of tags) {
         if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
         if (t.subKey) {

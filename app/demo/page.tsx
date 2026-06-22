@@ -244,6 +244,16 @@ function fmtDate(iso: string | null) {
   return iso ? iso.slice(0, 10) : "—";
 }
 
+// "Top反馈"和"评论回复"头部用同一份子问题数据、同一个格式化方式，保证两处展示的子问题
+// 永远一一对应——不是各自维护一份文案，没有子问题时退回AI摘要，两边都没有就给个兜底提示
+function formatTagBreakdown(t: { count: number; summary: string | null; subTags: Record<string, { label: string; count: number }> }) {
+  const subEntries = Object.entries(t.subTags).sort((a, b) => b[1].count - a[1].count);
+  if (subEntries.length > 0) {
+    return subEntries.map(([, s]) => `${s.label}（${s.count}）`).join("、");
+  }
+  return t.summary || "点击查看全部真实评论 →";
+}
+
 function localeLabel(locale: string | null) {
   if (!locale) return "未知";
   if (localeLabelOverrides[locale]) return localeLabelOverrides[locale];
@@ -523,10 +533,10 @@ function DemoPageInner() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-white/60 text-[14px] font-mono">#{i + 1}</span>
-                        <span className="text-white/95 text-[17px] font-semibold">{t.label}</span>
+                        <span className="text-white/95 text-[17px] font-semibold">{t.label}（{t.count}）</span>
                       </div>
                       <p className="text-white/68 text-[13px] leading-relaxed">
-                        {t.count} 条评论{t.summary ? t.summary : "，点击查看全部真实评论 →"}
+                        {formatTagBreakdown(t)}
                       </p>
                     </div>
                   </button>
@@ -742,9 +752,9 @@ function DemoPageInner() {
         <div className="flex items-center gap-4 px-4 pt-4 flex-none">
           <DonutPercent percent={(stats.tagCounts[tagFilter].count / stats.total) * 100} size={48} />
           <div className="min-w-0">
-            <p className="text-white/90 text-[15px] font-medium">{stats.tagCounts[tagFilter].label}</p>
+            <p className="text-white/90 text-[15px] font-medium">{stats.tagCounts[tagFilter].label}（{stats.tagCounts[tagFilter].count}）</p>
             <p className="text-white/68 text-[13px] leading-relaxed">
-              {stats.tagCounts[tagFilter].count} 条评论{stats.tagCounts[tagFilter].summary ?? ""}
+              {formatTagBreakdown(stats.tagCounts[tagFilter])}
             </p>
           </div>
         </div>
