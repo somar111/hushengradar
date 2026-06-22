@@ -722,18 +722,9 @@ export default function DemoPage() {
               ))}
             </div>
           )}
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {Object.keys(presetQAs).map((q) => (
-              <button key={q} onClick={() => { setChatInput(q); }}
-                className="text-[12px] px-2.5 py-1 rounded-full bg-white/8 hover:bg-white/14 text-white/55 transition-colors">
-                {q}
-              </button>
-            ))}
-          </div>
           <div className="flex gap-2">
             <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
-              placeholder="问我关于这款 App 的任何问题..."
               className="flex-1 bg-[#1e2026] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors" />
             <button onClick={handleSendChat}
               className="bg-[rgb(55,57,62)] hover:bg-[rgb(75,78,84)] text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-[16px] font-medium">
