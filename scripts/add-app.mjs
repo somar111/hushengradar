@@ -3,7 +3,7 @@
 // 用法：node scripts/add-app.mjs <platform> <externalId> [--notes "真实客服邮箱/退款政策等人工补充信息"]
 import { createClient } from "@supabase/supabase-js";
 import gplayPkg from "google-play-scraper";
-import { buildContextPrompt } from "../lib/promptKit.mjs";
+import { buildContextPrompt, buildSeedCategoriesPrompt, sanitizeTagKey } from "../lib/promptKit.mjs";
 
 const gplay = gplayPkg.default ?? gplayPkg;
 
@@ -57,16 +57,44 @@ async function generateContext() {
   return { displayName: listing.title, generated: data.choices[0].message.content.trim() };
 }
 
+// 这款App专属的起步分类种子——不是全局共用的一份，每款App的产品形态不同，
+// 真实常见的问题类型也完全不同（生产力软件 vs 游戏 vs 电商），让AI看着context自己提议。
+async function generateSeedCategories(context) {
+  const systemPrompt = buildSeedCategoriesPrompt();
+  const res = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_API_KEY}` },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: `这款App的背景信息：${context}` }],
+      temperature: 0.4,
+      response_format: { type: "json_object" },
+    }),
+  });
+  if (!res.ok) throw new Error(`DeepSeek生成起步分类失败 ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const parsed = JSON.parse(data.choices[0].message.content);
+  if (!Array.isArray(parsed.categories)) return [];
+  return parsed.categories
+    .filter((c) => c && c.key && c.label)
+    .map((c) => ({ key: sanitizeTagKey(c.key), label: c.label }));
+}
+
 async function main() {
   const { displayName, generated } = await generateContext();
   const context = notes ? `${generated}\n\n团队补充信息：${notes}` : generated;
+  const seedCategories = await generateSeedCategories(context);
 
   console.log(`App: ${displayName}`);
   console.log(`Context:\n${context}\n`);
+  console.log(`起步分类种子：${seedCategories.map((c) => `${c.key}(${c.label})`).join("、")}\n`);
 
   const { error } = await supabase
     .from("apps")
-    .upsert({ platform, external_id: externalId, display_name: displayName, context }, { onConflict: "platform,external_id" });
+    .upsert(
+      { platform, external_id: externalId, display_name: displayName, context, seed_categories: seedCategories },
+      { onConflict: "platform,external_id" }
+    );
   if (error) throw error;
 
   console.log("已写入 apps 表，下次 cron-fetch.mjs 跑的时候会自动开始抓这个 App 的评论。");

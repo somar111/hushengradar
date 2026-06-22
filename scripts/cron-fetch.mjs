@@ -2,9 +2,9 @@
 // 通用脚本，不绑定任何具体 App；加新 App 只需要在 apps 表插一行，这个脚本自动覆盖到它。
 import { createClient } from "@supabase/supabase-js";
 import gplayPkg from "google-play-scraper";
-import { BASELINE_CATEGORIES, buildClassifyPrompt, buildSummaryPrompt, buildTranslatePrompt, sanitizeTagKey } from "../lib/promptKit.mjs";
+import { UNIVERSAL_CATEGORIES, buildClassifyPrompt, buildSummaryPrompt, buildTranslatePrompt, sanitizeTagKey } from "../lib/promptKit.mjs";
 
-const BASELINE_KEYS = new Set(BASELINE_CATEGORIES.map((c) => c.key));
+const UNIVERSAL_KEYS = new Set(UNIVERSAL_CATEGORIES.map((c) => c.key));
 
 const gplay = gplayPkg.default ?? gplayPkg;
 const SORT_NEWEST = 2;
@@ -64,8 +64,8 @@ async function fetchReviewsSince(packageName, sinceDate, lang, country) {
   }));
 }
 
-async function classifyReview(content, rating, appContext, existingCustomTags = []) {
-  const systemPrompt = buildClassifyPrompt({ appContext, existingCustomTags });
+async function classifyReview(content, rating, appContext, seedCategories = [], existingCustomTags = []) {
+  const systemPrompt = buildClassifyPrompt({ appContext, seedCategories, existingCustomTags });
 
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -198,15 +198,18 @@ async function processApp(app) {
   }
 
   // 2. 分类所有未分类过的（包括这次新抓的 + 之前遗留的），分页拉全量 + 8 路并发
-  // 先看看这个 App 之前已经造过哪些自定义标签（不在 baseline 里的），喂给模型优先复用，
+  // 这个App的起步分类种子（加App时AI根据context提议的，不是全局共用的）+ 通用两类，
+  // 凡是不在这个集合里的，都算"这个App自己造出来的custom tag"，喂给模型优先复用，
   // 避免每次调用互不知情、造出一堆近义的碎标签。
+  const seedCategories = app.seed_categories ?? [];
+  const baselineKeys = new Set([...UNIVERSAL_KEYS, ...seedCategories.map((c) => c.key)]);
   const classifiedSample = await fetchAllRows(
     supabase.from("reviews").select("ai_tags").eq("app_id", app.id).not("ai_classified_at", "is", null)
   );
   const existingCustomTagsMap = new Map();
   for (const r of classifiedSample) {
     for (const t of r.ai_tags ?? []) {
-      if (!BASELINE_KEYS.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
+      if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
     }
   }
   const existingCustomTags = [...existingCustomTagsMap.entries()].map(([key, label]) => ({ key, label }));
@@ -218,7 +221,7 @@ async function processApp(app) {
   console.log(`待分类 ${unclassified.length} 条`);
   await runConcurrent(unclassified, 8, async (r) => {
     try {
-      const tags = await withRetry(() => classifyReview(r.content, r.rating, app.context, existingCustomTags));
+      const tags = await withRetry(() => classifyReview(r.content, r.rating, app.context, seedCategories, existingCustomTags));
       const { error } = await supabase.from("reviews").update({
         ai_tags: tags, ai_tag_keys: tags.map((t) => t.key), ai_classified_at: new Date().toISOString(),
       }).eq("id", r.id);
