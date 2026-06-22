@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Layers, Languages,
-  TrendingDown, GitCompare, ListTodo, Reply,
+  TrendingDown, GitCompare, Bot, Reply,
   Send, X, BarChart2, PanelLeft, Search, Loader2, Settings, ChevronDown,
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
@@ -52,7 +52,7 @@ type Stats = {
   officialReplyRate: number;
 };
 
-type RightPanel = "complaints" | "comparison" | "demands" | "reply";
+type RightPanel = "complaints" | "analysis" | "ask" | "reply";
 type MobileTab = "filter" | "analyze";
 type Platform = "googleplay" | "appstore";
 type TargetLang = "zh" | "en";
@@ -167,8 +167,6 @@ export default function DemoPage() {
 
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<{ q: string; a: string }[]>([]);
-
-  const isReplyMode = activePanel === "reply";
 
   const since = useMemo(() => {
     const days = timeRange === "week" ? 7 : 30;
@@ -299,8 +297,8 @@ export default function DemoPage() {
 
   const rightPanelItems: { key: RightPanel; label: string; icon: React.ReactNode }[] = [
     { key: "complaints", label: "Top 反馈", icon: <TrendingDown size={14} /> },
-    { key: "comparison", label: "版本分析", icon: <GitCompare size={14} /> },
-    { key: "demands", label: "诉求清单", icon: <ListTodo size={14} /> },
+    { key: "analysis", label: "综合分析", icon: <GitCompare size={14} /> },
+    { key: "ask", label: "问 AI", icon: <Bot size={14} /> },
     { key: "reply", label: "评论回复", icon: <Reply size={14} /> },
   ];
 
@@ -349,45 +347,7 @@ export default function DemoPage() {
         </div>
       )}
 
-      {activePanel === "comparison" && stats && (
-        <div>
-          <div className="flex items-baseline gap-3 mb-1">
-            <span className="text-[42px] font-bold text-white">{avgRating}</span>
-            <span className="text-white/55 text-[16px]">{timeRangeLabel}平均分</span>
-          </div>
-          <p className="text-white/45 text-[14px] mb-5">
-            {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按版本号统计（仅统计评论里带版本号的 {stats.versionStats.reduce((s, v) => s + v.count, 0)} 条）
-          </p>
-          <div className="flex items-end gap-2 h-[200px] px-1 border-b border-white/10 relative">
-            {avgRating && (
-              <div className="absolute left-0 right-0 border-t border-dashed border-violet-400/50 flex items-center"
-                style={{ bottom: `${(avgRating / 5) * 180}px` }}>
-                <span className="text-violet-400 text-[10px] bg-[#181a1f] px-1 -translate-y-1/2">整体均分 {avgRating}</span>
-              </div>
-            )}
-            {stats.versionStats.map((v) => {
-              const color = v.avgRating < 3 ? "#ef4444" : v.avgRating < 4 ? "#f59e0b" : "#10b981";
-              return (
-                <div key={v.version} className="group relative flex-1 flex flex-col items-center justify-end h-full min-w-0">
-                  <div className="absolute -top-5 text-white/55 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    {v.avgRating} ★ · {v.count} 条
-                  </div>
-                  <div className="w-full rounded-t transition-opacity group-hover:opacity-80"
-                    style={{ height: `${(v.avgRating / 5) * 180}px`, backgroundColor: color, minHeight: 2 }} />
-                  <div className="text-white/40 text-[10px] font-mono mt-1.5 -rotate-45 origin-top-left whitespace-nowrap translate-x-2">
-                    {v.version}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <p className="text-white/25 text-[12px] mt-3 leading-relaxed">
-            App Store 端 Apple 官方 API 不返回评论对应版本号，只能靠评论日期 vs 版本发布时间线做推断分析，这里展示的是 Google Play 真实版本字段统计。
-          </p>
-        </div>
-      )}
-
-      {activePanel === "demands" && stats && (() => {
+      {activePanel === "analysis" && stats && (() => {
         // 不假定哪两个 tag 是最大诉求——"求加新功能"和"正面评价"排除在外，剩下按真实命中量取前二，
         // 换一个 App（最大问题可能是广告或登录而不是扣费/bug）这段结论照样成立
         const sorted = Object.entries(stats.tagCounts).sort((a, b) => b[1].count - a[1].count);
@@ -397,37 +357,109 @@ export default function DemoPage() {
         const topComplaintsPct = stats.total ? Math.round((topComplaintsCount / stats.total) * 100) : 0;
         const featureReq = stats.tagCounts.feature_request;
         const featureReqPct = stats.total ? Math.round(((featureReq?.count ?? 0) / stats.total) * 1000) / 10 : 0;
+        // TODO：这俩块内容暂时是直接堆叠，具体怎么整合后面再定
         return (
-          <div>
-            <p className="text-white/65 text-[14px] mb-4">
-              真实数据画像：按 AI 分类命中量排序，{topComplaintsLabel ? `"${topComplaintsLabel}"是${timeRangeLabel}最大的诉求` : "暂无足够数据"}，"求加新功能"只占很小一部分：
-            </p>
-            <div className="flex flex-col gap-3">
-              {sorted.map(([tag, t], i) => {
-                const pct = (t.count / stats.total) * 100;
-                return (
-                  <button key={tag} onClick={() => jumpToTag(tag)}
-                    className="text-left bg-[#1e2026] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
-                    <DonutPercent percent={pct} color="#10b981" />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-white/95 text-[17px] font-semibold">#{i + 1} {t.label}</span>
-                      <p className="text-white/55 text-[13px] leading-relaxed">{t.count} 条评论{t.summary ?? ""}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            {topComplaints.length > 0 && (
-              <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                <p className="text-white/70 text-[14px] leading-relaxed">
-                  {topComplaintsLabel}合计占{timeRangeLabel}评论的 {topComplaintsPct}%，而求加新功能只有 {featureReq?.count ?? 0} 条（{featureReqPct}%）——先堵住{topComplaintsLabel}这类问题，比做新功能性价比更高。
-                </p>
+          <div className="flex flex-col gap-8">
+            <div>
+              <p className="text-white/90 text-[15px] font-semibold mb-3">版本趋势</p>
+              <div className="flex items-baseline gap-3 mb-1">
+                <span className="text-[42px] font-bold text-white">{avgRating}</span>
+                <span className="text-white/55 text-[16px]">{timeRangeLabel}平均分</span>
               </div>
-            )}
+              <p className="text-white/45 text-[14px] mb-5">
+                {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按版本号统计（仅统计评论里带版本号的 {stats.versionStats.reduce((s, v) => s + v.count, 0)} 条）
+              </p>
+              <div className="flex items-end gap-2 h-[200px] px-1 border-b border-white/10 relative">
+                {avgRating && (
+                  <div className="absolute left-0 right-0 border-t border-dashed border-violet-400/50 flex items-center"
+                    style={{ bottom: `${(avgRating / 5) * 180}px` }}>
+                    <span className="text-violet-400 text-[10px] bg-[#181a1f] px-1 -translate-y-1/2">整体均分 {avgRating}</span>
+                  </div>
+                )}
+                {stats.versionStats.map((v) => {
+                  const color = v.avgRating < 3 ? "#ef4444" : v.avgRating < 4 ? "#f59e0b" : "#10b981";
+                  return (
+                    <div key={v.version} className="group relative flex-1 flex flex-col items-center justify-end h-full min-w-0">
+                      <div className="absolute -top-5 text-white/55 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                        {v.avgRating} ★ · {v.count} 条
+                      </div>
+                      <div className="w-full rounded-t transition-opacity group-hover:opacity-80"
+                        style={{ height: `${(v.avgRating / 5) * 180}px`, backgroundColor: color, minHeight: 2 }} />
+                      <div className="text-white/40 text-[10px] font-mono mt-1.5 -rotate-45 origin-top-left whitespace-nowrap translate-x-2">
+                        {v.version}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-white/25 text-[12px] mt-3 leading-relaxed">
+                App Store 端 Apple 官方 API 不返回评论对应版本号，只能靠评论日期 vs 版本发布时间线做推断分析，这里展示的是 Google Play 真实版本字段统计。
+              </p>
+            </div>
+
+            <div>
+              <p className="text-white/90 text-[15px] font-semibold mb-3">诉求优先级</p>
+              <p className="text-white/65 text-[14px] mb-4">
+                真实数据画像：按 AI 分类命中量排序，{topComplaintsLabel ? `"${topComplaintsLabel}"是${timeRangeLabel}最大的诉求` : "暂无足够数据"}，"求加新功能"只占很小一部分：
+              </p>
+              <div className="flex flex-col gap-3">
+                {sorted.map(([tag, t], i) => {
+                  const pct = (t.count / stats.total) * 100;
+                  return (
+                    <button key={tag} onClick={() => jumpToTag(tag)}
+                      className="text-left bg-[#1e2026] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
+                      <DonutPercent percent={pct} color="#10b981" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-white/95 text-[17px] font-semibold">#{i + 1} {t.label}</span>
+                        <p className="text-white/55 text-[13px] leading-relaxed">{t.count} 条评论{t.summary ?? ""}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {topComplaints.length > 0 && (
+                <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
+                  <p className="text-white/70 text-[14px] leading-relaxed">
+                    {topComplaintsLabel}合计占{timeRangeLabel}评论的 {topComplaintsPct}%，而求加新功能只有 {featureReq?.count ?? 0} 条（{featureReqPct}%）——先堵住{topComplaintsLabel}这类问题，比做新功能性价比更高。
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         );
       })()}
+    </div>
+  );
+
+  // ── 中间区域：问 AI ──
+  const AskResult = (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        {chatMessages.length === 0 ? (
+          <p className="text-white/35 text-[14px]">问我关于这款 App 的任何问题，比如最近用户在反馈什么、哪个版本评价最差、官方回复率怎么样。</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {chatMessages.map((m, i) => (
+              <div key={i} className="text-[14px]">
+                <p className="text-white/55 mb-1">你：{m.q}</p>
+                <p className="text-white/70 bg-[#1e2026] rounded-lg px-3 py-2 leading-relaxed whitespace-pre-line">{m.a}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="bg-black/15 p-4 flex-none">
+        <div className="flex gap-2">
+          <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
+            className="flex-1 bg-[#1e2026] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors" />
+          <button onClick={handleSendChat}
+            className="bg-[rgb(55,57,62)] hover:bg-[rgb(75,78,84)] text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-[16px] font-medium">
+            <Send size={13} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 
@@ -708,31 +740,7 @@ export default function DemoPage() {
         <span className="text-white/35 text-[13px] flex-none">{stats ? `${stats.total} 条评论` : "加载中..."}</span>
       </div>
 
-      {isReplyMode ? ReplyResult : AnalyzeResult}
-
-      {!isReplyMode && (
-        <div className="bg-black/15 p-4 flex-none">
-          {chatMessages.length > 0 && (
-            <div className="mb-3 max-h-36 overflow-y-auto flex flex-col gap-2">
-              {chatMessages.map((m, i) => (
-                <div key={i} className="text-[14px]">
-                  <p className="text-white/55 mb-0.5">你：{m.q}</p>
-                  <p className="text-white/70 bg-[#1e2026] rounded-lg px-3 py-2 leading-relaxed whitespace-pre-line">{m.a}</p>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2">
-            <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
-              className="flex-1 bg-[#1e2026] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors" />
-            <button onClick={handleSendChat}
-              className="bg-[rgb(55,57,62)] hover:bg-[rgb(75,78,84)] text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-[16px] font-medium">
-              <Send size={13} />
-            </button>
-          </div>
-        </div>
-      )}
+      {activePanel === "reply" ? ReplyResult : activePanel === "ask" ? AskResult : AnalyzeResult}
     </GlassPanel>
   );
 
