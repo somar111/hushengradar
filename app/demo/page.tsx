@@ -373,20 +373,24 @@ function DemoPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 拉统计数据
+  // 拉统计数据——selectedAppId 是从 URL 读的（刷新页面时立刻就有值），但 apps 列表（带着
+  // since 计算要用的 latestReviewDate 锚点）是异步拉的，刷新时会有一瞬间 selectedAppId 已经
+  // 有值但 apps 还没到，如果这时候就发请求，since 会先用错误的兜底值（当前时间）算一次，
+  // 等 apps 到了再用正确锚点重新算一次——界面上的数字会先跳一次错的再跳回对的。等 apps 真的
+  // 加载完（能找到对应 selectedApp）才发第一次请求，从源头避免这个问题，不是事后补救。
   useEffect(() => {
-    if (!selectedAppId) return;
+    if (!selectedAppId || !selectedApp) return;
     const params = new URLSearchParams();
     params.set("appId", selectedAppId);
     params.set("since", since);
     if (locale) params.set("locale", locale);
     fetch(`/api/demo/stats?${params}`).then((r) => r.json()).then(setStats);
-  }, [selectedAppId, locale, since]);
+  }, [selectedAppId, selectedApp, locale, since]);
 
   // "综合分析"面板的"真实结论"由AI根据真实统计数字现场判断、现场生成，只在看这个面板时才拉，
   // 避免切换其他Tab时白白触发DeepSeek调用
   useEffect(() => {
-    if (!selectedAppId || activePanel !== "analysis") return;
+    if (!selectedAppId || !selectedApp || activePanel !== "analysis") return;
     setInsights(null);
     setInsightsLoading(true);
     const params = new URLSearchParams();
@@ -398,11 +402,11 @@ function DemoPageInner() {
       .then((r) => r.json())
       .then((data) => setInsights(data.error ? null : data))
       .finally(() => setInsightsLoading(false));
-  }, [selectedAppId, locale, since, timeRangeLabel, activePanel]);
+  }, [selectedAppId, selectedApp, locale, since, timeRangeLabel, activePanel]);
 
   // 拉评论列表（筛选/翻页变化时）
   useEffect(() => {
-    if (!selectedAppId) return;
+    if (!selectedAppId || !selectedApp) return;
     setLoading(true);
     const params = new URLSearchParams();
     params.set("appId", selectedAppId);
@@ -421,7 +425,7 @@ function DemoPageInner() {
         setTotal(data.total);
       })
       .finally(() => setLoading(false));
-  }, [selectedAppId, locale, tagFilter, subTagFilter, search, repliedFilter, page, since]);
+  }, [selectedAppId, selectedApp, locale, tagFilter, subTagFilter, search, repliedFilter, page, since]);
 
   // 切筛选条件时回到第一页（page 已经是 1 就不用再多触发一次 URL replace）
   useEffect(() => { if (page !== 1) setPage(1); }, [selectedAppId, locale, tagFilter, subTagFilter, search, repliedFilter, since]);
