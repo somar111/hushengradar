@@ -288,7 +288,7 @@ function DemoPageInner() {
   const [platformRaw, setPlatformRaw] = useQueryState("platform", "googleplay");
   const platform = platformRaw as Platform;
   const setPlatform = setPlatformRaw as (v: Platform) => void;
-  const [apps, setApps] = useState<AppRow[]>([]);
+  const [apps, setApps] = useState<(AppRow & { latestReviewDate: string | null })[]>([]);
   const [selectedAppId, setSelectedAppIdRaw] = useQueryState("app", "");
   const setSelectedAppId = (v: string | undefined) => setSelectedAppIdRaw(v ?? "");
   const [timeRangeRaw, setTimeRangeRaw] = useQueryState("range", "week");
@@ -339,12 +339,16 @@ function DemoPageInner() {
   const [chatMessages, setChatMessages] = useState<{ q: string; a: string }[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
 
+  const selectedApp = apps.find((a) => a.id === selectedAppId);
+  // 锚点用这个App真实数据里最新一条评论的日期，不用服务器当前时间——见 lib/reviews.ts
+  // 的 getLatestReviewDate 注释，Google Play 评论接口本身有索引延迟，锚定"现在"会让窗口
+  // 尾部总是空着一截，看起来像漏了数据。还没拿到任何App数据时（比如apps还没加载完）才退回当前时间。
   const since = useMemo(() => {
     const days = timeRange === "week" ? 7 : 30;
-    return new Date(Date.now() - days * 86400000).toISOString();
-  }, [timeRange]);
+    const anchor = selectedApp?.latestReviewDate ? new Date(selectedApp.latestReviewDate) : new Date();
+    return new Date(anchor.getTime() - days * 86400000).toISOString();
+  }, [timeRange, selectedApp?.latestReviewDate]);
   const timeRangeLabel = timeRange === "week" ? "最近一周" : "最近一月";
-  const selectedApp = apps.find((a) => a.id === selectedAppId);
   const appName = selectedApp?.display_name ?? "App";
 
   // ⌘B / Ctrl+B 切换左侧筛选栏——跟 VS Code、Claude 客户端的"切换侧边栏"快捷键保持一致，

@@ -30,6 +30,23 @@ export async function getApp(appId: string): Promise<AppRow> {
   return app;
 }
 
+// "最近一月/一周"这类时间窗口的锚点——必须用这个App真实数据里最新的评论日期，不能用
+// 服务器当前时间（Date.now()）。Google Play 的评论接口本身有1~2天的索引延迟（已经在
+// 别处验证过），如果锚点定在"现在"，窗口尾部永远空在那里，看起来像是少了最近几天的数据，
+// 其实是数据源还没把那几天的评论吐出来。锚定到"这个App实际最新一条评论的日期"，才能让
+// "最近一月"真的对应这个App已有的最近30天数据，不同App/不同抓取延迟下都一样适用。
+export async function getLatestReviewDate(appId: string): Promise<string | null> {
+  const supabase = getServiceSupabase();
+  const { data, error } = await supabase
+    .from("reviews")
+    .select("review_date")
+    .eq("app_id", appId)
+    .order("review_date", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return data?.[0]?.review_date ?? null;
+}
+
 export async function queryReviews(opts: {
   appId: string;
   tag?: string;
