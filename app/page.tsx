@@ -35,7 +35,6 @@ export default function Home() {
           </p>
           <div className="flex flex-col items-center justify-center gap-3 mb-12">
             <a href="/demo" className="text-base font-medium text-white bg-gray-900 hover:bg-gray-700 px-6 py-2.5 rounded-full transition-colors">查看 Demo ↗</a>
-            <a href="/about" className="text-base text-gray-600 hover:text-gray-900 px-6 py-2.5 rounded-full bg-black/8 hover:bg-black/12 transition-colors">关于本项目</a>
           </div>
 
         </div>
