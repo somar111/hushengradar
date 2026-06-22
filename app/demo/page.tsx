@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Layers, Languages,
@@ -8,6 +8,7 @@ import {
   Send, X, BarChart2, PanelLeft, Search, Loader2, Settings, ChevronDown, Info,
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
+import { useQueryState } from "@/lib/useQueryState";
 
 // ─── 类型 ────────────────────────────────────────────────────
 
@@ -246,17 +247,40 @@ function localeLabel(locale: string | null) {
 
 // ─── 主组件 ─────────────────────────────────────────────────
 
+// 筛选/导航类状态同步进 URL query string——分享链接、浏览器前进后退都对这些字段生效。
+// 跟具体 App、具体数据无关，纯 UI 状态（侧栏开合、hover 高亮等）不进 URL，见下方各自的 useState。
 export default function DemoPage() {
+  return (
+    <Suspense fallback={null}>
+      <DemoPageInner />
+    </Suspense>
+  );
+}
+
+function DemoPageInner() {
   const [leftOpen, setLeftOpen] = useState(true);
-  const [activePanel, setActivePanel] = useState<RightPanel>("complaints");
-  const [platform, setPlatform] = useState<Platform>("googleplay");
+  const [activePanelRaw, setActivePanelRaw] = useQueryState("panel", "complaints");
+  const activePanel = activePanelRaw as RightPanel;
+  const setActivePanel = setActivePanelRaw as (v: RightPanel) => void;
+  const [platformRaw, setPlatformRaw] = useQueryState("platform", "googleplay");
+  const platform = platformRaw as Platform;
+  const setPlatform = setPlatformRaw as (v: Platform) => void;
   const [apps, setApps] = useState<AppRow[]>([]);
-  const [selectedAppId, setSelectedAppId] = useState<string | undefined>(undefined);
-  const [timeRange, setTimeRange] = useState<TimeRange>("week");
-  const [locale, setLocale] = useState<string | undefined>(undefined);
-  const [tagFilter, setTagFilter] = useState<string | undefined>(undefined);
+  const [selectedAppId, setSelectedAppIdRaw] = useQueryState("app", "");
+  const setSelectedAppId = (v: string | undefined) => setSelectedAppIdRaw(v ?? "");
+  const [timeRangeRaw, setTimeRangeRaw] = useQueryState("range", "week");
+  const timeRange = timeRangeRaw as TimeRange;
+  const setTimeRange = setTimeRangeRaw as (v: TimeRange) => void;
+  const [locale, setLocaleRaw] = useQueryState("locale", "");
+  const setLocale = (v: string | undefined) => setLocaleRaw(v ?? "");
+  const [tagFilter, setTagFilterRaw] = useQueryState("tag", "");
+  const setTagFilter = (v: string | undefined) => setTagFilterRaw(v ?? "");
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearchRaw] = useQueryState("q", "");
+  const setSearch = (v: string) => setSearchRaw(v);
+  const [pageRaw, setPageRaw] = useQueryState("page", "1", "replace");
+  const page = Number(pageRaw) || 1;
+  const setPage = (v: number) => setPageRaw(String(v));
   const [mobileTab, setMobileTab] = useState<MobileTab>("analyze");
   const [translateSettings, setTranslateSettings] = useState<TranslateSettings>({
     enabled: true,
@@ -271,7 +295,6 @@ export default function DemoPage() {
 
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
 
   const [selectedReview, setSelectedReview] = useState<ReviewRow | null>(null);
@@ -344,8 +367,8 @@ export default function DemoPage() {
       .finally(() => setLoading(false));
   }, [selectedAppId, locale, tagFilter, search, page, since]);
 
-  // 切筛选条件时回到第一页
-  useEffect(() => { setPage(1); }, [selectedAppId, locale, tagFilter, search, since]);
+  // 切筛选条件时回到第一页（page 已经是 1 就不用再多触发一次 URL replace）
+  useEffect(() => { if (page !== 1) setPage(1); }, [selectedAppId, locale, tagFilter, search, since]);
 
   // 预设问答（基于真实统计生成，统计加载完才有内容）
   const presetQAs = useMemo(() => {
@@ -830,9 +853,9 @@ export default function DemoPage() {
         )}
         {!loading && total > PAGE_SIZE && (
           <div className="flex items-center justify-center gap-3 mt-4 text-[13px] text-white/55">
-            <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">上一页</button>
+            <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">上一页</button>
             <span>第 {page} / {Math.ceil(total / PAGE_SIZE)} 页 · 共 {total} 条</span>
-            <button disabled={page >= Math.ceil(total / PAGE_SIZE)} onClick={() => setPage((p) => p + 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">下一页</button>
+            <button disabled={page >= Math.ceil(total / PAGE_SIZE)} onClick={() => setPage(page + 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">下一页</button>
           </div>
         )}
       </div>
@@ -928,7 +951,7 @@ export default function DemoPage() {
             {showAppMenu && (
               <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#303030] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
                 {apps.map((a) => (
-                  <button key={a.id} onClick={() => { setSelectedAppId(a.id); setShowAppMenu(false); }}
+                  <button key={a.id} onClick={() => { setSelectedAppId(a.id); setLocale(undefined); setTagFilter(undefined); setShowAppMenu(false); }}
                     className={`text-left px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
                       a.id === selectedAppId ? "bg-white/12 text-white/90" : "text-white/70 hover:bg-white/8"
                     }`}>
@@ -1014,7 +1037,7 @@ export default function DemoPage() {
               <div className="flex flex-col gap-5">
                 <div>
                   <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">App</p>
-                  <select value={selectedAppId ?? ""} onChange={(e) => setSelectedAppId(e.target.value)}
+                  <select value={selectedAppId ?? ""} onChange={(e) => { setSelectedAppId(e.target.value); setLocale(undefined); setTagFilter(undefined); }}
                     className="w-full bg-white/8 rounded-lg px-3 py-2 text-[16px] text-white/85 outline-none">
                     {apps.map((a) => (
                       <option key={a.id} value={a.id} className="bg-[#303030]">{a.display_name}</option>
