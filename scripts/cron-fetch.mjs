@@ -212,16 +212,23 @@ async function processApp(app) {
       if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
     }
   }
-  const existingCustomTags = [...existingCustomTagsMap.entries()].map(([key, label]) => ({ key, label }));
-  console.log(`已有自定义标签 ${existingCustomTags.length} 个`);
+  console.log(`已有自定义标签 ${existingCustomTagsMap.size} 个`);
 
   const unclassified = await fetchAllRows(
     supabase.from("reviews").select("id, content, rating").eq("app_id", app.id).is("ai_classified_at", null)
   );
   console.log(`待分类 ${unclassified.length} 条`);
+  // existingCustomTagsMap 在整个分类过程中持续更新（不是开始前冻结的快照）：8个并发worker里
+  // 谁先造出一个新自定义标签，其他worker接下来的调用马上就能看到、优先复用，不用各自凭感觉重新造。
+  // 这点对全新App（比如第一天接入、一条已分类评论都没有）特别重要——不然第一批几千条评论会在
+  // 完全看不到彼此的情况下并发跑完，容易把同一个问题造出好几个近义的碎标签。
   await runConcurrent(unclassified, 8, async (r) => {
     try {
+      const existingCustomTags = [...existingCustomTagsMap.entries()].map(([key, label]) => ({ key, label }));
       const tags = await withRetry(() => classifyReview(r.content, r.rating, app.context, seedCategories, existingCustomTags));
+      for (const t of tags) {
+        if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
+      }
       const { error } = await supabase.from("reviews").update({
         ai_tags: tags, ai_tag_keys: tags.map((t) => t.key), ai_classified_at: new Date().toISOString(),
       }).eq("id", r.id);
