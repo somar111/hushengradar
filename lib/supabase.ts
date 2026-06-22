@@ -29,7 +29,10 @@ export type AppRow = {
 // evidence：这条评论里跟这个标签相关的具体内容（简短中文转述），不是整条评论——
 // 用来在"展示该标签下的真实评论"时只摆跟这个标签真正相关的部分，避免摘要被评论里其他不相关的话混进去。
 // 老数据没有这个字段（分类时prompt还没要求过），消费方要自己 fallback 到完整评论内容。
-export type AiTag = { key: string; label: string; evidence?: string };
+// subKey/subLabel：这个标签下更具体的子问题（比如 feature_request 下具体是"阿拉伯语支持"
+// 还是"图片支持"），同一份分类调用里一起生成，不是单独再起一次分类。可以没有（不是每个
+// 标签命中都有意义的子分类）。老数据没有这两个字段，消费方要当作"没有子分类"处理。
+export type AiTag = { key: string; label: string; evidence?: string; subKey?: string | null; subLabel?: string | null };
 
 export type ReviewRow = {
   id: string;

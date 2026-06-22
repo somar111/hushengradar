@@ -5,6 +5,7 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const appId = params.get("appId") || undefined;
   const tag = params.get("tag") || undefined;
+  const subTag = params.get("subTag") || undefined;
   const locale = params.get("locale") || undefined;
   const ratingParam = params.get("rating");
   const rating = ratingParam ? Number(ratingParam) : undefined;
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   const pageSize = Math.min(200, Math.max(1, Number(params.get("pageSize") || "20")));
 
   const app = appId ? await getApp(appId) : await getDefaultApp();
-  const { items, total } = await queryReviews({ appId: app.id, tag, locale, rating, q, since, replied, page, pageSize });
+  const { items, total } = await queryReviews({ appId: app.id, tag, subTag, locale, rating, q, since, replied, page, pageSize });
 
   return Response.json({ items, total, page, pageSize });
 }

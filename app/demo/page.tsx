@@ -48,7 +48,10 @@ type Stats = {
   total: number;
   dateRange: { from: string | null; to: string | null };
   ratingDist: Record<string, number>;
-  tagCounts: Record<string, { label: string; count: number; summary: string | null; repliedCount: number }>;
+  tagCounts: Record<
+    string,
+    { label: string; count: number; summary: string | null; repliedCount: number; subTags: Record<string, { label: string; count: number }> }
+  >;
   localeCounts: Record<string, number>;
   localeRatings: { locale: string; count: number; avgRating: number }[];
   versionStats: { version: string; count: number; avgRating: number; avgDate: number }[];
@@ -284,7 +287,10 @@ function DemoPageInner() {
   const [locale, setLocaleRaw] = useQueryState("locale", "");
   const setLocale = (v: string | undefined) => setLocaleRaw(v ?? "");
   const [tagFilter, setTagFilterRaw] = useQueryState("tag", "");
-  const setTagFilter = (v: string | undefined) => setTagFilterRaw(v ?? "");
+  // 换主标签时子问题筛选要跟着清空——旧的子问题不一定属于新选的主标签
+  const setTagFilter = (v: string | undefined) => { setTagFilterRaw(v ?? ""); setSubTagFilterRaw(""); };
+  const [subTagFilter, setSubTagFilterRaw] = useQueryState("subTag", "");
+  const setSubTagFilter = (v: string | undefined) => setSubTagFilterRaw(v ?? "");
   // "" = 全部，"true" = 只看已回复，"false" = 只看未回复
   const [repliedRaw, setRepliedRaw] = useQueryState("replied", "");
   const repliedFilter = repliedRaw === "true" ? true : repliedRaw === "false" ? false : undefined;
@@ -389,6 +395,7 @@ function DemoPageInner() {
     params.set("since", since);
     if (locale) params.set("locale", locale);
     if (tagFilter) params.set("tag", tagFilter);
+    if (tagFilter && subTagFilter) params.set("subTag", subTagFilter);
     if (search) params.set("q", search);
     if (repliedFilter !== undefined) params.set("replied", String(repliedFilter));
     params.set("page", String(page));
@@ -400,10 +407,10 @@ function DemoPageInner() {
         setTotal(data.total);
       })
       .finally(() => setLoading(false));
-  }, [selectedAppId, locale, tagFilter, search, repliedFilter, page, since]);
+  }, [selectedAppId, locale, tagFilter, subTagFilter, search, repliedFilter, page, since]);
 
   // 切筛选条件时回到第一页（page 已经是 1 就不用再多触发一次 URL replace）
-  useEffect(() => { if (page !== 1) setPage(1); }, [selectedAppId, locale, tagFilter, search, repliedFilter, since]);
+  useEffect(() => { if (page !== 1) setPage(1); }, [selectedAppId, locale, tagFilter, subTagFilter, search, repliedFilter, since]);
 
   // 真实调AI回答——把当前筛选范围内的真实统计数字喂给DeepSeek，不是预设话术匹配
   async function handleSendChat() {
@@ -757,6 +764,15 @@ function DemoPageInner() {
             <option key={key} value={key}>{t.label}（{t.count}）</option>
           ))}
         </select>
+        {tagFilter && stats?.tagCounts[tagFilter] && Object.keys(stats.tagCounts[tagFilter].subTags).length > 0 && (
+          <select value={subTagFilter || ""} onChange={(e) => setSubTagFilter(e.target.value || undefined)}
+            className="bg-[#2c2c2b] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/80 outline-none focus:border-white/40">
+            <option value="">全部子问题</option>
+            {Object.entries(stats.tagCounts[tagFilter].subTags).sort((a, b) => b[1].count - a[1].count).map(([key, s]) => (
+              <option key={key} value={key}>{s.label}（{s.count}）</option>
+            ))}
+          </select>
+        )}
         <select value={repliedFilter === undefined ? "" : String(repliedFilter)}
           onChange={(e) => setRepliedFilter(e.target.value === "" ? undefined : e.target.value === "true")}
           className="bg-[#2c2c2b] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/80 outline-none focus:border-white/40">
@@ -768,6 +784,12 @@ function DemoPageInner() {
           <button onClick={() => setTagFilter(undefined)}
             className="flex items-center gap-1 px-3 py-1 rounded-full text-[12px] bg-white/15 text-white/90">
             {stats?.tagCounts[tagFilter]?.label ?? tagFilter} <X size={11} />
+          </button>
+        )}
+        {tagFilter && subTagFilter && (
+          <button onClick={() => setSubTagFilter(undefined)}
+            className="flex items-center gap-1 px-3 py-1 rounded-full text-[12px] bg-white/15 text-white/90">
+            {stats?.tagCounts[tagFilter]?.subTags[subTagFilter]?.label ?? subTagFilter} <X size={11} />
           </button>
         )}
         {search && (

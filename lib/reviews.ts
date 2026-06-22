@@ -33,6 +33,7 @@ export async function getApp(appId: string): Promise<AppRow> {
 export async function queryReviews(opts: {
   appId: string;
   tag?: string;
+  subTag?: string;
   locale?: string;
   rating?: number;
   q?: string;
@@ -47,7 +48,13 @@ export async function queryReviews(opts: {
     .select("*", { count: "exact" })
     .eq("app_id", opts.appId);
 
-  if (opts.tag) query = query.contains("ai_tag_keys", [opts.tag]);
+  // subTag 一定是某个 tag 下更细的子问题，没有独立的索引字段——直接用 jsonb 包含查询，
+  // 在 ai_tags 数组里找有没有某个元素同时满足 key+subKey 这两个字段（不需要为这个新加列/迁移）。
+  // 注意：jsonb 列的 .contains() 必须传 JSON 字符串，不能传原始数组/对象——supabase-js
+  // 对数组类型的列会编码成 Postgres array 字面量语法（{...}），对 jsonb 列那样编码是非法的，
+  // 实测直接传对象会报 "invalid input syntax for type json"，必须自己先 JSON.stringify。
+  if (opts.tag && opts.subTag) query = query.contains("ai_tags", JSON.stringify([{ key: opts.tag, subKey: opts.subTag }]));
+  else if (opts.tag) query = query.contains("ai_tag_keys", [opts.tag]);
   if (opts.locale) query = query.eq("locale", opts.locale);
   if (opts.rating) query = query.eq("rating", opts.rating);
   if (opts.replied === true) query = query.not("official_reply", "is", null);
@@ -136,7 +143,10 @@ export async function computeStats(appId: string, locale?: string, since?: strin
   const scoped = locale ? sinceRows.filter((r) => (r.locale ?? "unknown") === locale) : sinceRows;
   const total = scoped.length;
   const ratingDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  const tagCounts: Record<string, { label: string; count: number; summary: string | null; repliedCount: number }> = {};
+  const tagCounts: Record<
+    string,
+    { label: string; count: number; summary: string | null; repliedCount: number; subTags: Record<string, { label: string; count: number }> }
+  > = {};
   const versionMap = new Map<string, { count: number; ratingSum: number; dateSum: number }>();
   const dailyMap = new Map<string, { count: number; ratingSum: number }>();
   let withOfficialReply = 0;
@@ -150,9 +160,14 @@ export async function computeStats(appId: string, locale?: string, since?: strin
     d.ratingSum += r.rating ?? 0;
     dailyMap.set(day, d);
     for (const t of r.ai_tags ?? []) {
-      const entry = tagCounts[t.key] ?? { label: t.label, count: 0, summary: summaryMap[t.key] ?? null, repliedCount: 0 };
+      const entry = tagCounts[t.key] ?? { label: t.label, count: 0, summary: summaryMap[t.key] ?? null, repliedCount: 0, subTags: {} };
       entry.count++;
       if (r.official_reply) entry.repliedCount++;
+      if (t.subKey) {
+        const sub = entry.subTags[t.subKey] ?? { label: t.subLabel || t.subKey, count: 0 };
+        sub.count++;
+        entry.subTags[t.subKey] = sub;
+      }
       tagCounts[t.key] = entry;
     }
     if (r.app_version) {

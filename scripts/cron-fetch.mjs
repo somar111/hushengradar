@@ -64,8 +64,8 @@ async function fetchReviewsSince(packageName, sinceDate, lang, country) {
   }));
 }
 
-async function classifyReview(content, rating, appContext, seedCategories = [], existingCustomTags = []) {
-  const systemPrompt = buildClassifyPrompt({ appContext, seedCategories, existingCustomTags });
+async function classifyReview(content, rating, appContext, seedCategories = [], existingCustomTags = [], existingSubTags = {}) {
+  const systemPrompt = buildClassifyPrompt({ appContext, seedCategories, existingCustomTags, existingSubTags });
 
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -83,7 +83,10 @@ async function classifyReview(content, rating, appContext, seedCategories = [], 
   if (!Array.isArray(parsed.tags)) return [];
   return parsed.tags
     .filter((t) => t && t.key && t.label)
-    .map((t) => ({ key: sanitizeTagKey(t.key), label: t.label, evidence: t.evidence || null }));
+    .map((t) => ({
+      key: sanitizeTagKey(t.key), label: t.label, evidence: t.evidence || null,
+      subKey: t.subKey ? sanitizeTagKey(t.subKey) : null, subLabel: t.subKey ? t.subLabel || null : null,
+    }));
 }
 
 async function detectAndTranslate(content) {
@@ -207,9 +210,17 @@ async function processApp(app) {
     supabase.from("reviews").select("ai_tags").eq("app_id", app.id).not("ai_classified_at", "is", null)
   );
   const existingCustomTagsMap = new Map();
+  // 按父标签分组的"已有子问题"——比如 feature_request 下已经造过哪些具体请求，跟自定义标签
+  // 是同一个去重道理，只是细一级：Map<父key, Map<子key, 子label>>
+  const existingSubTagsMap = new Map();
   for (const r of classifiedSample) {
     for (const t of r.ai_tags ?? []) {
       if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
+      if (t.subKey) {
+        const subs = existingSubTagsMap.get(t.key) ?? new Map();
+        subs.set(t.subKey, t.subLabel || t.subKey);
+        existingSubTagsMap.set(t.key, subs);
+      }
     }
   }
   console.log(`已有自定义标签 ${existingCustomTagsMap.size} 个`);
@@ -218,16 +229,24 @@ async function processApp(app) {
     supabase.from("reviews").select("id, content, rating").eq("app_id", app.id).is("ai_classified_at", null)
   );
   console.log(`待分类 ${unclassified.length} 条`);
-  // existingCustomTagsMap 在整个分类过程中持续更新（不是开始前冻结的快照）：8个并发worker里
-  // 谁先造出一个新自定义标签，其他worker接下来的调用马上就能看到、优先复用，不用各自凭感觉重新造。
-  // 这点对全新App（比如第一天接入、一条已分类评论都没有）特别重要——不然第一批几千条评论会在
-  // 完全看不到彼此的情况下并发跑完，容易把同一个问题造出好几个近义的碎标签。
+  // existingCustomTagsMap/existingSubTagsMap 在整个分类过程中持续更新（不是开始前冻结的快照）：
+  // 8个并发worker里谁先造出一个新自定义标签/子问题，其他worker接下来的调用马上就能看到、优先
+  // 复用，不用各自凭感觉重新造。这点对全新App（比如第一天接入、一条已分类评论都没有）特别
+  // 重要——不然第一批几千条评论会在完全看不到彼此的情况下并发跑完，容易造出一堆近义的碎标签。
   await runConcurrent(unclassified, 8, async (r) => {
     try {
       const existingCustomTags = [...existingCustomTagsMap.entries()].map(([key, label]) => ({ key, label }));
-      const tags = await withRetry(() => classifyReview(r.content, r.rating, app.context, seedCategories, existingCustomTags));
+      const existingSubTags = Object.fromEntries(
+        [...existingSubTagsMap.entries()].map(([parentKey, subs]) => [parentKey, [...subs.entries()].map(([key, label]) => ({ key, label }))])
+      );
+      const tags = await withRetry(() => classifyReview(r.content, r.rating, app.context, seedCategories, existingCustomTags, existingSubTags));
       for (const t of tags) {
         if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
+        if (t.subKey) {
+          const subs = existingSubTagsMap.get(t.key) ?? new Map();
+          subs.set(t.subKey, t.subLabel || t.subKey);
+          existingSubTagsMap.set(t.key, subs);
+        }
       }
       const { error } = await supabase.from("reviews").update({
         ai_tags: tags, ai_tag_keys: tags.map((t) => t.key), ai_classified_at: new Date().toISOString(),
