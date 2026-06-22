@@ -915,15 +915,17 @@ function DemoPageInner() {
 
   // ── 左栏 ──
   const LeftPanel = (
-    <div className={`flex-none flex flex-col gap-1.5 transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
-      <div className="h-8 flex items-center overflow-hidden">
+    <div className={`flex-none flex flex-col gap-1.5 overflow-hidden transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
+      <div className="h-8 w-52 flex items-center overflow-hidden flex-none">
         <Link href="/"
           className={`px-2 text-xl tracking-tight text-white whitespace-nowrap transition-opacity duration-150 ${leftOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
           style={{ fontFamily: "'smiley-sans', sans-serif" }}>
           呼声雷达
         </Link>
       </div>
-      <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1">
+      {/* 固定宽度，不跟外层一起缩——外层靠 overflow-hidden 裁切，内容不会在动画过程中
+          因为容器变窄而重新换行/挤压，那才是之前"跳动"的根源 */}
+      <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1 w-52">
         <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between bg-white/4 flex-none">
           <button onClick={() => setLeftOpen(!leftOpen)}
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
