@@ -95,7 +95,7 @@ function Stars({ rating }: { rating: number }) {
 }
 
 function GlassPanel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`bg-[#2a2a2a] ${className}`}>{children}</div>;
+  return <div className={`bg-[#222222] ${className}`}>{children}</div>;
 }
 
 // 纯展示的信息小图标：用 position:fixed 算坐标弹出说明文字，不用浏览器原生 title
@@ -191,7 +191,7 @@ function PieBreakdown({
 // 评论数少的那天视觉上自然淡一点小一点，不会被误读成强信号
 function RatingTrendChart({ points, height = 200 }: { points: { date: string; avgRating: number; count: number }[]; height?: number }) {
   if (points.length === 0) {
-    return <div style={{ height }} className="flex items-center justify-center text-white/25 text-[13px]">暂无数据</div>;
+    return <div style={{ height }} className="flex items-center justify-center text-white/35 text-[13px]">暂无数据</div>;
   }
   const width = 1000;
   const minTime = new Date(points[0].date).getTime();
@@ -467,7 +467,7 @@ function DemoPageInner() {
     <div className="flex-1 overflow-y-auto px-6 py-5">
       {activePanel === "complaints" && stats && (
         <div>
-          <p className="text-white/65 text-[14px] mb-4">
+          <p className="text-white/75 text-[14px] mb-4">
             {timeRangeLabel}（{fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)}）共 {stats.total} 条公开评论，AI 按问题类型聚类（点击查看该类全部真实评论）：
           </p>
           <div className="flex flex-col gap-3">
@@ -477,14 +477,14 @@ function DemoPageInner() {
                 const pct = (t.count / stats.total) * 100;
                 return (
                   <button key={tag} onClick={() => jumpToTag(tag)}
-                    className="text-left bg-[#303030] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
+                    className="text-left bg-[#2c2c2b] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
                     <DonutPercent percent={pct} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-white/45 text-[14px] font-mono">#{i + 1}</span>
+                        <span className="text-white/60 text-[14px] font-mono">#{i + 1}</span>
                         <span className="text-white/95 text-[17px] font-semibold">{t.label}</span>
                       </div>
-                      <p className="text-white/55 text-[13px] leading-relaxed">
+                      <p className="text-white/68 text-[13px] leading-relaxed">
                         {t.count} 条评论{t.summary ? t.summary : "，点击查看全部真实评论 →"}
                       </p>
                     </div>
@@ -492,7 +492,7 @@ function DemoPageInner() {
                 );
               })}
           </div>
-          <p className="text-white/25 text-[12px] mt-4 leading-relaxed">
+          <p className="text-white/35 text-[12px] mt-4 leading-relaxed">
             数据来源：Google Play 公开评论抽样（非 {appName} 官方授权接入），DeepSeek 真实分类，共 {totalTagCount} 次标签命中（一条评论可能命中多个类型）。
           </p>
         </div>
@@ -554,20 +554,20 @@ function DemoPageInner() {
 
         return (
           <div className="flex flex-col gap-4">
-            <div className="bg-[#303030] rounded-2xl p-5">
+            <div className="bg-[#2c2c2b] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">评分趋势</p>
               <div className="flex items-baseline gap-3 mb-1">
                 <span className="text-[42px] font-bold text-white">{avgRating}</span>
-                <span className="text-white/55 text-[16px]">{timeRangeLabel}平均分</span>
+                <span className="text-white/68 text-[16px]">{timeRangeLabel}平均分</span>
               </div>
-              <p className="text-white/45 text-[14px] mb-5">
+              <p className="text-white/60 text-[14px] mb-5">
                 {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），点的大小代表当天评论量
               </p>
               <RatingTrendChart points={stats.dailyRatings} />
               {versionConclusion && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/70 text-[14px] leading-relaxed">
+                  <p className="text-white/80 text-[14px] leading-relaxed">
                     当前主力版本 {versionConclusion.recent.version} 均分 {versionConclusion.recent.avgRating}，
                     {versionConclusion.diff <= -0.3
                       ? `明显低于此前版本的加权均分 ${versionConclusion.olderAvg}（差 ${Math.abs(versionConclusion.diff)} 分）——版本质量在下滑，值得排查这个版本改了什么。`
@@ -575,27 +575,27 @@ function DemoPageInner() {
                       ? `明显高于此前版本的加权均分 ${versionConclusion.olderAvg}——版本质量在改善。`
                       : `跟此前版本的加权均分 ${versionConclusion.olderAvg} 基本持平，没有明显波动。`}
                   </p>
-                  <p className="text-white/25 text-[12px] mt-2 leading-relaxed">
+                  <p className="text-white/35 text-[12px] mt-2 leading-relaxed">
                     版本号本身不一定能按时间排序（不同 App 编号体系不一样，有的还并行维护多条分支），这里是用该版本评论的真实时间近似排出来的，App Store 端因为官方 API 不返回版本号，做不了这个分析。
                   </p>
                 </div>
               )}
             </div>
 
-            <div className="bg-[#303030] rounded-2xl p-5">
+            <div className="bg-[#2c2c2b] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">评分分布</p>
-              <p className="text-white/65 text-[14px] mb-4">{timeRangeLabel} {ratingTotal} 条评论按星级分布：</p>
+              <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel} {ratingTotal} 条评论按星级分布：</p>
               <div className="flex flex-col gap-2">
                 {[5, 4, 3, 2, 1].map((star) => {
                   const count = stats.ratingDist[star] ?? 0;
                   const pct = pctOf(count);
                   return (
                     <div key={star} className="flex items-center gap-3">
-                      <span className="text-white/55 text-[13px] w-10 flex-none text-right">{star}★</span>
+                      <span className="text-white/68 text-[13px] w-10 flex-none text-right">{star}★</span>
                       <div className="flex-1 h-4 bg-white/5 rounded-full overflow-hidden">
                         <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: THEME_BLUE }} />
                       </div>
-                      <span className="text-white/45 text-[12px] w-20 flex-none">{count} 条 · {pct}%</span>
+                      <span className="text-white/60 text-[12px] w-20 flex-none">{count} 条 · {pct}%</span>
                     </div>
                   );
                 })}
@@ -603,16 +603,16 @@ function DemoPageInner() {
               {isPolarized && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/70 text-[14px] leading-relaxed">
+                  <p className="text-white/80 text-[14px] leading-relaxed">
                     好评（4-5★）占 {highPct}%、差评（1-2★）占 {lowPct}%，中间评价（3★）只占 {midPct}%——评价两极分化明显，喜欢的很喜欢、不满的很不满，均分这一个数字会掩盖这个真实分布。
                   </p>
                 </div>
               )}
             </div>
 
-            <div className="bg-[#303030] rounded-2xl p-5">
+            <div className="bg-[#2c2c2b] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">诉求占比</p>
-              <p className="text-white/65 text-[14px] mb-4">
+              <p className="text-white/75 text-[14px] mb-4">
                 真实数据画像：按 AI 分类命中量统计{timeRangeLabel}整体构成，点击任意一块跳转查看该类全部真实评论：
               </p>
               <div className="flex items-center gap-6 flex-wrap">
@@ -630,7 +630,7 @@ function DemoPageInner() {
                         }`}>
                         <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ backgroundColor: sliceColors[i] }} />
                         <span className="text-white/85 text-[13px] flex-1 min-w-0 truncate">{t.label}</span>
-                        <span className="text-white/45 text-[12px] flex-none">{t.count} 条 · {pct}%</span>
+                        <span className="text-white/60 text-[12px] flex-none">{t.count} 条 · {pct}%</span>
                       </button>
                     );
                   })}
@@ -639,16 +639,16 @@ function DemoPageInner() {
               {topComplaints.length > 0 && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/70 text-[14px] leading-relaxed">
+                  <p className="text-white/80 text-[14px] leading-relaxed">
                     {topComplaintsLabel}合计占{timeRangeLabel}评论的 {topComplaintsPct}%，而求加新功能只有 {featureReq?.count ?? 0} 条（{featureReqPct}%）——先堵住{topComplaintsLabel}这类问题，比做新功能性价比更高。
                   </p>
                 </div>
               )}
             </div>
 
-            <div className="bg-[#303030] rounded-2xl p-5">
+            <div className="bg-[#2c2c2b] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">官方回复覆盖率</p>
-              <p className="text-white/65 text-[14px] mb-4">
+              <p className="text-white/75 text-[14px] mb-4">
                 整体回复率 {stats.officialReplyRate}%，按问题类型拆开看哪类被回复得多、哪类被回复得少：
               </p>
               <div className="flex flex-col gap-2">
@@ -659,14 +659,14 @@ function DemoPageInner() {
                     <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
                       <div className="h-full rounded-full bg-emerald-500" style={{ width: `${r.replyRate}%` }} />
                     </div>
-                    <span className="text-white/45 text-[12px] w-28 flex-none">{r.count} 条 · 回复 {r.replyRate}%</span>
+                    <span className="text-white/60 text-[12px] w-28 flex-none">{r.count} 条 · 回复 {r.replyRate}%</span>
                   </button>
                 ))}
               </div>
               {replyGapNotable && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/70 text-[14px] leading-relaxed">
+                  <p className="text-white/80 text-[14px] leading-relaxed">
                     "{worstReply.label}"有 {worstReply.count} 条评论，官方回复率只有 {worstReply.replyRate}%，明显低于整体 {stats.officialReplyRate}%——这是个高频问题但回复覆盖最薄弱的缺口。
                   </p>
                 </div>
@@ -674,9 +674,9 @@ function DemoPageInner() {
             </div>
 
             {!locale && (
-              <div className="bg-[#303030] rounded-2xl p-5">
+              <div className="bg-[#2c2c2b] rounded-2xl p-5">
                 <p className="text-white/90 text-[15px] font-semibold mb-3">地区满意度</p>
-                <p className="text-white/65 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列：</p>
+                <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列：</p>
                 <div className="flex flex-col gap-2">
                   {stats.localeRatings.map((l) => (
                     <button key={l.locale} onClick={() => setLocale(l.locale === "unknown" ? undefined : l.locale)}
@@ -685,14 +685,14 @@ function DemoPageInner() {
                       <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
                         <div className="h-full rounded-full" style={{ width: `${(l.avgRating / 5) * 100}%`, backgroundColor: THEME_BLUE }} />
                       </div>
-                      <span className="text-white/45 text-[12px] w-24 flex-none">{l.avgRating}★ · {l.count} 条</span>
+                      <span className="text-white/60 text-[12px] w-24 flex-none">{l.avgRating}★ · {l.count} 条</span>
                     </button>
                   ))}
                 </div>
                 {localeGapNotable && (
                   <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                     <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                    <p className="text-white/70 text-[14px] leading-relaxed">
+                    <p className="text-white/80 text-[14px] leading-relaxed">
                       {localeLabel(worstLocale.locale)}均分 {worstLocale.avgRating}（{worstLocale.count} 条），明显低于整体均分 {avgRating}——这个市场的真实满意度落后于其他地区，值得单独看看那边用户在反馈什么。
                     </p>
                   </div>
@@ -710,13 +710,13 @@ function DemoPageInner() {
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {chatMessages.length === 0 ? (
-          <p className="text-white/35 text-[14px]">问我关于这款 App 的任何问题，比如最近用户在反馈什么、哪个版本评价最差、官方回复率怎么样。</p>
+          <p className="text-white/45 text-[14px]">问我关于这款 App 的任何问题，比如最近用户在反馈什么、哪个版本评价最差、官方回复率怎么样。</p>
         ) : (
           <div className="flex flex-col gap-4">
             {chatMessages.map((m, i) => (
               <div key={i} className="text-[14px]">
-                <p className="text-white/55 mb-1">你：{m.q}</p>
-                <p className="text-white/70 bg-[#303030] rounded-lg px-3 py-2 leading-relaxed whitespace-pre-line">{m.a}</p>
+                <p className="text-white/68 mb-1">你：{m.q}</p>
+                <p className="text-white/80 bg-[#2c2c2b] rounded-lg px-3 py-2 leading-relaxed whitespace-pre-line">{m.a}</p>
               </div>
             ))}
           </div>
@@ -726,7 +726,7 @@ function DemoPageInner() {
         <div className="flex gap-2">
           <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
-            className="flex-1 bg-[#303030] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors" />
+            className="flex-1 bg-[#2c2c2b] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors" />
           <button onClick={handleSendChat}
             className="bg-[rgb(55,57,62)] hover:bg-[rgb(75,78,84)] text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-[16px] font-medium">
             <Send size={13} />
@@ -744,7 +744,7 @@ function DemoPageInner() {
           <DonutPercent percent={(stats.tagCounts[tagFilter].count / stats.total) * 100} size={48} />
           <div className="min-w-0">
             <p className="text-white/90 text-[15px] font-medium">{stats.tagCounts[tagFilter].label}</p>
-            <p className="text-white/55 text-[13px] leading-relaxed">
+            <p className="text-white/68 text-[13px] leading-relaxed">
               {stats.tagCounts[tagFilter].count} 条评论{stats.tagCounts[tagFilter].summary ?? ""}
             </p>
           </div>
@@ -756,7 +756,7 @@ function DemoPageInner() {
           <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput.trim())}
             placeholder="搜索评论内容/作者..."
-            className="w-full bg-[#303030] border border-white/20 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/25 outline-none focus:border-white/40" />
+            className="w-full bg-[#2c2c2b] border border-white/20 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/25 outline-none focus:border-white/40" />
         </div>
         {tagFilter && (
           <button onClick={() => setTagFilter(undefined)}
@@ -773,21 +773,21 @@ function DemoPageInner() {
         <div className="relative">
           <button onClick={() => setShowTranslateSettings((v) => !v)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-colors ${
-              translateSettings.enabled ? "bg-white/12 text-white/80" : "bg-white/6 text-white/45"
+              translateSettings.enabled ? "bg-white/12 text-white/80" : "bg-white/6 text-white/60"
             }`}>
             <Settings size={12} />翻译
           </button>
           {showTranslateSettings && (
-            <div className="absolute right-0 top-full mt-1.5 z-10 w-56 bg-[#303030] border border-white/20 rounded-xl p-3 shadow-xl flex flex-col gap-3">
+            <div className="absolute right-0 top-full mt-1.5 z-10 w-56 bg-[#2c2c2b] border border-white/20 rounded-xl p-3 shadow-xl flex flex-col gap-3">
               <label className="flex items-center justify-between text-[13px] text-white/80">
                 启用翻译
                 <input type="checkbox" checked={translateSettings.enabled}
                   onChange={(e) => setTranslateSettings((s) => ({ ...s, enabled: e.target.checked }))} />
               </label>
               <div>
-                <p className="text-white/35 text-[11px] uppercase tracking-wider mb-1.5">目标语言</p>
+                <p className="text-white/45 text-[11px] uppercase tracking-wider mb-1.5">目标语言</p>
                 {([["zh", "中文"], ["en", "英文"]] as const).map(([v, label]) => (
-                  <label key={v} className="flex items-center gap-2 text-[13px] text-white/70 py-0.5">
+                  <label key={v} className="flex items-center gap-2 text-[13px] text-white/80 py-0.5">
                     <input type="radio" checked={translateSettings.targetLang === v}
                       onChange={() => setTranslateSettings((s) => ({ ...s, targetLang: v }))} />
                     {label}
@@ -795,12 +795,12 @@ function DemoPageInner() {
                 ))}
               </div>
               <div>
-                <p className="text-white/35 text-[11px] uppercase tracking-wider mb-1.5">翻译范围</p>
+                <p className="text-white/45 text-[11px] uppercase tracking-wider mb-1.5">翻译范围</p>
                 {([
                   ["non_target", "翻译所有非目标语言"],
                   ["non_zh_en", "只翻译非中英文（保留英文原文）"],
                 ] as const).map(([v, label]) => (
-                  <label key={v} className="flex items-center gap-2 text-[13px] text-white/70 py-0.5">
+                  <label key={v} className="flex items-center gap-2 text-[13px] text-white/80 py-0.5">
                     <input type="radio" checked={translateSettings.scope === v}
                       onChange={() => setTranslateSettings((s) => ({ ...s, scope: v }))} />
                     {label}
@@ -825,28 +825,28 @@ function DemoPageInner() {
               return (
                 <button key={r.id} onClick={() => handleSelectReview(r)}
                   className={`text-left rounded-xl p-4 transition-all ${
-                    isSelected ? "ring-1 ring-white/25 bg-white/12" : "bg-[#303030] hover:bg-white/10"
+                    isSelected ? "ring-1 ring-white/25 bg-white/12" : "bg-[#2c2c2b] hover:bg-white/10"
                   }`}>
                   <div className="flex items-center justify-between mb-2">
                     <Stars rating={r.rating ?? 0} />
                     <div className="flex items-center gap-1.5">
-                      <span className="text-white/45 text-[11px]">{localeLabel(r.locale)}</span>
+                      <span className="text-white/60 text-[11px]">{localeLabel(r.locale)}</span>
                       {r.app_version && (
-                        <span className="text-[11px] px-1.5 py-0.5 rounded font-mono bg-[#383838] text-white/55">{r.app_version}</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded font-mono bg-[#383838] text-white/68">{r.app_version}</span>
                       )}
                     </div>
                   </div>
-                  <p className={`text-white/70 text-[14px] leading-relaxed mb-1 ${isExpanded ? "" : "line-clamp-3"}`}>{display.text}</p>
+                  <p className={`text-white/80 text-[14px] leading-relaxed mb-1 ${isExpanded ? "" : "line-clamp-3"}`}>{display.text}</p>
                   {mayBeTruncated && (
                     <span onClick={(e) => toggleExpand(r.id, e)}
-                      className="text-white/35 hover:text-white/60 text-[12px] mb-1 inline-block transition-colors">
+                      className="text-white/45 hover:text-white/60 text-[12px] mb-1 inline-block transition-colors">
                       {isExpanded ? "收起" : "展开全文"}
                     </span>
                   )}
-                  {display.translated && <p className="text-white/25 text-[11px] mb-2">已自动翻译</p>}
+                  {display.translated && <p className="text-white/35 text-[11px] mb-2">已自动翻译</p>}
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-white/45 text-[11px]">{r.author} · {fmtDate(r.review_date)}</span>
-                    {r.official_reply && <span className="text-white/35 text-[11px]">有官方回复</span>}
+                    <span className="text-white/60 text-[11px]">{r.author} · {fmtDate(r.review_date)}</span>
+                    {r.official_reply && <span className="text-white/45 text-[11px]">有官方回复</span>}
                   </div>
                 </button>
               );
@@ -854,7 +854,7 @@ function DemoPageInner() {
           </div>
         )}
         {!loading && total > PAGE_SIZE && (
-          <div className="flex items-center justify-center gap-3 mt-4 text-[13px] text-white/55">
+          <div className="flex items-center justify-center gap-3 mt-4 text-[13px] text-white/68">
             <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">上一页</button>
             <span>第 {page} / {Math.ceil(total / PAGE_SIZE)} 页 · 共 {total} 条</span>
             <button disabled={page >= Math.ceil(total / PAGE_SIZE)} onClick={() => setPage(page + 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">下一页</button>
@@ -870,14 +870,14 @@ function DemoPageInner() {
               const display = getDisplayContent(selectedReview, translateSettings);
               return (
                 <div className="bg-white/5 rounded-lg px-3 py-2">
-                  <p className="text-white/45 text-[12px] mb-0.5">评论原文</p>
+                  <p className="text-white/60 text-[12px] mb-0.5">评论原文</p>
                   <p className="text-white/80 text-[13px] leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
                     {selectedReview.content}
                   </p>
                   {display.translated && (
                     <>
-                      <p className="text-white/45 text-[12px] mt-2 mb-0.5">译文</p>
-                      <p className="text-white/70 text-[13px] leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
+                      <p className="text-white/60 text-[12px] mt-2 mb-0.5">译文</p>
+                      <p className="text-white/80 text-[13px] leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
                         {display.text}
                       </p>
                     </>
@@ -888,19 +888,19 @@ function DemoPageInner() {
             {selectedReview.official_reply && (
               <div className="bg-white/5 rounded-lg px-3 py-2">
                 <p className="text-white/50 text-[12px] font-medium mb-0.5">{appName} 官方曾这样回复（公开信息，模板化覆盖海量评论）</p>
-                <p className="text-white/55 text-[13px] leading-relaxed line-clamp-2">{selectedReview.official_reply}</p>
+                <p className="text-white/68 text-[13px] leading-relaxed line-clamp-2">{selectedReview.official_reply}</p>
               </div>
             )}
             <div className="bg-white/8 rounded-lg px-3 py-2">
               <div className="flex items-start justify-between gap-2 mb-1">
-                <p className="text-white/70 text-[13px] font-medium">呼声雷达 AI 针对这条的个性化回复建议</p>
-                <button onClick={() => setSelectedReview(null)} className="text-white/20 hover:text-white/65 transition-colors"><X size={14} /></button>
+                <p className="text-white/80 text-[13px] font-medium">呼声雷达 AI 针对这条的个性化回复建议</p>
+                <button onClick={() => setSelectedReview(null)} className="text-white/20 hover:text-white/75 transition-colors"><X size={14} /></button>
               </div>
               {aiReply ? (
                 <p className="text-white/85 text-[14px] leading-relaxed whitespace-pre-line">{aiReply}</p>
               ) : (
                 <button onClick={handleGenerateAiReply} disabled={aiLoading}
-                  className="flex items-center gap-1.5 text-[13px] text-white/70 bg-white/10 hover:bg-white/15 disabled:opacity-50 px-3 py-1.5 rounded-lg transition-colors">
+                  className="flex items-center gap-1.5 text-[13px] text-white/80 bg-white/10 hover:bg-white/15 disabled:opacity-50 px-3 py-1.5 rounded-lg transition-colors">
                   {aiLoading && <Loader2 size={12} className="animate-spin" />}
                   {aiLoading ? "生成中..." : "生成 AI 回复建议"}
                 </button>
@@ -909,7 +909,7 @@ function DemoPageInner() {
             </div>
           </div>
         ) : (
-          <p className="text-white/25 text-[14px] px-1">点击左侧评论卡片，查看 AI 回复建议</p>
+          <p className="text-white/35 text-[14px] px-1">点击左侧评论卡片，查看 AI 回复建议</p>
         )}
       </div>
     </div>
@@ -933,7 +933,7 @@ function DemoPageInner() {
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
             <PanelLeft size={20} strokeWidth={1.5} />
           </button>
-          <span className="text-white/70 text-[13px] font-semibold whitespace-nowrap">筛选</span>
+          <span className="text-white/80 text-[13px] font-semibold whitespace-nowrap">筛选</span>
         </div>
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="py-2 flex items-center justify-center gap-3">
@@ -950,14 +950,14 @@ function DemoPageInner() {
             <button onClick={() => setShowAppMenu((v) => !v)}
               className="w-full flex items-center justify-between gap-2 bg-white/8 hover:bg-white/12 transition-colors rounded-lg px-2.5 py-1.5 text-[13px] text-white/85">
               <span className="truncate">{selectedApp?.display_name ?? "选择 App"}</span>
-              <ChevronDown size={14} className={`flex-none text-white/45 transition-transform ${showAppMenu ? "rotate-180" : ""}`} />
+              <ChevronDown size={14} className={`flex-none text-white/60 transition-transform ${showAppMenu ? "rotate-180" : ""}`} />
             </button>
             {showAppMenu && (
-              <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#303030] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
+              <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#2c2c2b] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
                 {apps.map((a) => (
                   <button key={a.id} onClick={() => { setSelectedAppId(a.id); setLocale(undefined); setTagFilter(undefined); setShowAppMenu(false); }}
                     className={`text-left px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
-                      a.id === selectedAppId ? "bg-white/12 text-white/90" : "text-white/70 hover:bg-white/8"
+                      a.id === selectedAppId ? "bg-white/12 text-white/90" : "text-white/80 hover:bg-white/8"
                     }`}>
                     {a.display_name}
                   </button>
@@ -969,7 +969,7 @@ function DemoPageInner() {
             <div className="flex items-center gap-1 bg-white/6 rounded-full p-1">
               {(["week", "month"] as TimeRange[]).map((t) => (
                 <button key={t} onClick={() => setTimeRange(t)}
-                  className={`px-3 py-1.5 rounded-full text-[12px] font-mono transition-colors ${timeRange === t ? "bg-white/22 text-white font-semibold" : "text-white/45 hover:text-white/70"}`}>
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-mono transition-colors ${timeRange === t ? "bg-white/22 text-white font-semibold" : "text-white/60 hover:text-white/80"}`}>
                   {t === "week" ? "最近一周" : "最近一月"}
                 </button>
               ))}
@@ -982,19 +982,19 @@ function DemoPageInner() {
                 <InfoTooltip text="此为 Google Play 官方分类方式，不代表评论的真实语言或所在地区" size={14} />
               </p>
               <button onClick={() => setLocale(undefined)}
-                className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${!locale ? "bg-white/12 text-white/80" : "text-white/55 hover:text-white/70 hover:bg-white/10"}`}>
+                className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${!locale ? "bg-white/12 text-white/80" : "text-white/68 hover:text-white/80 hover:bg-white/10"}`}>
                 <Languages size={12} /><span>全部 {stats ? `(${allLocalesTotal})` : ""}</span>
               </button>
               {stats && Object.entries(stats.localeCounts).sort((a, b) => b[1] - a[1]).map(([l, count]) => (
                 <button key={l} onClick={() => setLocale(l)}
-                  className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${locale === l ? "bg-white/12 text-white/80" : "text-white/55 hover:text-white/70 hover:bg-white/10"}`}>
+                  className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${locale === l ? "bg-white/12 text-white/80" : "text-white/68 hover:text-white/80 hover:bg-white/10"}`}>
                   <Languages size={12} /><span>{localeLabel(l)} ({count})</span>
                 </button>
               ))}
             </div>
           ) : (
             <div className="flex-1 flex items-center justify-center px-3">
-              <p className="text-white/25 text-[12px] text-center leading-relaxed">App Store 这次没有抓取公开评论数据，暂不支持筛选</p>
+              <p className="text-white/35 text-[12px] text-center leading-relaxed">App Store 这次没有抓取公开评论数据，暂不支持筛选</p>
             </div>
           )}
         </div>
@@ -1017,7 +1017,7 @@ function DemoPageInner() {
             {rightPanelItems.map((item) => (
               <button key={item.key} onClick={() => setActivePanel(item.key)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-colors ${
-                  activePanel === item.key ? "bg-white/22 text-white" : "text-white/45 hover:text-white/70"
+                  activePanel === item.key ? "bg-white/22 text-white" : "text-white/60 hover:text-white/80"
                 }`}>
                 {item.icon}
                 <span className={activePanel === item.key ? "font-semibold" : "font-medium"}>{item.label}</span>
@@ -1025,7 +1025,7 @@ function DemoPageInner() {
             ))}
           </div>
         </div>
-        <span className="text-white/35 text-[13px] flex-none">{stats ? `${stats.total} 条评论` : "加载中..."}</span>
+        <span className="text-white/45 text-[13px] flex-none">{stats ? `${stats.total} 条评论` : "加载中..."}</span>
       </div>
 
       {activePanel === "reply" ? ReplyResult : activePanel === "ask" ? AskResult : AnalyzeResult}
@@ -1034,7 +1034,7 @@ function DemoPageInner() {
 
   return (
     <div className="h-screen flex flex-col font-[family-name:var(--font-geist)] overflow-hidden"
-      style={{ background: "#242424" }}>
+      style={{ background: "#1c1c1c" }}>
 
       <div className="hidden md:flex flex-1 overflow-hidden p-3 gap-3">
         {LeftPanel}
@@ -1045,33 +1045,33 @@ function DemoPageInner() {
         <div className="flex-1 overflow-hidden p-3">
           {mobileTab === "filter" && (
             <GlassPanel className="h-full rounded-2xl overflow-y-auto p-4">
-              <p className="text-white/55 text-[14px] uppercase tracking-wider mb-4">筛选条件</p>
+              <p className="text-white/68 text-[14px] uppercase tracking-wider mb-4">筛选条件</p>
               <div className="flex flex-col gap-5">
                 <div>
-                  <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">App</p>
+                  <p className="text-white/45 text-[12px] uppercase tracking-wider mb-2">App</p>
                   <select value={selectedAppId ?? ""} onChange={(e) => { setSelectedAppId(e.target.value); setLocale(undefined); setTagFilter(undefined); }}
                     className="w-full bg-white/8 rounded-lg px-3 py-2 text-[16px] text-white/85 outline-none">
                     {apps.map((a) => (
-                      <option key={a.id} value={a.id} className="bg-[#303030]">{a.display_name}</option>
+                      <option key={a.id} value={a.id} className="bg-[#2c2c2b]">{a.display_name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">时间范围</p>
+                  <p className="text-white/45 text-[12px] uppercase tracking-wider mb-2">时间范围</p>
                   <div className="flex gap-1 bg-white/6 rounded-full p-1 w-fit">
                     {(["week", "month"] as TimeRange[]).map((t) => (
                       <button key={t} onClick={() => setTimeRange(t)}
-                        className={`px-3 py-1.5 rounded-full text-[14px] font-mono transition-colors ${timeRange === t ? "bg-white/22 text-white font-semibold" : "text-white/55 hover:text-white/75"}`}>
+                        className={`px-3 py-1.5 rounded-full text-[14px] font-mono transition-colors ${timeRange === t ? "bg-white/22 text-white font-semibold" : "text-white/68 hover:text-white/75"}`}>
                         {t === "week" ? "最近一周" : "最近一月"}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">平台</p>
+                  <p className="text-white/45 text-[12px] uppercase tracking-wider mb-2">平台</p>
                   {(["googleplay", "appstore"] as Platform[]).map((p) => (
                     <button key={p} onClick={() => setPlatform(p)}
-                      className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${platform === p ? "bg-white/12 text-white/90" : "text-white/65 hover:bg-white/10"}`}>
+                      className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${platform === p ? "bg-white/12 text-white/90" : "text-white/75 hover:bg-white/10"}`}>
                       {p === "appstore" ? "App Store（暂无数据）" : "Google Play"}
                     </button>
                   ))}
@@ -1083,12 +1083,12 @@ function DemoPageInner() {
                       <InfoTooltip text="此为 Google Play 官方分类方式，不代表评论的真实语言或所在地区" size={15} />
                     </p>
                     <button onClick={() => setLocale(undefined)}
-                      className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${!locale ? "bg-white/12 text-white/90" : "text-white/65 hover:bg-white/10"}`}>
+                      className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${!locale ? "bg-white/12 text-white/90" : "text-white/75 hover:bg-white/10"}`}>
                       <Languages size={13} />全部 ({allLocalesTotal})
                     </button>
                     {Object.entries(stats.localeCounts).sort((a, b) => b[1] - a[1]).map(([l, count]) => (
                       <button key={l} onClick={() => setLocale(l)}
-                        className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${locale === l ? "bg-white/12 text-white/90" : "text-white/65 hover:bg-white/10"}`}>
+                        className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${locale === l ? "bg-white/12 text-white/90" : "text-white/75 hover:bg-white/10"}`}>
                         <Languages size={13} />{localeLabel(l)} ({count})
                       </button>
                     ))}
@@ -1101,13 +1101,13 @@ function DemoPageInner() {
           {mobileTab === "analyze" && CenterPanel}
         </div>
 
-        <div className="bg-[#2a2a2a] flex">
+        <div className="bg-[#222222] flex">
           {([
             { key: "filter", label: "筛选", icon: <Layers size={18} /> },
             { key: "analyze", label: "分析", icon: <BarChart2 size={18} /> },
           ] as { key: MobileTab; label: string; icon: React.ReactNode }[]).map((tab) => (
             <button key={tab.key} onClick={() => setMobileTab(tab.key)}
-              className={`flex-1 flex flex-col items-center py-3 gap-1 text-[13px] transition-colors ${mobileTab === tab.key ? "text-white/80" : "text-white/35"}`}>
+              className={`flex-1 flex flex-col items-center py-3 gap-1 text-[13px] transition-colors ${mobileTab === tab.key ? "text-white/80" : "text-white/45"}`}>
               {tab.icon}
               <span>{tab.label}</span>
             </button>
