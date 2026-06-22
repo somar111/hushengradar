@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Layers, Languages,
   TrendingDown, GitCompare, Bot, Reply,
-  Send, X, BarChart2, PanelLeft, Search, Loader2, Settings, ChevronDown,
+  Send, X, BarChart2, PanelLeft, Search, Loader2, Settings, ChevronDown, Info,
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
 
@@ -94,7 +94,34 @@ function Stars({ rating }: { rating: number }) {
 }
 
 function GlassPanel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`bg-[#181a1f] ${className}`}>{children}</div>;
+  return <div className={`bg-[#2a2a2a] ${className}`}>{children}</div>;
+}
+
+// 纯展示的信息小图标：用 position:fixed 算坐标弹出说明文字，不用浏览器原生 title
+// ——原生 title 在窄边栏的滚动容器里经常被 overflow 裁掉，而且字号没法自定义
+function InfoTooltip({ text, size = 14 }: { text: string; size?: number }) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const ref = useRef<HTMLSpanElement>(null);
+  return (
+    <span
+      ref={ref}
+      onMouseEnter={() => {
+        const rect = ref.current?.getBoundingClientRect();
+        if (rect) setPos({ top: rect.bottom + 6, left: rect.left });
+      }}
+      onMouseLeave={() => setPos(null)}
+      className="inline-flex flex-none"
+    >
+      <Info size={size} className="text-white/40" />
+      {pos && (
+        <span
+          className="fixed z-50 w-60 bg-[#383838] border border-white/15 text-white/90 text-[14px] leading-relaxed rounded-lg px-3 py-2 shadow-xl normal-case font-normal tracking-normal"
+          style={{ top: pos.top, left: pos.left }}>
+          {text}
+        </span>
+      )}
+    </span>
+  );
 }
 
 // 主题强调色：跟 Claude Code 用量统计图的蓝色对齐（从截图实测取色 rgb(87,129,216)）
@@ -264,6 +291,19 @@ export default function DemoPage() {
   const selectedApp = apps.find((a) => a.id === selectedAppId);
   const appName = selectedApp?.display_name ?? "App";
 
+  // ⌘B / Ctrl+B 切换左侧筛选栏——跟 VS Code、Claude 客户端的"切换侧边栏"快捷键保持一致，
+  // Mac 浏览器 chrome 层占用的是 ⌘⇧B（书签栏），裸 ⌘B 是空的，页面可以放心拦截
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setLeftOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   // 拉 App 列表，默认选第一个
   useEffect(() => {
     fetch("/api/demo/apps").then((r) => r.json()).then((data) => {
@@ -414,7 +454,7 @@ export default function DemoPage() {
                 const pct = (t.count / stats.total) * 100;
                 return (
                   <button key={tag} onClick={() => jumpToTag(tag)}
-                    className="text-left bg-[#1e2026] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
+                    className="text-left bg-[#303030] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
                     <DonutPercent percent={pct} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -491,7 +531,7 @@ export default function DemoPage() {
 
         return (
           <div className="flex flex-col gap-4">
-            <div className="bg-[#1e2026] rounded-2xl p-5">
+            <div className="bg-[#303030] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">评分趋势</p>
               <div className="flex items-baseline gap-3 mb-1">
                 <span className="text-[42px] font-bold text-white">{avgRating}</span>
@@ -519,7 +559,7 @@ export default function DemoPage() {
               )}
             </div>
 
-            <div className="bg-[#1e2026] rounded-2xl p-5">
+            <div className="bg-[#303030] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">评分分布</p>
               <p className="text-white/65 text-[14px] mb-4">{timeRangeLabel} {ratingTotal} 条评论按星级分布：</p>
               <div className="flex flex-col gap-2">
@@ -547,7 +587,7 @@ export default function DemoPage() {
               )}
             </div>
 
-            <div className="bg-[#1e2026] rounded-2xl p-5">
+            <div className="bg-[#303030] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">诉求占比</p>
               <p className="text-white/65 text-[14px] mb-4">
                 真实数据画像：按 AI 分类命中量统计{timeRangeLabel}整体构成，点击任意一块跳转查看该类全部真实评论：
@@ -583,7 +623,7 @@ export default function DemoPage() {
               )}
             </div>
 
-            <div className="bg-[#1e2026] rounded-2xl p-5">
+            <div className="bg-[#303030] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">官方回复覆盖率</p>
               <p className="text-white/65 text-[14px] mb-4">
                 整体回复率 {stats.officialReplyRate}%，按问题类型拆开看哪类被回复得多、哪类被回复得少：
@@ -610,7 +650,7 @@ export default function DemoPage() {
               )}
             </div>
 
-            <div className="bg-[#1e2026] rounded-2xl p-5">
+            <div className="bg-[#303030] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">地区满意度</p>
               <p className="text-white/65 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列：</p>
               <div className="flex flex-col gap-2">
@@ -651,17 +691,17 @@ export default function DemoPage() {
             {chatMessages.map((m, i) => (
               <div key={i} className="text-[14px]">
                 <p className="text-white/55 mb-1">你：{m.q}</p>
-                <p className="text-white/70 bg-[#1e2026] rounded-lg px-3 py-2 leading-relaxed whitespace-pre-line">{m.a}</p>
+                <p className="text-white/70 bg-[#303030] rounded-lg px-3 py-2 leading-relaxed whitespace-pre-line">{m.a}</p>
               </div>
             ))}
           </div>
         )}
       </div>
-      <div className="bg-black/15 p-4 flex-none">
+      <div className="bg-white/4 p-4 flex-none">
         <div className="flex gap-2">
           <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
-            className="flex-1 bg-[#1e2026] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors" />
+            className="flex-1 bg-[#303030] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors" />
           <button onClick={handleSendChat}
             className="bg-[rgb(55,57,62)] hover:bg-[rgb(75,78,84)] text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-[16px] font-medium">
             <Send size={13} />
@@ -691,7 +731,7 @@ export default function DemoPage() {
           <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput.trim())}
             placeholder="搜索评论内容/作者..."
-            className="w-full bg-[#1e2026] border border-white/20 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/25 outline-none focus:border-white/40" />
+            className="w-full bg-[#303030] border border-white/20 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/25 outline-none focus:border-white/40" />
         </div>
         {tagFilter && (
           <button onClick={() => setTagFilter(undefined)}
@@ -713,7 +753,7 @@ export default function DemoPage() {
             <Settings size={12} />翻译
           </button>
           {showTranslateSettings && (
-            <div className="absolute right-0 top-full mt-1.5 z-10 w-56 bg-[#1e2026] border border-white/20 rounded-xl p-3 shadow-xl flex flex-col gap-3">
+            <div className="absolute right-0 top-full mt-1.5 z-10 w-56 bg-[#303030] border border-white/20 rounded-xl p-3 shadow-xl flex flex-col gap-3">
               <label className="flex items-center justify-between text-[13px] text-white/80">
                 启用翻译
                 <input type="checkbox" checked={translateSettings.enabled}
@@ -760,21 +800,21 @@ export default function DemoPage() {
               return (
                 <button key={r.id} onClick={() => handleSelectReview(r)}
                   className={`text-left rounded-xl p-4 transition-all ${
-                    isSelected ? "ring-1 ring-white/25 bg-white/12" : "bg-[#1e2026] hover:bg-white/10"
+                    isSelected ? "ring-1 ring-white/25 bg-white/12" : "bg-[#303030] hover:bg-white/10"
                   }`}>
                   <div className="flex items-center justify-between mb-2">
                     <Stars rating={r.rating ?? 0} />
                     <div className="flex items-center gap-1.5">
                       <span className="text-white/45 text-[11px]">{localeLabel(r.locale)}</span>
                       {r.app_version && (
-                        <span className="text-[11px] px-1.5 py-0.5 rounded font-mono bg-[#2a2c32] text-white/55">{r.app_version}</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded font-mono bg-[#383838] text-white/55">{r.app_version}</span>
                       )}
                     </div>
                   </div>
                   <p className={`text-white/70 text-[14px] leading-relaxed mb-1 ${isExpanded ? "" : "line-clamp-3"}`}>{display.text}</p>
                   {mayBeTruncated && (
                     <span onClick={(e) => toggleExpand(r.id, e)}
-                      className="text-white/35 hover:text-white/60 text-[12px] mb-1 inline-block">
+                      className="text-white/35 hover:text-white/60 text-[12px] mb-1 inline-block transition-colors">
                       {isExpanded ? "收起" : "展开全文"}
                     </span>
                   )}
@@ -798,7 +838,7 @@ export default function DemoPage() {
       </div>
 
       {/* 回复详情 / AI 回复 */}
-      <div className="bg-black/15 p-4">
+      <div className="bg-white/4 p-4">
         {selectedReview ? (
           <div className="flex flex-col gap-2">
             {(() => {
@@ -861,7 +901,7 @@ export default function DemoPage() {
         </Link>
       </div>
       <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1">
-        <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between bg-black/15 flex-none">
+        <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between bg-white/4 flex-none">
           <button onClick={() => setLeftOpen(!leftOpen)}
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
             <PanelLeft size={20} strokeWidth={1.5} />
@@ -871,11 +911,11 @@ export default function DemoPage() {
         <div className={`flex-1 flex flex-col overflow-hidden transition-opacity duration-150 ${leftOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
           <div className="py-2 flex items-center justify-center gap-3">
             <button onClick={() => setPlatform("googleplay")}
-              className={`p-2.5 rounded-xl transition-colors ${platform === "googleplay" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
+              className={`p-2.5 rounded-xl transition-all ${platform === "googleplay" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
               <img src="/Google_Play_2022_icon.svg.png" alt="Google Play" className="w-7 h-7" />
             </button>
             <button onClick={() => setPlatform("appstore")} title="暂无数据"
-              className={`p-2.5 rounded-xl transition-colors relative ${platform === "appstore" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
+              className={`p-2.5 rounded-xl transition-all relative ${platform === "appstore" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
               <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7 opacity-40" />
             </button>
           </div>
@@ -886,7 +926,7 @@ export default function DemoPage() {
               <ChevronDown size={14} className={`flex-none text-white/45 transition-transform ${showAppMenu ? "rotate-180" : ""}`} />
             </button>
             {showAppMenu && (
-              <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#1e2026] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
+              <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#303030] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
                 {apps.map((a) => (
                   <button key={a.id} onClick={() => { setSelectedAppId(a.id); setShowAppMenu(false); }}
                     className={`text-left px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
@@ -898,17 +938,22 @@ export default function DemoPage() {
               </div>
             )}
           </div>
-          <div className="py-2 px-3 flex items-center justify-center gap-1.5">
-            {(["week", "month"] as TimeRange[]).map((t) => (
-              <button key={t} onClick={() => setTimeRange(t)}
-                className={`px-3 py-1 rounded-full text-[12px] font-mono transition-colors ${timeRange === t ? "bg-white/15 text-white/90" : "text-white/45 hover:text-white/70 hover:bg-white/8"}`}>
-                {t === "week" ? "最近一周" : "最近一月"}
-              </button>
-            ))}
+          <div className="py-2 px-3 flex items-center justify-center">
+            <div className="flex items-center gap-1 bg-white/6 rounded-full p-1">
+              {(["week", "month"] as TimeRange[]).map((t) => (
+                <button key={t} onClick={() => setTimeRange(t)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-mono transition-colors ${timeRange === t ? "bg-white/22 text-white font-semibold" : "text-white/45 hover:text-white/70"}`}>
+                  {t === "week" ? "最近一周" : "最近一月"}
+                </button>
+              ))}
+            </div>
           </div>
           {platform === "googleplay" ? (
             <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1 text-[14px]">
-              <p className="text-white/35 uppercase tracking-wider text-[12px] mb-1.5 px-1">地区/语言批次</p>
+              <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-1.5 px-1 flex items-center gap-1.5">
+                语言/地区批次
+                <InfoTooltip text="此为 Google Play 官方分类方式，不代表评论的真实语言或所在地区" size={14} />
+              </p>
               <button onClick={() => setLocale(undefined)}
                 className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${!locale ? "bg-white/12 text-white/80" : "text-white/55 hover:text-white/70 hover:bg-white/10"}`}>
                 <Languages size={12} /><span>全部 {stats ? `(${allLocalesTotal})` : ""}</span>
@@ -933,12 +978,12 @@ export default function DemoPage() {
   // ── 中栏 ──
   const CenterPanel = (
     <GlassPanel className="flex-1 flex flex-col overflow-hidden rounded-2xl min-w-0">
-      <div className="px-3 py-2.5 bg-black/15 flex items-center justify-between flex-none gap-3">
-        <div className="flex items-center gap-1 overflow-x-auto">
+      <div className="px-3 py-2.5 bg-white/4 flex items-center justify-between flex-none gap-3">
+        <div className="flex items-center gap-1 overflow-x-auto bg-white/6 rounded-full p-1">
           {rightPanelItems.map((item) => (
             <button key={item.key} onClick={() => setActivePanel(item.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] whitespace-nowrap transition-colors ${
-                activePanel === item.key ? "bg-white/12 text-white/90" : "text-white/45 hover:text-white/70 hover:bg-white/8"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-colors ${
+                activePanel === item.key ? "bg-white/22 text-white" : "text-white/45 hover:text-white/70"
               }`}>
               {item.icon}
               <span className={activePanel === item.key ? "font-semibold" : "font-medium"}>{item.label}</span>
@@ -954,7 +999,7 @@ export default function DemoPage() {
 
   return (
     <div className="h-screen flex flex-col font-[family-name:var(--font-geist)] overflow-hidden"
-      style={{ background: "#0b0c0e" }}>
+      style={{ background: "#242424" }}>
 
       <div className="hidden md:flex flex-1 overflow-hidden p-3 gap-3">
         {LeftPanel}
@@ -972,16 +1017,16 @@ export default function DemoPage() {
                   <select value={selectedAppId ?? ""} onChange={(e) => setSelectedAppId(e.target.value)}
                     className="w-full bg-white/8 rounded-lg px-3 py-2 text-[16px] text-white/85 outline-none">
                     {apps.map((a) => (
-                      <option key={a.id} value={a.id} className="bg-[#1e2026]">{a.display_name}</option>
+                      <option key={a.id} value={a.id} className="bg-[#303030]">{a.display_name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">时间范围</p>
-                  <div className="flex gap-2">
+                  <div className="flex gap-1 bg-white/6 rounded-full p-1 w-fit">
                     {(["week", "month"] as TimeRange[]).map((t) => (
                       <button key={t} onClick={() => setTimeRange(t)}
-                        className={`px-3 py-1.5 rounded-full text-[14px] font-mono transition-colors ${timeRange === t ? "bg-white/15 text-white/90" : "text-white/55 hover:bg-white/10"}`}>
+                        className={`px-3 py-1.5 rounded-full text-[14px] font-mono transition-colors ${timeRange === t ? "bg-white/22 text-white font-semibold" : "text-white/55 hover:text-white/75"}`}>
                         {t === "week" ? "最近一周" : "最近一月"}
                       </button>
                     ))}
@@ -998,7 +1043,10 @@ export default function DemoPage() {
                 </div>
                 {platform === "googleplay" && stats && (
                   <div>
-                    <p className="text-white/35 text-[12px] uppercase tracking-wider mb-2">地区/语言批次</p>
+                    <p className="text-white/60 text-[14px] uppercase tracking-wider font-semibold mb-2 flex items-center gap-1.5">
+                      语言/地区批次
+                      <InfoTooltip text="此为 Google Play 官方分类方式，不代表评论的真实语言或所在地区" size={15} />
+                    </p>
                     <button onClick={() => setLocale(undefined)}
                       className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${!locale ? "bg-white/12 text-white/90" : "text-white/65 hover:bg-white/10"}`}>
                       <Languages size={13} />全部 ({allLocalesTotal})
@@ -1018,7 +1066,7 @@ export default function DemoPage() {
           {mobileTab === "analyze" && CenterPanel}
         </div>
 
-        <div className="bg-[#181a1f] flex">
+        <div className="bg-[#2a2a2a] flex">
           {([
             { key: "filter", label: "筛选", icon: <Layers size={18} /> },
             { key: "analyze", label: "分析", icon: <BarChart2 size={18} /> },
