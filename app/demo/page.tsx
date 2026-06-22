@@ -477,7 +477,7 @@ function DemoPageInner() {
                 const pct = (t.count / stats.total) * 100;
                 return (
                   <button key={tag} onClick={() => jumpToTag(tag)}
-                    className="text-left bg-[#2c2c2b] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
+                    className="text-left border border-white/10 hover:bg-white/8 transition-colors rounded-xl p-4 flex items-center gap-4">
                     <DonutPercent percent={pct} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -825,7 +825,7 @@ function DemoPageInner() {
               return (
                 <button key={r.id} onClick={() => handleSelectReview(r)}
                   className={`text-left rounded-xl p-4 transition-all ${
-                    isSelected ? "ring-1 ring-white/25 bg-white/12" : "bg-[#2c2c2b] hover:bg-white/10"
+                    isSelected ? "ring-1 ring-white/25 bg-white/12" : "border border-white/10 hover:bg-white/8"
                   }`}>
                   <div className="flex items-center justify-between mb-2">
                     <Stars rating={r.rating ?? 0} />
