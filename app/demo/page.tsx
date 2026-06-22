@@ -490,8 +490,8 @@ export default function DemoPage() {
         const localeGapNotable = worstLocale && avgRating != null && worstLocale.avgRating <= avgRating - 0.3;
 
         return (
-          <div className="flex flex-col gap-8">
-            <div>
+          <div className="flex flex-col gap-4">
+            <div className="bg-[#1e2026] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">评分趋势</p>
               <div className="flex items-baseline gap-3 mb-1">
                 <span className="text-[42px] font-bold text-white">{avgRating}</span>
@@ -519,7 +519,7 @@ export default function DemoPage() {
               )}
             </div>
 
-            <div>
+            <div className="bg-[#1e2026] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">评分分布</p>
               <p className="text-white/65 text-[14px] mb-4">{timeRangeLabel} {ratingTotal} 条评论按星级分布：</p>
               <div className="flex flex-col gap-2">
@@ -547,7 +547,7 @@ export default function DemoPage() {
               )}
             </div>
 
-            <div>
+            <div className="bg-[#1e2026] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">诉求占比</p>
               <p className="text-white/65 text-[14px] mb-4">
                 真实数据画像：按 AI 分类命中量统计{timeRangeLabel}整体构成，点击任意一块跳转查看该类全部真实评论：
@@ -583,7 +583,7 @@ export default function DemoPage() {
               )}
             </div>
 
-            <div>
+            <div className="bg-[#1e2026] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">官方回复覆盖率</p>
               <p className="text-white/65 text-[14px] mb-4">
                 整体回复率 {stats.officialReplyRate}%，按问题类型拆开看哪类被回复得多、哪类被回复得少：
@@ -610,7 +610,7 @@ export default function DemoPage() {
               )}
             </div>
 
-            <div>
+            <div className="bg-[#1e2026] rounded-2xl p-5">
               <p className="text-white/90 text-[15px] font-semibold mb-3">地区满意度</p>
               <p className="text-white/65 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列：</p>
               <div className="flex flex-col gap-2">
