@@ -794,18 +794,6 @@ function DemoPageInner() {
           <option value="true">已回复</option>
           <option value="false">未回复</option>
         </select>
-        {tagFilter && (
-          <button onClick={() => setTagFilter(undefined)}
-            className="flex items-center gap-1 px-3 py-1 rounded-full text-[12px] bg-white/15 text-white/90">
-            {stats?.tagCounts[tagFilter]?.label ?? tagFilter} <X size={11} />
-          </button>
-        )}
-        {tagFilter && subTagFilter && (
-          <button onClick={() => setSubTagFilter(undefined)}
-            className="flex items-center gap-1 px-3 py-1 rounded-full text-[12px] bg-white/15 text-white/90">
-            {stats?.tagCounts[tagFilter]?.subTags[subTagFilter]?.label ?? subTagFilter} <X size={11} />
-          </button>
-        )}
         {search && (
           <button onClick={() => { setSearch(""); setSearchInput(""); }}
             className="flex items-center gap-1 px-3 py-1 rounded-full text-[12px] bg-white/15 text-white/90">
