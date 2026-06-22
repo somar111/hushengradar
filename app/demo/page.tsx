@@ -118,24 +118,38 @@ function DonutPercent({ percent, size = 40, color = THEME_BLUE }: { percent: num
 // 通用分类调色板：不跟任何具体 tag key 绑定，按排序后的序号循环取色，换 App/换标签体系都适用
 const CATEGORY_PALETTE = [THEME_BLUE, "#10b981", "#f59e0b", "#ef4444", "#a78bfa", "#06b6d4", "#ec4899", "#84cc16"];
 
-function PieBreakdown({ slices, size = 140 }: { slices: { key: string; count: number; color: string }[]; size?: number }) {
+function PieBreakdown({
+  slices, size = 140, hoveredKey, onHoverKey,
+}: {
+  slices: { key: string; count: number; color: string }[];
+  size?: number;
+  hoveredKey?: string | null;
+  onHoverKey?: (key: string | null) => void;
+}) {
   const total = slices.reduce((s, d) => s + d.count, 0) || 1;
-  const r = size / 2 - size * 0.09;
+  const r = size / 2 - size * 0.14;
   const c = 2 * Math.PI * r;
-  const strokeWidth = size * 0.18;
+  const baseStroke = size * 0.16;
+  const hoverStroke = size * 0.21;
   let cumulative = 0;
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-none">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#ffffff10" strokeWidth={strokeWidth} />
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-none overflow-visible">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#ffffff10" strokeWidth={baseStroke} />
       {slices.map((s) => {
         const frac = s.count / total;
         const dash = frac * c;
         const rotate = (cumulative / total) * 360 - 90;
         cumulative += s.count;
         if (dash <= 0) return null;
+        const isHovered = hoveredKey === s.key;
+        const isDimmed = hoveredKey != null && !isHovered;
         return (
-          <circle key={s.key} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={s.color} strokeWidth={strokeWidth}
-            strokeDasharray={`${dash} ${c - dash}`} transform={`rotate(${rotate} ${size / 2} ${size / 2})`} />
+          <circle key={s.key} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={s.color}
+            strokeWidth={isHovered ? hoverStroke : baseStroke}
+            strokeOpacity={isDimmed ? 0.35 : 1}
+            strokeDasharray={`${dash} ${c - dash}`} transform={`rotate(${rotate} ${size / 2} ${size / 2})`}
+            className="transition-all cursor-pointer"
+            onMouseEnter={() => onHoverKey?.(s.key)} onMouseLeave={() => onHoverKey?.(null)} />
         );
       })}
     </svg>
@@ -181,6 +195,7 @@ export default function DemoPage() {
   });
   const [showTranslateSettings, setShowTranslateSettings] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
+  const [hoveredTag, setHoveredTag] = useState<string | null>(null);
 
   const [stats, setStats] = useState<Stats | null>(null);
 
@@ -408,7 +423,7 @@ export default function DemoPage() {
         return (
           <div className="flex flex-col gap-8">
             <div>
-              <p className="text-white/90 text-[15px] font-semibold mb-3">版本趋势</p>
+              <p className="text-white/90 text-[15px] font-semibold mb-3">评分趋势</p>
               <div className="flex items-baseline gap-3 mb-1">
                 <span className="text-[42px] font-bold text-white">{avgRating}</span>
                 <span className="text-white/55 text-[16px]">{timeRangeLabel}平均分</span>
@@ -416,7 +431,7 @@ export default function DemoPage() {
               <p className="text-white/45 text-[14px] mb-5">
                 {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按版本号统计，从旧到新排列（仅统计评论里带版本号的 {stats.versionStats.reduce((s, v) => s + v.count, 0)} 条）
               </p>
-              <div className="flex items-end gap-2 h-[200px] px-1 border-b border-white/10 relative">
+              <div className="flex items-end gap-4 h-[200px] px-1 border-b border-white/10 relative">
                 {avgRating && (
                   <div className="absolute left-0 right-0 flex items-center"
                     style={{ bottom: `${(avgRating / 5) * 180}px`, borderTop: `1px dashed ${THEME_BLUE}80` }}>
@@ -424,7 +439,7 @@ export default function DemoPage() {
                   </div>
                 )}
                 {stats.versionStats.map((v) => (
-                  <div key={v.version} title={`${v.count} 条评论`} className="relative flex-1 flex flex-col items-center justify-end h-full min-w-0">
+                  <div key={v.version} title={`${v.count} 条评论`} className="relative w-9 flex-none flex flex-col items-center justify-end h-full">
                     <div className="text-white/70 text-[11px] font-medium mb-1 whitespace-nowrap">{v.avgRating}★</div>
                     <div className="w-full rounded-t transition-opacity hover:opacity-80"
                       style={{ height: `${(v.avgRating / 5) * 180}px`, backgroundColor: THEME_BLUE, minHeight: 2 }} />
@@ -458,13 +473,18 @@ export default function DemoPage() {
                 真实数据画像：按 AI 分类命中量统计{timeRangeLabel}整体构成，点击任意一块跳转查看该类全部真实评论：
               </p>
               <div className="flex items-center gap-6 flex-wrap">
-                <PieBreakdown slices={sorted.map(([tag, t], i) => ({ key: tag, count: t.count, color: sliceColors[i] }))} />
+                <PieBreakdown
+                  slices={sorted.map(([tag, t], i) => ({ key: tag, count: t.count, color: sliceColors[i] }))}
+                  hoveredKey={hoveredTag} onHoverKey={setHoveredTag} />
                 <div className="flex-1 min-w-[220px] flex flex-col gap-1.5">
                   {sorted.map(([tag, t], i) => {
                     const pct = stats.total ? Math.round((t.count / stats.total) * 1000) / 10 : 0;
                     return (
                       <button key={tag} onClick={() => jumpToTag(tag)}
-                        className="flex items-center gap-2 text-left rounded-lg px-2 py-1.5 hover:bg-white/8 transition-colors">
+                        onMouseEnter={() => setHoveredTag(tag)} onMouseLeave={() => setHoveredTag(null)}
+                        className={`flex items-center gap-2 text-left rounded-lg px-2 py-1.5 transition-colors ${
+                          hoveredTag === tag ? "bg-white/10" : "hover:bg-white/8"
+                        }`}>
                         <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ backgroundColor: sliceColors[i] }} />
                         <span className="text-white/85 text-[13px] flex-1 min-w-0 truncate">{t.label}</span>
                         <span className="text-white/45 text-[12px] flex-none">{t.count} 条 · {pct}%</span>
