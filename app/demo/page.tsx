@@ -673,30 +673,32 @@ function DemoPageInner() {
               )}
             </div>
 
-            <div className="bg-[#303030] rounded-2xl p-5">
-              <p className="text-white/90 text-[15px] font-semibold mb-3">地区满意度</p>
-              <p className="text-white/65 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列：</p>
-              <div className="flex flex-col gap-2">
-                {stats.localeRatings.map((l) => (
-                  <button key={l.locale} onClick={() => setLocale(l.locale === "unknown" ? undefined : l.locale)}
-                    className="flex items-center gap-3 text-left rounded-lg px-2 py-1.5 hover:bg-white/8 transition-colors">
-                    <span className="text-white/85 text-[13px] w-32 flex-none truncate">{localeLabel(l.locale)}</span>
-                    <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${(l.avgRating / 5) * 100}%`, backgroundColor: THEME_BLUE }} />
-                    </div>
-                    <span className="text-white/45 text-[12px] w-24 flex-none">{l.avgRating}★ · {l.count} 条</span>
-                  </button>
-                ))}
-              </div>
-              {localeGapNotable && (
-                <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/70 text-[14px] leading-relaxed">
-                    {localeLabel(worstLocale.locale)}均分 {worstLocale.avgRating}（{worstLocale.count} 条），明显低于整体均分 {avgRating}——这个市场的真实满意度落后于其他地区，值得单独看看那边用户在反馈什么。
-                  </p>
+            {!locale && (
+              <div className="bg-[#303030] rounded-2xl p-5">
+                <p className="text-white/90 text-[15px] font-semibold mb-3">地区满意度</p>
+                <p className="text-white/65 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列：</p>
+                <div className="flex flex-col gap-2">
+                  {stats.localeRatings.map((l) => (
+                    <button key={l.locale} onClick={() => setLocale(l.locale === "unknown" ? undefined : l.locale)}
+                      className="flex items-center gap-3 text-left rounded-lg px-2 py-1.5 hover:bg-white/8 transition-colors">
+                      <span className="text-white/85 text-[13px] w-32 flex-none truncate">{localeLabel(l.locale)}</span>
+                      <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${(l.avgRating / 5) * 100}%`, backgroundColor: THEME_BLUE }} />
+                      </div>
+                      <span className="text-white/45 text-[12px] w-24 flex-none">{l.avgRating}★ · {l.count} 条</span>
+                    </button>
+                  ))}
                 </div>
-              )}
-            </div>
+                {localeGapNotable && (
+                  <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                    <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
+                    <p className="text-white/70 text-[14px] leading-relaxed">
+                      {localeLabel(worstLocale.locale)}均分 {worstLocale.avgRating}（{worstLocale.count} 条），明显低于整体均分 {avgRating}——这个市场的真实满意度落后于其他地区，值得单独看看那边用户在反馈什么。
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -916,24 +918,24 @@ function DemoPageInner() {
   // ── 左栏 ──
   const LeftPanel = (
     <div className={`flex-none flex flex-col gap-1.5 overflow-hidden transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
-      <div className="h-8 w-52 flex items-center overflow-hidden flex-none">
+      <div className={`h-8 w-52 flex items-center overflow-hidden flex-none ${leftOpen ? "" : "pointer-events-none"}`}>
         <Link href="/"
-          className={`px-2 text-xl tracking-tight text-white whitespace-nowrap transition-opacity duration-150 ${leftOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+          className="px-2 text-xl tracking-tight text-white whitespace-nowrap"
           style={{ fontFamily: "'smiley-sans', sans-serif" }}>
           呼声雷达
         </Link>
       </div>
-      {/* 固定宽度，不跟外层一起缩——外层靠 overflow-hidden 裁切，内容不会在动画过程中
-          因为容器变窄而重新换行/挤压，那才是之前"跳动"的根源 */}
+      {/* 固定宽度，不跟外层一起缩——外层靠 overflow-hidden 裁切。只让 width 这一个属性动画，
+          内容不额外叠加透明度渐变，两段动效抢拍子才是之前"跳动"的根源 */}
       <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1 w-52">
         <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between bg-white/4 flex-none">
           <button onClick={() => setLeftOpen(!leftOpen)}
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
             <PanelLeft size={20} strokeWidth={1.5} />
           </button>
-          <span className={`text-white/70 text-[13px] font-semibold transition-opacity duration-150 ${leftOpen ? "opacity-100" : "opacity-0"}`}>筛选</span>
+          <span className="text-white/70 text-[13px] font-semibold whitespace-nowrap">筛选</span>
         </div>
-        <div className={`flex-1 flex flex-col overflow-hidden transition-opacity duration-150 ${leftOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+        <div className={`flex-1 flex flex-col overflow-hidden ${leftOpen ? "" : "pointer-events-none"}`}>
           <div className="py-2 flex items-center justify-center gap-3">
             <button onClick={() => setPlatform("googleplay")}
               className={`p-2.5 rounded-xl transition-all ${platform === "googleplay" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
