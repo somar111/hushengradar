@@ -924,13 +924,16 @@ function DemoPageInner() {
   const LeftPanel = (
     <div className={`flex-none flex flex-col overflow-hidden bg-[#242424] transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
       {!leftOpen ? (
-        <button onClick={() => setLeftOpen(true)}
-          className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors m-3 flex-none">
-          <PanelLeft size={20} strokeWidth={1.5} />
-        </button>
+        <div className="p-3 flex-none">
+          <button onClick={() => setLeftOpen(true)}
+            className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors">
+            <PanelLeft size={20} strokeWidth={1.5} />
+          </button>
+        </div>
       ) : (
       <div className="flex flex-col overflow-hidden flex-1 w-52">
-        <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between flex-none">
+        {/* 跟收起状态用一样的 p-3，图标在两种状态下像素对齐，切换时看起来"原地"不挪 */}
+        <div className="p-3 flex items-center justify-between flex-none">
           <button onClick={() => setLeftOpen(false)}
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
             <PanelLeft size={20} strokeWidth={1.5} />
