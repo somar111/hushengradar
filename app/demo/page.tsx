@@ -916,20 +916,26 @@ function DemoPageInner() {
   );
 
   // ── 左栏 ──
-  const LeftPanel = (
-    <div className={`flex-none flex flex-col gap-1.5 overflow-hidden transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
-      <div className="h-8 w-52 flex items-center overflow-hidden flex-none">
+  // 收起时直接只渲染一个图标按钮，不再用"撑大了再裁切"那套——不会有任何机会露出别的内容
+  const LeftPanel = !leftOpen ? (
+    <div className="flex-none w-12 flex flex-col">
+      <button onClick={() => setLeftOpen(true)}
+        className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors m-3">
+        <PanelLeft size={20} strokeWidth={1.5} />
+      </button>
+    </div>
+  ) : (
+    <div className="flex-none w-52 flex flex-col gap-1.5">
+      <div className="h-8 flex items-center overflow-hidden flex-none">
         <Link href="/"
           className="px-2 text-xl tracking-tight text-white whitespace-nowrap"
           style={{ fontFamily: "'smiley-sans', sans-serif" }}>
           呼声雷达
         </Link>
       </div>
-      {/* 固定宽度，不跟外层一起缩——外层靠 overflow-hidden 裁切，内层文字不会在动画过程中
-          重新换行 */}
-      <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1 w-52">
+      <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1">
         <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between bg-white/4 flex-none">
-          <button onClick={() => setLeftOpen(!leftOpen)}
+          <button onClick={() => setLeftOpen(false)}
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
             <PanelLeft size={20} strokeWidth={1.5} />
           </button>
