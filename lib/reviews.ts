@@ -128,7 +128,7 @@ export async function computeStats(appId: string, locale?: string, since?: strin
   const total = scoped.length;
   const ratingDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   const tagCounts: Record<string, { label: string; count: number; summary: string | null }> = {};
-  const versionMap = new Map<string, { count: number; ratingSum: number }>();
+  const versionMap = new Map<string, { count: number; ratingSum: number; dateSum: number }>();
   let withOfficialReply = 0;
 
   for (const r of scoped) {
@@ -140,21 +140,26 @@ export async function computeStats(appId: string, locale?: string, since?: strin
       tagCounts[t.key] = entry;
     }
     if (r.app_version) {
-      const v = versionMap.get(r.app_version) ?? { count: 0, ratingSum: 0 };
+      const v = versionMap.get(r.app_version) ?? { count: 0, ratingSum: 0, dateSum: 0 };
       v.count++;
       v.ratingSum += r.rating ?? 0;
+      v.dateSum += new Date(r.review_date).getTime();
       versionMap.set(r.app_version, v);
     }
   }
 
+  // 版本号字符串本身不一定能按时间排序（不同App的版本号规则不一样，有的甚至换过编号体系），
+  // 用该版本评论的平均时间近似它的真实时间顺序，比直接按版本号字符串/数值排靠谱
   const versionStats = [...versionMap.entries()]
-    .map(([version, { count, ratingSum }]) => ({
+    .map(([version, { count, ratingSum, dateSum }]) => ({
       version,
       count,
       avgRating: Math.round((ratingSum / count) * 100) / 100,
+      avgDate: dateSum / count,
     }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 12);
+    .slice(0, 12)
+    .sort((a, b) => a.avgDate - b.avgDate);
 
   const dates = scoped.map((r) => r.review_date).filter(Boolean).sort();
 

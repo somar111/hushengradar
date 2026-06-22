@@ -48,7 +48,7 @@ type Stats = {
   ratingDist: Record<string, number>;
   tagCounts: Record<string, { label: string; count: number; summary: string | null }>;
   localeCounts: Record<string, number>;
-  versionStats: { version: string; count: number; avgRating: number }[];
+  versionStats: { version: string; count: number; avgRating: number; avgDate: number }[];
   officialReplyRate: number;
 };
 
@@ -95,7 +95,10 @@ function GlassPanel({ children, className = "" }: { children: React.ReactNode; c
   return <div className={`bg-[#181a1f] ${className}`}>{children}</div>;
 }
 
-function DonutPercent({ percent, size = 40, color = "#8b5cf6" }: { percent: number; size?: number; color?: string }) {
+// 主题强调色：跟 Claude Code 用量统计图的蓝色对齐（从截图实测取色 rgb(87,129,216)）
+const THEME_BLUE = "#5781d8";
+
+function DonutPercent({ percent, size = 40, color = THEME_BLUE }: { percent: number; size?: number; color?: string }) {
   const r = size / 2 - 3;
   const c = 2 * Math.PI * r;
   const offset = c * (1 - Math.min(percent, 100) / 100);
@@ -108,6 +111,33 @@ function DonutPercent({ percent, size = 40, color = "#8b5cf6" }: { percent: numb
       <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={size * 0.26} fontWeight={600}>
         {Math.round(percent)}%
       </text>
+    </svg>
+  );
+}
+
+// 通用分类调色板：不跟任何具体 tag key 绑定，按排序后的序号循环取色，换 App/换标签体系都适用
+const CATEGORY_PALETTE = [THEME_BLUE, "#10b981", "#f59e0b", "#ef4444", "#a78bfa", "#06b6d4", "#ec4899", "#84cc16"];
+
+function PieBreakdown({ slices, size = 140 }: { slices: { key: string; count: number; color: string }[]; size?: number }) {
+  const total = slices.reduce((s, d) => s + d.count, 0) || 1;
+  const r = size / 2 - size * 0.09;
+  const c = 2 * Math.PI * r;
+  const strokeWidth = size * 0.18;
+  let cumulative = 0;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-none">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#ffffff10" strokeWidth={strokeWidth} />
+      {slices.map((s) => {
+        const frac = s.count / total;
+        const dash = frac * c;
+        const rotate = (cumulative / total) * 360 - 90;
+        cumulative += s.count;
+        if (dash <= 0) return null;
+        return (
+          <circle key={s.key} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={s.color} strokeWidth={strokeWidth}
+            strokeDasharray={`${dash} ${c - dash}`} transform={`rotate(${rotate} ${size / 2} ${size / 2})`} />
+        );
+      })}
     </svg>
   );
 }
@@ -357,7 +387,24 @@ export default function DemoPage() {
         const topComplaintsPct = stats.total ? Math.round((topComplaintsCount / stats.total) * 100) : 0;
         const featureReq = stats.tagCounts.feature_request;
         const featureReqPct = stats.total ? Math.round(((featureReq?.count ?? 0) / stats.total) * 1000) / 10 : 0;
-        // TODO：这俩块内容暂时是直接堆叠，具体怎么整合后面再定
+
+        // 版本趋势结论：拿（按时间排序后）最新一个版本的均分，跟它之前所有版本的加权均分比，
+        // 不预设谁好谁差——纯粹是数据算出来什么就说什么，换 App 完全可能是反过来的结论
+        const versionConclusion = (() => {
+          const vs = stats.versionStats;
+          if (vs.length < 2) return null;
+          const recent = vs[vs.length - 1];
+          const older = vs.slice(0, -1);
+          const olderCount = older.reduce((s, v) => s + v.count, 0);
+          if (recent.count < 5 || olderCount < 5) return null; // 样本太小，不下结论
+          const olderAvg = Math.round((older.reduce((s, v) => s + v.avgRating * v.count, 0) / olderCount) * 100) / 100;
+          const diff = Math.round((recent.avgRating - olderAvg) * 100) / 100;
+          return { recent, olderAvg, diff };
+        })();
+
+        // 诉求占比的颜色：按排序后的序号循环取通用调色板，不跟具体 tag key 绑定
+        const sliceColors = sorted.map((_, i) => CATEGORY_PALETTE[i % CATEGORY_PALETTE.length]);
+
         return (
           <div className="flex flex-col gap-8">
             <div>
@@ -367,55 +414,64 @@ export default function DemoPage() {
                 <span className="text-white/55 text-[16px]">{timeRangeLabel}平均分</span>
               </div>
               <p className="text-white/45 text-[14px] mb-5">
-                {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按版本号统计（仅统计评论里带版本号的 {stats.versionStats.reduce((s, v) => s + v.count, 0)} 条）
+                {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按版本号统计，从旧到新排列（仅统计评论里带版本号的 {stats.versionStats.reduce((s, v) => s + v.count, 0)} 条）
               </p>
               <div className="flex items-end gap-2 h-[200px] px-1 border-b border-white/10 relative">
                 {avgRating && (
-                  <div className="absolute left-0 right-0 border-t border-dashed border-violet-400/50 flex items-center"
-                    style={{ bottom: `${(avgRating / 5) * 180}px` }}>
-                    <span className="text-violet-400 text-[10px] bg-[#181a1f] px-1 -translate-y-1/2">整体均分 {avgRating}</span>
+                  <div className="absolute left-0 right-0 flex items-center"
+                    style={{ bottom: `${(avgRating / 5) * 180}px`, borderTop: `1px dashed ${THEME_BLUE}80` }}>
+                    <span className="text-[10px] bg-[#181a1f] px-1 -translate-y-1/2" style={{ color: THEME_BLUE }}>整体均分 {avgRating}</span>
                   </div>
                 )}
-                {stats.versionStats.map((v) => {
-                  const color = v.avgRating < 3 ? "#ef4444" : v.avgRating < 4 ? "#f59e0b" : "#10b981";
-                  return (
-                    <div key={v.version} className="group relative flex-1 flex flex-col items-center justify-end h-full min-w-0">
-                      <div className="absolute -top-5 text-white/55 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                        {v.avgRating} ★ · {v.count} 条
-                      </div>
-                      <div className="w-full rounded-t transition-opacity group-hover:opacity-80"
-                        style={{ height: `${(v.avgRating / 5) * 180}px`, backgroundColor: color, minHeight: 2 }} />
-                      <div className="text-white/40 text-[10px] font-mono mt-1.5 -rotate-45 origin-top-left whitespace-nowrap translate-x-2">
-                        {v.version}
-                      </div>
+                {stats.versionStats.map((v) => (
+                  <div key={v.version} title={`${v.count} 条评论`} className="relative flex-1 flex flex-col items-center justify-end h-full min-w-0">
+                    <div className="text-white/70 text-[11px] font-medium mb-1 whitespace-nowrap">{v.avgRating}★</div>
+                    <div className="w-full rounded-t transition-opacity hover:opacity-80"
+                      style={{ height: `${(v.avgRating / 5) * 180}px`, backgroundColor: THEME_BLUE, minHeight: 2 }} />
+                    <div className="text-white/40 text-[10px] font-mono mt-1.5 -rotate-45 origin-top-left whitespace-nowrap translate-x-2">
+                      {v.version}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
               <p className="text-white/25 text-[12px] mt-3 leading-relaxed">
                 App Store 端 Apple 官方 API 不返回评论对应版本号，只能靠评论日期 vs 版本发布时间线做推断分析，这里展示的是 Google Play 真实版本字段统计。
               </p>
+              {versionConclusion && (
+                <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
+                  <p className="text-white/70 text-[14px] leading-relaxed">
+                    当前主力版本 {versionConclusion.recent.version} 均分 {versionConclusion.recent.avgRating}，
+                    {versionConclusion.diff <= -0.3
+                      ? `明显低于此前版本的加权均分 ${versionConclusion.olderAvg}（差 ${Math.abs(versionConclusion.diff)} 分）——版本质量在下滑，值得排查这个版本改了什么。`
+                      : versionConclusion.diff >= 0.3
+                      ? `明显高于此前版本的加权均分 ${versionConclusion.olderAvg}——版本质量在改善。`
+                      : `跟此前版本的加权均分 ${versionConclusion.olderAvg} 基本持平，没有明显波动。`}
+                  </p>
+                </div>
+              )}
             </div>
 
             <div>
-              <p className="text-white/90 text-[15px] font-semibold mb-3">诉求优先级</p>
+              <p className="text-white/90 text-[15px] font-semibold mb-3">诉求占比</p>
               <p className="text-white/65 text-[14px] mb-4">
-                真实数据画像：按 AI 分类命中量排序，{topComplaintsLabel ? `"${topComplaintsLabel}"是${timeRangeLabel}最大的诉求` : "暂无足够数据"}，"求加新功能"只占很小一部分：
+                真实数据画像：按 AI 分类命中量统计{timeRangeLabel}整体构成，点击任意一块跳转查看该类全部真实评论：
               </p>
-              <div className="flex flex-col gap-3">
-                {sorted.map(([tag, t], i) => {
-                  const pct = (t.count / stats.total) * 100;
-                  return (
-                    <button key={tag} onClick={() => jumpToTag(tag)}
-                      className="text-left bg-[#1e2026] hover:bg-white/10 transition-colors rounded-xl p-4 flex items-center gap-4">
-                      <DonutPercent percent={pct} color="#10b981" />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-white/95 text-[17px] font-semibold">#{i + 1} {t.label}</span>
-                        <p className="text-white/55 text-[13px] leading-relaxed">{t.count} 条评论{t.summary ?? ""}</p>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="flex items-center gap-6 flex-wrap">
+                <PieBreakdown slices={sorted.map(([tag, t], i) => ({ key: tag, count: t.count, color: sliceColors[i] }))} />
+                <div className="flex-1 min-w-[220px] flex flex-col gap-1.5">
+                  {sorted.map(([tag, t], i) => {
+                    const pct = stats.total ? Math.round((t.count / stats.total) * 1000) / 10 : 0;
+                    return (
+                      <button key={tag} onClick={() => jumpToTag(tag)}
+                        className="flex items-center gap-2 text-left rounded-lg px-2 py-1.5 hover:bg-white/8 transition-colors">
+                        <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ backgroundColor: sliceColors[i] }} />
+                        <span className="text-white/85 text-[13px] flex-1 min-w-0 truncate">{t.label}</span>
+                        <span className="text-white/45 text-[12px] flex-none">{t.count} 条 · {pct}%</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               {topComplaints.length > 0 && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
