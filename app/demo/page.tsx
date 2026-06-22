@@ -534,7 +534,7 @@ function DemoPageInner() {
               })}
           </div>
           <p className="text-white/35 text-[12px] mt-4 leading-relaxed">
-            数据来源：Google Play 公开评论抽样（非 {appName} 官方授权接入），DeepSeek 真实分类，共 {totalTagCount} 次标签命中（一条评论可能命中多个类型）。
+            数据来源：Google Play 公开评论抓取（非 {appName} 官方授权接入），AI 按真实评论内容分类，共 {totalTagCount} 次标签命中（一条评论可能命中多个类型）。
           </p>
         </div>
       )}
