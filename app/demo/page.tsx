@@ -865,11 +865,6 @@ function DemoPageInner() {
                     </div>
                   </div>
                   <p className={`text-white/80 text-[14px] leading-relaxed mb-1 ${isExpanded ? "" : "line-clamp-3"}`}>{display.text}</p>
-                  {tagFilter && r.ai_tags?.find((t) => t.key === tagFilter)?.evidence && (
-                    <p className="text-emerald-400/70 text-[12px] leading-relaxed mb-1">
-                      AI 判定依据：{r.ai_tags.find((t) => t.key === tagFilter)?.evidence}
-                    </p>
-                  )}
                   {mayBeTruncated && (
                     <span onClick={(e) => toggleExpand(r.id, e)}
                       className="text-white/45 hover:text-white/60 text-[12px] mb-1 inline-block transition-colors">
