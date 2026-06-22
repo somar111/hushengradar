@@ -23,7 +23,10 @@ export type AppRow = {
   created_at: string;
 };
 
-export type AiTag = { key: string; label: string };
+// evidence：这条评论里跟这个标签相关的具体内容（简短中文转述），不是整条评论——
+// 用来在"展示该标签下的真实评论"时只摆跟这个标签真正相关的部分，避免摘要被评论里其他不相关的话混进去。
+// 老数据没有这个字段（分类时prompt还没要求过），消费方要自己 fallback 到完整评论内容。
+export type AiTag = { key: string; label: string; evidence?: string };
 
 export type ReviewRow = {
   id: string;

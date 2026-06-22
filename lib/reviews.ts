@@ -37,6 +37,7 @@ export async function queryReviews(opts: {
   rating?: number;
   q?: string;
   since?: string;
+  replied?: boolean;
   page: number;
   pageSize: number;
 }): Promise<{ items: ReviewRow[]; total: number }> {
@@ -49,6 +50,8 @@ export async function queryReviews(opts: {
   if (opts.tag) query = query.contains("ai_tag_keys", [opts.tag]);
   if (opts.locale) query = query.eq("locale", opts.locale);
   if (opts.rating) query = query.eq("rating", opts.rating);
+  if (opts.replied === true) query = query.not("official_reply", "is", null);
+  if (opts.replied === false) query = query.is("official_reply", null);
   if (opts.q) {
     // 去掉逗号/括号：PostgREST 的 .or() 语法里这两个字符是分隔符/分组符，搜索词里混进来会被当成额外筛选条件解析
     const safeQ = opts.q.replace(/[,()]/g, "");
@@ -195,5 +198,42 @@ export async function computeStats(appId: string, locale?: string, since?: strin
     localeRatings,
     versionStats,
     officialReplyRate: total ? Math.round((withOfficialReply / total) * 1000) / 10 : 0,
+  };
+}
+
+/**
+ * 把 computeStats 的结果整理成喂给AI（/api/demo/insights 和 /api/demo/ask 共用）的真实数字。
+ * 单一来源，避免两条AI调用各自拼一份、改一处漏改另一处。
+ */
+export function buildAnalysisMetrics(stats: Awaited<ReturnType<typeof computeStats>>) {
+  const overallAvgRating = stats.total
+    ? Math.round(
+        (Object.entries(stats.ratingDist).reduce((sum, [k, v]) => sum + Number(k) * v, 0) / stats.total) * 100
+      ) / 100
+    : null;
+
+  return {
+    totalReviews: stats.total,
+    ratingDistribution: stats.ratingDist,
+    overallAvgRating,
+    versionStats: stats.versionStats.map((v) => ({
+      version: v.version,
+      reviewCount: v.count,
+      avgRating: v.avgRating,
+      approxDate: new Date(v.avgDate).toISOString().slice(0, 10),
+    })),
+    tagBreakdown: Object.entries(stats.tagCounts).map(([key, t]) => ({
+      key,
+      label: t.label,
+      count: t.count,
+      pctOfTotal: stats.total ? Math.round((t.count / stats.total) * 1000) / 10 : 0,
+      replyRate: t.count ? Math.round((t.repliedCount / t.count) * 1000) / 10 : 0,
+    })),
+    overallReplyRate: stats.officialReplyRate,
+    localeRatings: stats.localeRatings.map((l) => ({
+      locale: l.locale,
+      reviewCount: l.count,
+      avgRating: l.avgRating,
+    })),
   };
 }

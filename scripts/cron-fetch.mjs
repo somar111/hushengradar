@@ -83,7 +83,7 @@ async function classifyReview(content, rating, appContext, existingCustomTags = 
   if (!Array.isArray(parsed.tags)) return [];
   return parsed.tags
     .filter((t) => t && t.key && t.label)
-    .map((t) => ({ key: sanitizeTagKey(t.key), label: t.label }));
+    .map((t) => ({ key: sanitizeTagKey(t.key), label: t.label, evidence: t.evidence || null }));
 }
 
 async function detectAndTranslate(content) {
@@ -251,10 +251,13 @@ async function processApp(app) {
     const allReviews = await fetchAllRows(
       supabase.from("reviews").select("content, ai_tags").eq("app_id", app.id)
     );
+    // 一条评论常常同时命中好几个标签（比如又抱怨广告、又抱怨文件丢失），用整条评论去喂每个标签的摘要
+    // 会互相污染——优先用 evidence（分类时就已经摘出来的"这条评论里跟这个标签相关的部分"），
+    // 没有 evidence 的老数据（还没被新版分类prompt处理过）才退回整条评论
     const byTag = {};
     for (const r of allReviews) {
       for (const t of r.ai_tags ?? []) {
-        (byTag[t.key] ??= { label: t.label, contents: [] }).contents.push(r.content);
+        (byTag[t.key] ??= { label: t.label, contents: [] }).contents.push(t.evidence || r.content);
       }
     }
     console.log(`刷新 ${Object.keys(byTag).length} 个标签的摘要`);

@@ -10,11 +10,13 @@ export async function GET(request: NextRequest) {
   const rating = ratingParam ? Number(ratingParam) : undefined;
   const q = params.get("q") || undefined;
   const since = params.get("since") || undefined;
+  const repliedParam = params.get("replied");
+  const replied = repliedParam === "true" ? true : repliedParam === "false" ? false : undefined;
   const page = Math.max(1, Number(params.get("page") || "1"));
   const pageSize = Math.min(200, Math.max(1, Number(params.get("pageSize") || "20")));
 
   const app = appId ? await getApp(appId) : await getDefaultApp();
-  const { items, total } = await queryReviews({ appId: app.id, tag, locale, rating, q, since, page, pageSize });
+  const { items, total } = await queryReviews({ appId: app.id, tag, locale, rating, q, since, replied, page, pageSize });
 
   return Response.json({ items, total, page, pageSize });
 }

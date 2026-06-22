@@ -1,6 +1,6 @@
-import { buildClassifyPrompt, buildInsightsPrompt, buildReplyPrompt, sanitizeTagKey } from "./promptKit.mjs";
+import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt } from "./promptKit.mjs";
 
-export type ClassifiedTag = { key: string; label: string };
+export type ClassifiedTag = { key: string; label: string; evidence?: string };
 
 export type Insights = {
   versionTrend: string | null;
@@ -9,67 +9,6 @@ export type Insights = {
   replyGap: string | null;
   localeGap: string | null;
 };
-
-/**
- * 通用评论分类：不针对任何具体 App。appContext 是该 App 在 apps.context 里存的背景说明，
- * 换一个 App 只需要换这段 context，不需要改这个函数或 prompt 里的固定类别。
- * existingCustomTags：这个 App 之前已经造过的自定义标签（不在 baseline 里的），传进去让模型优先复用，
- * 避免每次调用互不知情、造出一堆近义的碎标签。
- */
-export async function classifyReview(opts: {
-  content: string;
-  rating: number;
-  appContext?: string | null;
-  existingCustomTags?: ClassifiedTag[];
-}): Promise<ClassifiedTag[]> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY 未配置");
-  }
-
-  const systemPrompt = buildClassifyPrompt({
-    appContext: opts.appContext,
-    existingCustomTags: opts.existingCustomTags ?? [],
-  });
-  const userPrompt = `评分：${opts.rating} 星\n评论内容：${opts.content}`;
-
-  const res = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-    }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`DeepSeek API 出错：${await res.text()}`);
-  }
-
-  const data = await res.json();
-  const raw = data.choices?.[0]?.message?.content ?? "{}";
-  let parsed: { tags?: ClassifiedTag[] };
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error(`DeepSeek 返回的不是合法 JSON：${raw}`);
-  }
-
-  if (!Array.isArray(parsed.tags)) return [];
-  // 清洗 key 格式（防止模型偶尔返回带空格/大写的 key，导致同义标签在筛选时悄悄失效）
-  return parsed.tags
-    .filter((t) => t && t.key && t.label)
-    .map((t) => ({ key: sanitizeTagKey(t.key), label: t.label }));
-}
-
 
 /**
  * 给 AI 写个性化回复建议。officialReplyExample 是这条评论下（如果有）官方真实回复过的文本，
@@ -173,4 +112,46 @@ export async function generateInsights(opts: {
     replyGap: parsed.replyGap ?? null,
     localeGap: parsed.localeGap ?? null,
   };
+}
+
+/**
+ * "问 AI"面板用：拿跟 generateInsights 同一份真实统计数字，回答开发者追问的任意问题。
+ * 不做开放式检索，只能根据给定的聚合数字回答——数字之外的问题prompt里会要求AI如实说回答不了。
+ */
+export async function answerQuestion(opts: {
+  question: string;
+  appContext?: string | null;
+  timeRangeLabel: string;
+  metrics: Record<string, unknown>;
+}): Promise<string> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    throw new Error("DEEPSEEK_API_KEY 未配置");
+  }
+
+  const systemPrompt = buildAskPrompt({ appContext: opts.appContext, timeRangeLabel: opts.timeRangeLabel });
+  const userPrompt = `真实统计数字：\n${JSON.stringify(opts.metrics, null, 2)}\n\n开发者的问题：${opts.question}`;
+
+  const res = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.3,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`DeepSeek API 出错：${await res.text()}`);
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content?.trim() || "";
 }

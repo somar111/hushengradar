@@ -285,6 +285,10 @@ function DemoPageInner() {
   const setLocale = (v: string | undefined) => setLocaleRaw(v ?? "");
   const [tagFilter, setTagFilterRaw] = useQueryState("tag", "");
   const setTagFilter = (v: string | undefined) => setTagFilterRaw(v ?? "");
+  // "" = 全部，"true" = 只看已回复，"false" = 只看未回复
+  const [repliedRaw, setRepliedRaw] = useQueryState("replied", "");
+  const repliedFilter = repliedRaw === "true" ? true : repliedRaw === "false" ? false : undefined;
+  const setRepliedFilter = (v: boolean | undefined) => setRepliedRaw(v === undefined ? "" : String(v));
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearchRaw] = useQueryState("q", "");
   const setSearch = (v: string) => setSearchRaw(v);
@@ -317,6 +321,7 @@ function DemoPageInner() {
 
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<{ q: string; a: string }[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
 
   const since = useMemo(() => {
     const days = timeRange === "week" ? 7 : 30;
@@ -385,6 +390,7 @@ function DemoPageInner() {
     if (locale) params.set("locale", locale);
     if (tagFilter) params.set("tag", tagFilter);
     if (search) params.set("q", search);
+    if (repliedFilter !== undefined) params.set("replied", String(repliedFilter));
     params.set("page", String(page));
     params.set("pageSize", String(PAGE_SIZE));
     fetch(`/api/demo/reviews?${params}`)
@@ -394,32 +400,30 @@ function DemoPageInner() {
         setTotal(data.total);
       })
       .finally(() => setLoading(false));
-  }, [selectedAppId, locale, tagFilter, search, page, since]);
+  }, [selectedAppId, locale, tagFilter, search, repliedFilter, page, since]);
 
   // 切筛选条件时回到第一页（page 已经是 1 就不用再多触发一次 URL replace）
-  useEffect(() => { if (page !== 1) setPage(1); }, [selectedAppId, locale, tagFilter, search, since]);
+  useEffect(() => { if (page !== 1) setPage(1); }, [selectedAppId, locale, tagFilter, search, repliedFilter, since]);
 
-  // 预设问答（基于真实统计生成，统计加载完才有内容）
-  const presetQAs = useMemo(() => {
-    if (!stats) return {};
-    const topTags = Object.entries(stats.tagCounts).sort((a, b) => b[1].count - a[1].count);
-    const worstVersion = [...stats.versionStats].filter((v) => v.count >= 5).sort((a, b) => a.avgRating - b.avgRating)[0];
-    const topTagLine = topTags.slice(0, 3).map(([, t], i) => `${i + 1}. **${t.label}**：${t.count} 条`).join("\n");
-    return {
-      [`${timeRangeLabel}用户主要在反馈什么问题？`]: topTagLine || "暂无数据",
-      "哪个版本评价最差？": worstVersion
-        ? `版本 ${worstVersion.version}：均分 ${worstVersion.avgRating} ★（${worstVersion.count} 条评论）`
-        : "样本里版本评论数太少，暂无法判断",
-      "官方回复率怎么样？": `${timeRangeLabel} ${stats.total} 条评论中，${stats.officialReplyRate}% 收到了 ${appName} 官方回复。`,
-    } as Record<string, string>;
-  }, [stats, timeRangeLabel, appName]);
-
-  function handleSendChat() {
+  // 真实调AI回答——把当前筛选范围内的真实统计数字喂给DeepSeek，不是预设话术匹配
+  async function handleSendChat() {
     const q = chatInput.trim();
-    if (!q) return;
-    const a = presetQAs[q] ?? `这是基于${timeRangeLabel}公开评论抽样的真实统计 Demo，目前只能回答左侧预设问题；接入真实账号后可以追问任意问题。`;
-    setChatMessages((prev) => [...prev, { q, a }]);
+    if (!q || !selectedAppId || chatLoading) return;
     setChatInput("");
+    setChatLoading(true);
+    try {
+      const res = await fetch("/api/demo/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, appId: selectedAppId, locale, since, timeRangeLabel }),
+      });
+      const data = await res.json();
+      setChatMessages((prev) => [...prev, { q, a: data.error ? `回答失败：${data.error}` : data.answer }]);
+    } catch {
+      setChatMessages((prev) => [...prev, { q, a: "请求失败，请重试。" }]);
+    } finally {
+      setChatLoading(false);
+    }
   }
 
   function handleSelectReview(r: ReviewRow) {
@@ -468,9 +472,10 @@ function DemoPageInner() {
     }
   }
 
+  // 跳转到某个标签的评论列表时，要保留当前已选的地区/时间范围筛选——之前这里会清空 locale，
+  // 导致"最近一月-某国家"下点开的反馈，看到的却是所有地区的评论，跟用户当前看的范围不对应
   function jumpToTag(tag: string) {
     setTagFilter(tag);
-    setLocale(undefined);
     setActivePanel("reply");
     setMobileTab("analyze");
   }
@@ -691,7 +696,7 @@ function DemoPageInner() {
   const AskResult = (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        {chatMessages.length === 0 ? (
+        {chatMessages.length === 0 && !chatLoading ? (
           <p className="text-white/45 text-[14px]">问我关于这款 App 的任何问题，比如最近用户在反馈什么、哪个版本评价最差、官方回复率怎么样。</p>
         ) : (
           <div className="flex flex-col gap-4">
@@ -701,17 +706,22 @@ function DemoPageInner() {
                 <p className="text-white/80 bg-[#2c2c2b] rounded-lg px-3 py-2 leading-relaxed whitespace-pre-line">{m.a}</p>
               </div>
             ))}
+            {chatLoading && (
+              <div className="flex items-center gap-2 text-white/45 text-[13px]">
+                <Loader2 size={12} className="animate-spin" />AI 正在根据真实数据回答…
+              </div>
+            )}
           </div>
         )}
       </div>
       <div className="bg-white/4 p-4 flex-none">
         <div className="flex gap-2">
           <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
-            className="flex-1 bg-[#2c2c2b] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors" />
-          <button onClick={handleSendChat}
-            className="bg-[rgb(55,57,62)] hover:bg-[rgb(75,78,84)] text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-[16px] font-medium">
-            <Send size={13} />
+            onKeyDown={(e) => e.key === "Enter" && handleSendChat()} disabled={chatLoading}
+            className="flex-1 bg-[#2c2c2b] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors disabled:opacity-50" />
+          <button onClick={handleSendChat} disabled={chatLoading}
+            className="bg-[rgb(55,57,62)] hover:bg-[rgb(75,78,84)] text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-[16px] font-medium disabled:opacity-50">
+            {chatLoading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
           </button>
         </div>
       </div>
@@ -740,6 +750,20 @@ function DemoPageInner() {
             placeholder="搜索评论内容/作者..."
             className="w-full bg-[#2c2c2b] border border-white/20 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/25 outline-none focus:border-white/40" />
         </div>
+        <select value={tagFilter || ""} onChange={(e) => setTagFilter(e.target.value || undefined)}
+          className="bg-[#2c2c2b] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/80 outline-none focus:border-white/40">
+          <option value="">全部问题类型</option>
+          {stats && Object.entries(stats.tagCounts).sort((a, b) => b[1].count - a[1].count).map(([key, t]) => (
+            <option key={key} value={key}>{t.label}（{t.count}）</option>
+          ))}
+        </select>
+        <select value={repliedFilter === undefined ? "" : String(repliedFilter)}
+          onChange={(e) => setRepliedFilter(e.target.value === "" ? undefined : e.target.value === "true")}
+          className="bg-[#2c2c2b] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/80 outline-none focus:border-white/40">
+          <option value="">全部回复状态</option>
+          <option value="true">已回复</option>
+          <option value="false">未回复</option>
+        </select>
         {tagFilter && (
           <button onClick={() => setTagFilter(undefined)}
             className="flex items-center gap-1 px-3 py-1 rounded-full text-[12px] bg-white/15 text-white/90">
@@ -819,6 +843,11 @@ function DemoPageInner() {
                     </div>
                   </div>
                   <p className={`text-white/80 text-[14px] leading-relaxed mb-1 ${isExpanded ? "" : "line-clamp-3"}`}>{display.text}</p>
+                  {tagFilter && r.ai_tags?.find((t) => t.key === tagFilter)?.evidence && (
+                    <p className="text-emerald-400/70 text-[12px] leading-relaxed mb-1">
+                      AI 判定依据：{r.ai_tags.find((t) => t.key === tagFilter)?.evidence}
+                    </p>
+                  )}
                   {mayBeTruncated && (
                     <span onClick={(e) => toggleExpand(r.id, e)}
                       className="text-white/45 hover:text-white/60 text-[12px] mb-1 inline-block transition-colors">

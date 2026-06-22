@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getApp, getDefaultApp, computeStats } from "@/lib/reviews";
+import { getApp, getDefaultApp, computeStats, buildAnalysisMetrics } from "@/lib/reviews";
 import { generateInsights } from "@/lib/classify";
 
 export async function GET(request: NextRequest) {
@@ -22,35 +22,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const overallAvgRating =
-    Math.round(
-      (Object.entries(stats.ratingDist).reduce((sum, [k, v]) => sum + Number(k) * v, 0) / stats.total) * 100
-    ) / 100;
-
-  const metrics = {
-    totalReviews: stats.total,
-    ratingDistribution: stats.ratingDist,
-    overallAvgRating,
-    versionStats: stats.versionStats.map((v) => ({
-      version: v.version,
-      reviewCount: v.count,
-      avgRating: v.avgRating,
-      approxDate: new Date(v.avgDate).toISOString().slice(0, 10),
-    })),
-    tagBreakdown: Object.entries(stats.tagCounts).map(([key, t]) => ({
-      key,
-      label: t.label,
-      count: t.count,
-      pctOfTotal: Math.round((t.count / stats.total) * 1000) / 10,
-      replyRate: t.count ? Math.round((t.repliedCount / t.count) * 1000) / 10 : 0,
-    })),
-    overallReplyRate: stats.officialReplyRate,
-    localeRatings: stats.localeRatings.map((l) => ({
-      locale: l.locale,
-      reviewCount: l.count,
-      avgRating: l.avgRating,
-    })),
-  };
+  const metrics = buildAnalysisMetrics(stats);
 
   try {
     const insights = await generateInsights({ timeRangeLabel, appContext: app.context, metrics });
