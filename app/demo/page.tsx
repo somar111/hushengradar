@@ -8,6 +8,7 @@ import {
   Send, X, BarChart2, PanelLeft, Search, Loader2, Settings, ChevronDown, Info,
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
+import type { Insights } from "@/lib/classify";
 import { useQueryState } from "@/lib/useQueryState";
 
 // ─── 类型 ────────────────────────────────────────────────────
@@ -127,6 +128,15 @@ function InfoTooltip({ text, size = 14 }: { text: string; size?: number }) {
 
 // 主题强调色：跟 Claude Code 用量统计图的蓝色对齐（从截图实测取色 rgb(87,129,216)）
 const THEME_BLUE = "#5781d8";
+
+// "真实结论"现在由AI现场生成，请求没回来之前显示这个，而不是先空着再突然蹦出文字
+function InsightsLoading() {
+  return (
+    <div className="flex items-center gap-2 text-white/35 text-[13px] mt-4">
+      <Loader2 size={12} className="animate-spin" />AI 正在判断这项数据是否值得下结论…
+    </div>
+  );
+}
 
 function DonutPercent({ percent, size = 40, color = THEME_BLUE }: { percent: number; size?: number; color?: string }) {
   const r = size / 2 - 3;
@@ -292,6 +302,8 @@ function DemoPageInner() {
   const [hoveredTag, setHoveredTag] = useState<string | null>(null);
 
   const [stats, setStats] = useState<Stats | null>(null);
+  const [insights, setInsights] = useState<Insights | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
 
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -345,6 +357,23 @@ function DemoPageInner() {
     if (locale) params.set("locale", locale);
     fetch(`/api/demo/stats?${params}`).then((r) => r.json()).then(setStats);
   }, [selectedAppId, locale, since]);
+
+  // "综合分析"面板的"真实结论"由AI根据真实统计数字现场判断、现场生成，只在看这个面板时才拉，
+  // 避免切换其他Tab时白白触发DeepSeek调用
+  useEffect(() => {
+    if (!selectedAppId || activePanel !== "analysis") return;
+    setInsights(null);
+    setInsightsLoading(true);
+    const params = new URLSearchParams();
+    params.set("appId", selectedAppId);
+    params.set("since", since);
+    params.set("timeRangeLabel", timeRangeLabel);
+    if (locale) params.set("locale", locale);
+    fetch(`/api/demo/insights?${params}`)
+      .then((r) => r.json())
+      .then((data) => setInsights(data.error ? null : data))
+      .finally(() => setInsightsLoading(false));
+  }, [selectedAppId, locale, since, timeRangeLabel, activePanel]);
 
   // 拉评论列表（筛选/翻页变化时）
   useEffect(() => {
@@ -499,58 +528,21 @@ function DemoPageInner() {
       )}
 
       {activePanel === "analysis" && stats && (() => {
-        // 不假定哪两个 tag 是最大诉求——"求加新功能"和"正面评价"排除在外，剩下按真实命中量取前二，
-        // 换一个 App（最大问题可能是广告或登录而不是扣费/bug）这段结论照样成立
         const sorted = Object.entries(stats.tagCounts).sort((a, b) => b[1].count - a[1].count);
-        const topComplaints = sorted.filter(([tag]) => tag !== "praise" && tag !== "feature_request").slice(0, 2);
-        const topComplaintsLabel = topComplaints.map(([, t]) => t.label).join("和");
-        const topComplaintsCount = topComplaints.reduce((sum, [, t]) => sum + t.count, 0);
-        const topComplaintsPct = stats.total ? Math.round((topComplaintsCount / stats.total) * 100) : 0;
-        const featureReq = stats.tagCounts.feature_request;
-        const featureReqPct = stats.total ? Math.round(((featureReq?.count ?? 0) / stats.total) * 1000) / 10 : 0;
-
-        // 版本趋势结论：拿（按时间排序后）最新一个版本的均分，跟它之前所有版本的加权均分比，
-        // 不预设谁好谁差——纯粹是数据算出来什么就说什么，换 App 完全可能是反过来的结论
-        const versionConclusion = (() => {
-          const vs = stats.versionStats;
-          if (vs.length < 2) return null;
-          const recent = vs[vs.length - 1];
-          const older = vs.slice(0, -1);
-          const olderCount = older.reduce((s, v) => s + v.count, 0);
-          if (recent.count < 5 || olderCount < 5) return null; // 样本太小，不下结论
-          const olderAvg = Math.round((older.reduce((s, v) => s + v.avgRating * v.count, 0) / olderCount) * 100) / 100;
-          const diff = Math.round((recent.avgRating - olderAvg) * 100) / 100;
-          return { recent, olderAvg, diff };
-        })();
 
         // 诉求占比的颜色：按排序后的序号循环取通用调色板，不跟具体 tag key 绑定
         const sliceColors = sorted.map((_, i) => CATEGORY_PALETTE[i % CATEGORY_PALETTE.length]);
 
-        // 评分分布：好评(4-5★)/差评(1-2★)/中评(3★)三段占比，只有真的两极分化（中评很少、两头都不少）
-        // 才点出来，不强行预设"肯定是两极分化"——大部分App的真实分布其实是正常偏态，不该硬套故事
+        // 评分分布：好评(4-5★)/差评(1-2★)/中评(3★)三段占比——只负责算数字给图表用，
+        // "算不算两极分化"这个判断交给 /api/demo/insights 的AI，不在这里拍阈值
         const ratingTotal = Object.values(stats.ratingDist).reduce((a, b) => a + b, 0);
         const pctOf = (n: number) => (ratingTotal ? Math.round((n / ratingTotal) * 1000) / 10 : 0);
-        const highPct = pctOf((stats.ratingDist[5] ?? 0) + (stats.ratingDist[4] ?? 0));
-        const lowPct = pctOf((stats.ratingDist[1] ?? 0) + (stats.ratingDist[2] ?? 0));
-        const midPct = pctOf(stats.ratingDist[3] ?? 0);
-        const isPolarized = ratingTotal >= 20 && midPct < 15 && highPct > 30 && lowPct > 30;
 
-        // 回复覆盖率：排除样本太小的tag，找命中量不小但官方回复率明显低于整体水平的那个
-        const minTagSample = Math.max(5, Math.round(stats.total * 0.02));
+        // 每个标签的回复率——只负责算数字给柱状图用，"哪个算缺口"交给AI判断
         const replyByTag = sorted.map(([tag, t]) => ({
           tag, label: t.label, count: t.count,
           replyRate: t.count ? Math.round((t.repliedCount / t.count) * 1000) / 10 : 0,
         }));
-        const worstReply = [...replyByTag]
-          .filter((r) => r.count >= minTagSample && r.tag !== "praise")
-          .sort((a, b) => a.replyRate - b.replyRate)[0];
-        const replyGapNotable = worstReply && worstReply.replyRate < stats.officialReplyRate - 10;
-
-        // 地区满意度：locale 数太少（比如就一个地区）就不下"哪个最差"这种结论
-        const minLocaleSample = 5;
-        const validLocales = stats.localeRatings.filter((l) => l.count >= minLocaleSample);
-        const worstLocale = validLocales[0];
-        const localeGapNotable = worstLocale && avgRating != null && worstLocale.avgRating <= avgRating - 0.3;
 
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
@@ -564,17 +556,11 @@ function DemoPageInner() {
                 {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），点的大小代表当天评论量
               </p>
               <RatingTrendChart points={stats.dailyRatings} />
-              {versionConclusion && (
+              {insightsLoading && <InsightsLoading />}
+              {insights?.versionTrend && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/80 text-[14px] leading-relaxed">
-                    当前主力版本 {versionConclusion.recent.version} 均分 {versionConclusion.recent.avgRating}，
-                    {versionConclusion.diff <= -0.3
-                      ? `明显低于此前版本的加权均分 ${versionConclusion.olderAvg}（差 ${Math.abs(versionConclusion.diff)} 分）——版本质量在下滑。`
-                      : versionConclusion.diff >= 0.3
-                      ? `明显高于此前版本的加权均分 ${versionConclusion.olderAvg}——版本质量在改善。`
-                      : `跟此前版本的加权均分 ${versionConclusion.olderAvg} 基本持平，没有明显波动。`}
-                  </p>
+                  <p className="text-white/80 text-[14px] leading-relaxed">{insights.versionTrend}</p>
                   <p className="text-white/35 text-[12px] mt-2 leading-relaxed">
                     版本号本身不一定能按时间排序（不同 App 编号体系不一样，有的还并行维护多条分支），这里是用该版本评论的真实时间近似排出来的，App Store 端因为官方 API 不返回版本号，做不了这个分析。
                   </p>
@@ -600,12 +586,11 @@ function DemoPageInner() {
                   );
                 })}
               </div>
-              {isPolarized && (
+              {insightsLoading && <InsightsLoading />}
+              {insights?.ratingDistribution && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/80 text-[14px] leading-relaxed">
-                    好评（4-5★）占 {highPct}%、差评（1-2★）占 {lowPct}%，中间评价（3★）只占 {midPct}%——评价两极分化明显，喜欢的很喜欢、不满的很不满，均分这一个数字会掩盖这个真实分布。
-                  </p>
+                  <p className="text-white/80 text-[14px] leading-relaxed">{insights.ratingDistribution}</p>
                 </div>
               )}
             </div>
@@ -636,15 +621,11 @@ function DemoPageInner() {
                   })}
                 </div>
               </div>
-              {topComplaints.length > 0 && (
+              {insightsLoading && <InsightsLoading />}
+              {insights?.complaintsVsFeatureRequest && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/80 text-[14px] leading-relaxed">
-                    {topComplaintsLabel}合计占{timeRangeLabel}评论的 {topComplaintsPct}%，求加新功能占 {featureReqPct}%（{featureReq?.count ?? 0} 条）——
-                    {topComplaintsPct > featureReqPct
-                      ? `投诉类反馈的声量明显大于功能请求。`
-                      : `功能请求的声量反而比${topComplaintsLabel}这类投诉更大。`}
-                  </p>
+                  <p className="text-white/80 text-[14px] leading-relaxed">{insights.complaintsVsFeatureRequest}</p>
                 </div>
               )}
             </div>
@@ -666,12 +647,11 @@ function DemoPageInner() {
                   </button>
                 ))}
               </div>
-              {replyGapNotable && (
+              {insightsLoading && <InsightsLoading />}
+              {insights?.replyGap && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/80 text-[14px] leading-relaxed">
-                    "{worstReply.label}"有 {worstReply.count} 条评论，官方回复率只有 {worstReply.replyRate}%，明显低于整体 {stats.officialReplyRate}%——这是个高频问题但回复覆盖最薄弱的缺口。
-                  </p>
+                  <p className="text-white/80 text-[14px] leading-relaxed">{insights.replyGap}</p>
                 </div>
               )}
             </div>
@@ -692,12 +672,11 @@ function DemoPageInner() {
                     </button>
                   ))}
                 </div>
-                {localeGapNotable && (
+                {insightsLoading && <InsightsLoading />}
+                {insights?.localeGap && (
                   <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
                     <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                    <p className="text-white/80 text-[14px] leading-relaxed">
-                      {localeLabel(worstLocale.locale)}均分 {worstLocale.avgRating}（{worstLocale.count} 条），明显低于整体均分 {avgRating}——这个市场的真实满意度落后于其他地区。
-                    </p>
+                    <p className="text-white/80 text-[14px] leading-relaxed">{insights.localeGap}</p>
                   </div>
                 )}
               </div>

@@ -1,6 +1,14 @@
-import { buildClassifyPrompt, buildReplyPrompt, sanitizeTagKey } from "./promptKit.mjs";
+import { buildClassifyPrompt, buildInsightsPrompt, buildReplyPrompt, sanitizeTagKey } from "./promptKit.mjs";
 
 export type ClassifiedTag = { key: string; label: string };
+
+export type Insights = {
+  versionTrend: string | null;
+  ratingDistribution: string | null;
+  complaintsVsFeatureRequest: string | null;
+  replyGap: string | null;
+  localeGap: string | null;
+};
 
 /**
  * 通用评论分类：不针对任何具体 App。appContext 是该 App 在 apps.context 里存的背景说明，
@@ -109,4 +117,60 @@ export async function generateReplySuggestion(opts: {
 
   const data = await res.json();
   return data.choices?.[0]?.message?.content?.trim() || "";
+}
+
+/**
+ * 给"综合分析"面板的5类真实统计数字，让AI判断每一类是否值得展示成一句"真实结论"。
+ * 不在这里或调用方预设样本量/差距大小的硬阈值——判不判得上由AI看真实数字决定。
+ */
+export async function generateInsights(opts: {
+  timeRangeLabel: string;
+  appContext?: string | null;
+  metrics: Record<string, unknown>;
+}): Promise<Insights> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    throw new Error("DEEPSEEK_API_KEY 未配置");
+  }
+
+  const systemPrompt = buildInsightsPrompt({ appContext: opts.appContext, timeRangeLabel: opts.timeRangeLabel });
+  const userPrompt = `真实统计数字：\n${JSON.stringify(opts.metrics, null, 2)}`;
+
+  const res = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`DeepSeek API 出错：${await res.text()}`);
+  }
+
+  const data = await res.json();
+  const raw = data.choices?.[0]?.message?.content ?? "{}";
+  let parsed: Partial<Insights>;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`DeepSeek 返回的不是合法 JSON：${raw}`);
+  }
+
+  return {
+    versionTrend: parsed.versionTrend ?? null,
+    ratingDistribution: parsed.ratingDistribution ?? null,
+    complaintsVsFeatureRequest: parsed.complaintsVsFeatureRequest ?? null,
+    replyGap: parsed.replyGap ?? null,
+    localeGap: parsed.localeGap ?? null,
+  };
 }
