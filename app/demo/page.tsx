@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Layers, Languages,
   TrendingDown, GitCompare, Bot, Reply,
-  Send, X, BarChart2, PanelLeft, Search, Loader2, Settings, ChevronDown, Info,
+  Send, X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info,
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
 import type { Insights } from "@/lib/classify";
@@ -324,6 +324,11 @@ function DemoPageInner() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  // "评分趋势/评分分布/地区满意度"是同一份评分数据的三种切面，合并成一张卡片用切换器选看哪个，
+  // 不用三张卡片各占一块地方。选中具体地区后"地区满意度"这个切面本身没意义（已经聚焦到一个
+  // 地区了），这时候要是还停在这个切面上，自动切回"趋势"，不能留着空切面晃在那
+  const [ratingView, setRatingView] = useState<"trend" | "distribution" | "locale">("trend");
+  useEffect(() => { if (locale && ratingView === "locale") setRatingView("trend"); }, [locale, ratingView]);
 
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -577,51 +582,98 @@ function DemoPageInner() {
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
             <div className="bg-[#2c2c2b] rounded-3xl p-6">
-              <p className="text-white/90 text-[16px] font-semibold mb-4">评分趋势</p>
-              <div className="flex items-baseline gap-3 mb-1">
-                <span className="text-[42px] font-bold text-white">{avgRating}</span>
-                <span className="text-white/68 text-[16px]">{timeRangeLabel}平均分</span>
-              </div>
-              <p className="text-white/60 text-[14px] mb-5">
-                {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），点的大小代表当天评论量
-              </p>
-              <RatingTrendChart points={stats.dailyRatings} />
-              {insightsLoading && <InsightsLoading />}
-              {insights?.versionTrend && (
-                <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/80 text-[14px] leading-relaxed">{insights.versionTrend}</p>
-                  <p className="text-white/35 text-[12px] mt-2 leading-relaxed">
-                    版本号本身不一定能按时间排序（不同 App 编号体系不一样，有的还并行维护多条分支），这里是用该版本评论的真实时间近似排出来的，App Store 端因为官方 API 不返回版本号，做不了这个分析。
-                  </p>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-white/90 text-[16px] font-semibold">评分分析</p>
+                <div className="flex items-center gap-1 bg-white/6 rounded-full p-1">
+                  {([
+                    ["trend", "趋势", <LineChart key="i" size={13} />],
+                    ["distribution", "分布", <BarChart2 key="i" size={13} />],
+                    ...(!locale ? [["locale", "地区", <Languages key="i" size={13} />] as const] : []),
+                  ] as const).map(([key, label, icon]) => (
+                    <button key={key} onClick={() => setRatingView(key)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] whitespace-nowrap transition-colors ${
+                        ratingView === key ? "bg-white/22 text-white font-semibold" : "text-white/60 hover:text-white/80"
+                      }`}>
+                      {icon}{label}
+                    </button>
+                  ))}
                 </div>
-              )}
-            </div>
+              </div>
 
-            <div className="bg-[#2c2c2b] rounded-3xl p-6">
-              <p className="text-white/90 text-[16px] font-semibold mb-4">评分分布</p>
-              <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel} {ratingTotal} 条评论按星级分布：</p>
-              <div className="flex flex-col gap-2">
-                {[5, 4, 3, 2, 1].map((star) => {
-                  const count = stats.ratingDist[star] ?? 0;
-                  const pct = pctOf(count);
-                  return (
-                    <div key={star} className="flex items-center gap-3">
-                      <span className="text-white/68 text-[13px] w-10 flex-none text-right">{star}★</span>
-                      <div className="flex-1 h-4 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: THEME_BLUE }} />
-                      </div>
-                      <span className="text-white/60 text-[12px] w-20 flex-none">{count} 条 · {pct}%</span>
+              {ratingView === "trend" && (
+                <>
+                  <div className="flex items-baseline gap-3 mb-1">
+                    <span className="text-[42px] font-bold text-white">{avgRating}</span>
+                    <span className="text-white/68 text-[16px]">{timeRangeLabel}平均分</span>
+                  </div>
+                  <p className="text-white/60 text-[14px] mb-5">
+                    {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），点的大小代表当天评论量
+                  </p>
+                  <RatingTrendChart points={stats.dailyRatings} />
+                  {insightsLoading && <InsightsLoading />}
+                  {insights?.versionTrend && (
+                    <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                      <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
+                      <p className="text-white/80 text-[14px] leading-relaxed">{insights.versionTrend}</p>
+                      <p className="text-white/35 text-[12px] mt-2 leading-relaxed">
+                        版本号本身不一定能按时间排序（不同 App 编号体系不一样，有的还并行维护多条分支），这里是用该版本评论的真实时间近似排出来的，App Store 端因为官方 API 不返回版本号，做不了这个分析。
+                      </p>
                     </div>
-                  );
-                })}
-              </div>
-              {insightsLoading && <InsightsLoading />}
-              {insights?.ratingDistribution && (
-                <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/80 text-[14px] leading-relaxed">{insights.ratingDistribution}</p>
-                </div>
+                  )}
+                </>
+              )}
+
+              {ratingView === "distribution" && (
+                <>
+                  <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel} {ratingTotal} 条评论按星级分布：</p>
+                  <div className="flex flex-col gap-2">
+                    {[5, 4, 3, 2, 1].map((star) => {
+                      const count = stats.ratingDist[star] ?? 0;
+                      const pct = pctOf(count);
+                      return (
+                        <div key={star} className="flex items-center gap-3">
+                          <span className="text-white/68 text-[13px] w-10 flex-none text-right">{star}★</span>
+                          <div className="flex-1 h-4 bg-white/5 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: THEME_BLUE }} />
+                          </div>
+                          <span className="text-white/60 text-[12px] w-20 flex-none">{count} 条 · {pct}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {insightsLoading && <InsightsLoading />}
+                  {insights?.ratingDistribution && (
+                    <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                      <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
+                      <p className="text-white/80 text-[14px] leading-relaxed">{insights.ratingDistribution}</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {ratingView === "locale" && !locale && (
+                <>
+                  <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列：</p>
+                  <div className="flex flex-col gap-2">
+                    {stats.localeRatings.map((l) => (
+                      <button key={l.locale} onClick={() => setLocale(l.locale === "unknown" ? undefined : l.locale)}
+                        className="flex items-center gap-3 text-left rounded-lg px-2 py-1.5 hover:bg-white/8 transition-colors">
+                        <span className="text-white/85 text-[13px] w-32 flex-none truncate">{localeLabel(l.locale)}</span>
+                        <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${(l.avgRating / 5) * 100}%`, backgroundColor: THEME_BLUE }} />
+                        </div>
+                        <span className="text-white/60 text-[12px] w-24 flex-none">{l.avgRating}★ · {l.count} 条</span>
+                      </button>
+                    ))}
+                  </div>
+                  {insightsLoading && <InsightsLoading />}
+                  {insights?.localeGap && (
+                    <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                      <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
+                      <p className="text-white/80 text-[14px] leading-relaxed">{insights.localeGap}</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -686,31 +738,6 @@ function DemoPageInner() {
               )}
             </div>
 
-            {!locale && (
-              <div className="bg-[#2c2c2b] rounded-3xl p-6">
-                <p className="text-white/90 text-[16px] font-semibold mb-4">地区满意度</p>
-                <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列：</p>
-                <div className="flex flex-col gap-2">
-                  {stats.localeRatings.map((l) => (
-                    <button key={l.locale} onClick={() => setLocale(l.locale === "unknown" ? undefined : l.locale)}
-                      className="flex items-center gap-3 text-left rounded-lg px-2 py-1.5 hover:bg-white/8 transition-colors">
-                      <span className="text-white/85 text-[13px] w-32 flex-none truncate">{localeLabel(l.locale)}</span>
-                      <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${(l.avgRating / 5) * 100}%`, backgroundColor: THEME_BLUE }} />
-                      </div>
-                      <span className="text-white/60 text-[12px] w-24 flex-none">{l.avgRating}★ · {l.count} 条</span>
-                    </button>
-                  ))}
-                </div>
-                {insightsLoading && <InsightsLoading />}
-                {insights?.localeGap && (
-                  <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                    <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                    <p className="text-white/80 text-[14px] leading-relaxed">{insights.localeGap}</p>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         );
       })()}
