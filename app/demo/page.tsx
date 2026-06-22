@@ -1007,16 +1007,15 @@ function DemoPageInner() {
   const CenterPanel = (
     <GlassPanel className="flex-1 flex flex-col overflow-hidden rounded-2xl min-w-0">
       <div className="px-3 py-2.5 bg-white/4 flex items-center justify-between flex-none gap-3">
-        <div className="flex items-center gap-4 min-w-0">
+        <div className="flex items-center gap-8 min-w-0">
           {/* 常驻 logo：不管左栏开合都看得到，不用跟着侧栏一起消失 */}
           <div className="flex items-center gap-1.5 flex-none">
             <Link href="/demo" className="text-lg tracking-tight text-white whitespace-nowrap"
               style={{ fontFamily: "'smiley-sans', sans-serif" }}>
               呼声雷达
             </Link>
-            <InfoTooltip text="声明：这是个演示 demo，本项目和所展示评论的 App 官方没有任何联系，抓取的是公开可见的评论内容" size={14} />
+            <InfoTooltip text="声明：本页为产品演示（Demo），与所展示评论所属的 App 官方无任何关联；评论数据均为应用商店公开可见内容" size={14} />
           </div>
-          <div className="w-px h-5 bg-white/15 flex-none" />
           <div className="flex items-center gap-1 overflow-x-auto bg-white/6 rounded-full p-1">
             {rightPanelItems.map((item) => (
               <button key={item.key} onClick={() => setActivePanel(item.key)}
