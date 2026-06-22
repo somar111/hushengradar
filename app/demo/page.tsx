@@ -916,24 +916,18 @@ function DemoPageInner() {
   );
 
   // ── 左栏 ──
-  // 收起时直接只渲染一个图标按钮，不再用"撑大了再裁切"那套——不会有任何机会露出别的内容
-  const LeftPanel = !leftOpen ? (
-    <div className="flex-none w-12 flex flex-col">
-      <button onClick={() => setLeftOpen(true)}
-        className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors m-3">
-        <PanelLeft size={20} strokeWidth={1.5} />
-      </button>
-    </div>
-  ) : (
-    <div className="flex-none w-52 flex flex-col gap-1.5">
-      <div className="h-8 flex items-center overflow-hidden flex-none">
-        <Link href="/"
-          className="px-2 text-xl tracking-tight text-white whitespace-nowrap"
-          style={{ fontFamily: "'smiley-sans', sans-serif" }}>
-          呼声雷达
-        </Link>
-      </div>
-      <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1">
+  // 外层宽度做动画（48↔208，只动 width 一个属性），内层按 leftOpen 整体切换分支——
+  // 收起那支永远只有一个图标按钮，结构上不可能露出别的内容；展开那支固定 w-52，
+  // 跟外层当前宽度无关，所以外层变宽的过程中它不会被压着重新换行
+  const LeftPanel = (
+    <div className={`flex-none flex flex-col overflow-hidden transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
+      {!leftOpen ? (
+        <button onClick={() => setLeftOpen(true)}
+          className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors m-3 flex-none">
+          <PanelLeft size={20} strokeWidth={1.5} />
+        </button>
+      ) : (
+      <GlassPanel className="flex flex-col overflow-hidden rounded-2xl flex-1 w-52">
         <div className="px-3 pb-2.5 pt-2.5 flex items-center justify-between bg-white/4 flex-none">
           <button onClick={() => setLeftOpen(false)}
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
@@ -1005,6 +999,7 @@ function DemoPageInner() {
           )}
         </div>
       </GlassPanel>
+      )}
     </div>
   );
 
@@ -1012,16 +1007,23 @@ function DemoPageInner() {
   const CenterPanel = (
     <GlassPanel className="flex-1 flex flex-col overflow-hidden rounded-2xl min-w-0">
       <div className="px-3 py-2.5 bg-white/4 flex items-center justify-between flex-none gap-3">
-        <div className="flex items-center gap-1 overflow-x-auto bg-white/6 rounded-full p-1">
-          {rightPanelItems.map((item) => (
-            <button key={item.key} onClick={() => setActivePanel(item.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-colors ${
-                activePanel === item.key ? "bg-white/22 text-white" : "text-white/45 hover:text-white/70"
-              }`}>
-              {item.icon}
-              <span className={activePanel === item.key ? "font-semibold" : "font-medium"}>{item.label}</span>
-            </button>
-          ))}
+        <div className="flex items-center gap-3 min-w-0">
+          {/* 常驻 logo：不管左栏开合都看得到，不用跟着侧栏一起消失 */}
+          <Link href="/" className="text-lg tracking-tight text-white whitespace-nowrap flex-none"
+            style={{ fontFamily: "'smiley-sans', sans-serif" }}>
+            呼声雷达
+          </Link>
+          <div className="flex items-center gap-1 overflow-x-auto bg-white/6 rounded-full p-1">
+            {rightPanelItems.map((item) => (
+              <button key={item.key} onClick={() => setActivePanel(item.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-colors ${
+                  activePanel === item.key ? "bg-white/22 text-white" : "text-white/45 hover:text-white/70"
+                }`}>
+                {item.icon}
+                <span className={activePanel === item.key ? "font-semibold" : "font-medium"}>{item.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
         <span className="text-white/35 text-[13px] flex-none">{stats ? `${stats.total} 条评论` : "加载中..."}</span>
       </div>
