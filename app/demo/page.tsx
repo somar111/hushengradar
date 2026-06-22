@@ -46,8 +46,9 @@ type Stats = {
   total: number;
   dateRange: { from: string | null; to: string | null };
   ratingDist: Record<string, number>;
-  tagCounts: Record<string, { label: string; count: number; summary: string | null }>;
+  tagCounts: Record<string, { label: string; count: number; summary: string | null; repliedCount: number }>;
   localeCounts: Record<string, number>;
+  localeRatings: { locale: string; count: number; avgRating: number }[];
   versionStats: { version: string; count: number; avgRating: number; avgDate: number }[];
   dailyRatings: { date: string; avgRating: number; count: number }[];
   officialReplyRate: number;
@@ -462,6 +463,32 @@ export default function DemoPage() {
         // 诉求占比的颜色：按排序后的序号循环取通用调色板，不跟具体 tag key 绑定
         const sliceColors = sorted.map((_, i) => CATEGORY_PALETTE[i % CATEGORY_PALETTE.length]);
 
+        // 评分分布：好评(4-5★)/差评(1-2★)/中评(3★)三段占比，只有真的两极分化（中评很少、两头都不少）
+        // 才点出来，不强行预设"肯定是两极分化"——大部分App的真实分布其实是正常偏态，不该硬套故事
+        const ratingTotal = Object.values(stats.ratingDist).reduce((a, b) => a + b, 0);
+        const pctOf = (n: number) => (ratingTotal ? Math.round((n / ratingTotal) * 1000) / 10 : 0);
+        const highPct = pctOf((stats.ratingDist[5] ?? 0) + (stats.ratingDist[4] ?? 0));
+        const lowPct = pctOf((stats.ratingDist[1] ?? 0) + (stats.ratingDist[2] ?? 0));
+        const midPct = pctOf(stats.ratingDist[3] ?? 0);
+        const isPolarized = ratingTotal >= 20 && midPct < 15 && highPct > 30 && lowPct > 30;
+
+        // 回复覆盖率：排除样本太小的tag，找命中量不小但官方回复率明显低于整体水平的那个
+        const minTagSample = Math.max(5, Math.round(stats.total * 0.02));
+        const replyByTag = sorted.map(([tag, t]) => ({
+          tag, label: t.label, count: t.count,
+          replyRate: t.count ? Math.round((t.repliedCount / t.count) * 1000) / 10 : 0,
+        }));
+        const worstReply = [...replyByTag]
+          .filter((r) => r.count >= minTagSample && r.tag !== "praise")
+          .sort((a, b) => a.replyRate - b.replyRate)[0];
+        const replyGapNotable = worstReply && worstReply.replyRate < stats.officialReplyRate - 10;
+
+        // 地区满意度：locale 数太少（比如就一个地区）就不下"哪个最差"这种结论
+        const minLocaleSample = 5;
+        const validLocales = stats.localeRatings.filter((l) => l.count >= minLocaleSample);
+        const worstLocale = validLocales[0];
+        const localeGapNotable = worstLocale && avgRating != null && worstLocale.avgRating <= avgRating - 0.3;
+
         return (
           <div className="flex flex-col gap-8">
             <div>
@@ -487,6 +514,34 @@ export default function DemoPage() {
                   </p>
                   <p className="text-white/25 text-[12px] mt-2 leading-relaxed">
                     版本号本身不一定能按时间排序（不同 App 编号体系不一样，有的还并行维护多条分支），这里是用该版本评论的真实时间近似排出来的，App Store 端因为官方 API 不返回版本号，做不了这个分析。
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-white/90 text-[15px] font-semibold mb-3">评分分布</p>
+              <p className="text-white/65 text-[14px] mb-4">{timeRangeLabel} {ratingTotal} 条评论按星级分布：</p>
+              <div className="flex flex-col gap-2">
+                {[5, 4, 3, 2, 1].map((star) => {
+                  const count = stats.ratingDist[star] ?? 0;
+                  const pct = pctOf(count);
+                  return (
+                    <div key={star} className="flex items-center gap-3">
+                      <span className="text-white/55 text-[13px] w-10 flex-none text-right">{star}★</span>
+                      <div className="flex-1 h-4 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: THEME_BLUE }} />
+                      </div>
+                      <span className="text-white/45 text-[12px] w-20 flex-none">{count} 条 · {pct}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {isPolarized && (
+                <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
+                  <p className="text-white/70 text-[14px] leading-relaxed">
+                    好评（4-5★）占 {highPct}%、差评（1-2★）占 {lowPct}%，中间评价（3★）只占 {midPct}%——评价两极分化明显，喜欢的很喜欢、不满的很不满，均分这一个数字会掩盖这个真实分布。
                   </p>
                 </div>
               )}
@@ -523,6 +578,58 @@ export default function DemoPage() {
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
                   <p className="text-white/70 text-[14px] leading-relaxed">
                     {topComplaintsLabel}合计占{timeRangeLabel}评论的 {topComplaintsPct}%，而求加新功能只有 {featureReq?.count ?? 0} 条（{featureReqPct}%）——先堵住{topComplaintsLabel}这类问题，比做新功能性价比更高。
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-white/90 text-[15px] font-semibold mb-3">官方回复覆盖率</p>
+              <p className="text-white/65 text-[14px] mb-4">
+                整体回复率 {stats.officialReplyRate}%，按问题类型拆开看哪类被回复得多、哪类被回复得少：
+              </p>
+              <div className="flex flex-col gap-2">
+                {replyByTag.map((r) => (
+                  <button key={r.tag} onClick={() => jumpToTag(r.tag)}
+                    className="flex items-center gap-3 text-left rounded-lg px-2 py-1.5 hover:bg-white/8 transition-colors">
+                    <span className="text-white/85 text-[13px] w-28 flex-none truncate">{r.label}</span>
+                    <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-emerald-500" style={{ width: `${r.replyRate}%` }} />
+                    </div>
+                    <span className="text-white/45 text-[12px] w-28 flex-none">{r.count} 条 · 回复 {r.replyRate}%</span>
+                  </button>
+                ))}
+              </div>
+              {replyGapNotable && (
+                <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
+                  <p className="text-white/70 text-[14px] leading-relaxed">
+                    "{worstReply.label}"有 {worstReply.count} 条评论，官方回复率只有 {worstReply.replyRate}%，明显低于整体 {stats.officialReplyRate}%——这是个高频问题但回复覆盖最薄弱的缺口。
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-white/90 text-[15px] font-semibold mb-3">地区满意度</p>
+              <p className="text-white/65 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列：</p>
+              <div className="flex flex-col gap-2">
+                {stats.localeRatings.map((l) => (
+                  <button key={l.locale} onClick={() => setLocale(l.locale === "unknown" ? undefined : l.locale)}
+                    className="flex items-center gap-3 text-left rounded-lg px-2 py-1.5 hover:bg-white/8 transition-colors">
+                    <span className="text-white/85 text-[13px] w-32 flex-none truncate">{localeLabel(l.locale)}</span>
+                    <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${(l.avgRating / 5) * 100}%`, backgroundColor: THEME_BLUE }} />
+                    </div>
+                    <span className="text-white/45 text-[12px] w-24 flex-none">{l.avgRating}★ · {l.count} 条</span>
+                  </button>
+                ))}
+              </div>
+              {localeGapNotable && (
+                <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
+                  <p className="text-white/70 text-[14px] leading-relaxed">
+                    {localeLabel(worstLocale.locale)}均分 {worstLocale.avgRating}（{worstLocale.count} 条），明显低于整体均分 {avgRating}——这个市场的真实满意度落后于其他地区，值得单独看看那边用户在反馈什么。
                   </p>
                 </div>
               )}

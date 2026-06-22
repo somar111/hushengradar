@@ -116,18 +116,24 @@ async function getStatsRows(appId: string) {
 export async function computeStats(appId: string, locale?: string, since?: string) {
   const { rows: allRows, summaryMap } = await getStatsRows(appId);
 
-  // localeCounts 现在跟 total 用同一份 since 过滤，侧边栏批次条数才能和"全部"对得上
+  // localeCounts/localeRatings 都跟 total 用同一份 since 过滤、但不受当前 locale 筛选影响——
+  // 这俩是给"对比各地区"用的，如果跟着当前选中的单一 locale 一起过滤就没法对比了
   const sinceRows = since ? allRows.filter((r) => r.review_date >= since) : allRows;
   const localeCounts: Record<string, number> = {};
+  const localeRatingMap = new Map<string, { count: number; ratingSum: number }>();
   for (const r of sinceRows) {
     const l = r.locale ?? "unknown";
     localeCounts[l] = (localeCounts[l] || 0) + 1;
+    const lr = localeRatingMap.get(l) ?? { count: 0, ratingSum: 0 };
+    lr.count++;
+    lr.ratingSum += r.rating ?? 0;
+    localeRatingMap.set(l, lr);
   }
 
   const scoped = locale ? sinceRows.filter((r) => (r.locale ?? "unknown") === locale) : sinceRows;
   const total = scoped.length;
   const ratingDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  const tagCounts: Record<string, { label: string; count: number; summary: string | null }> = {};
+  const tagCounts: Record<string, { label: string; count: number; summary: string | null; repliedCount: number }> = {};
   const versionMap = new Map<string, { count: number; ratingSum: number; dateSum: number }>();
   const dailyMap = new Map<string, { count: number; ratingSum: number }>();
   let withOfficialReply = 0;
@@ -141,8 +147,9 @@ export async function computeStats(appId: string, locale?: string, since?: strin
     d.ratingSum += r.rating ?? 0;
     dailyMap.set(day, d);
     for (const t of r.ai_tags ?? []) {
-      const entry = tagCounts[t.key] ?? { label: t.label, count: 0, summary: summaryMap[t.key] ?? null };
+      const entry = tagCounts[t.key] ?? { label: t.label, count: 0, summary: summaryMap[t.key] ?? null, repliedCount: 0 };
       entry.count++;
+      if (r.official_reply) entry.repliedCount++;
       tagCounts[t.key] = entry;
     }
     if (r.app_version) {
@@ -173,6 +180,11 @@ export async function computeStats(appId: string, locale?: string, since?: strin
     .map(([date, { count, ratingSum }]) => ({ date, avgRating: Math.round((ratingSum / count) * 100) / 100, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  // 评分最低的地区排前面，方便一眼看出最不满意的市场在哪
+  const localeRatings = [...localeRatingMap.entries()]
+    .map(([locale, { count, ratingSum }]) => ({ locale, count, avgRating: Math.round((ratingSum / count) * 100) / 100 }))
+    .sort((a, b) => a.avgRating - b.avgRating);
+
   return {
     total,
     dateRange: { from: dates[0] ?? null, to: dates[dates.length - 1] ?? null },
@@ -180,6 +192,7 @@ export async function computeStats(appId: string, locale?: string, since?: strin
     tagCounts,
     dailyRatings,
     localeCounts,
+    localeRatings,
     versionStats,
     officialReplyRate: total ? Math.round((withOfficialReply / total) * 1000) / 10 : 0,
   };
