@@ -922,7 +922,7 @@ function DemoPageInner() {
   // 不做成悬浮卡片——左栏直接用自己的底色铺满整列，跟右栏之间不留缝、不加分割线，
   // 单靠色块深浅区分两栏，贴近一般 LLM 网页版（ChatGPT/Claude）的平铺式布局
   const LeftPanel = (
-    <div className={`flex-none flex flex-col overflow-hidden bg-[#1c1c1c] transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
+    <div className={`flex-none flex flex-col overflow-hidden bg-[#242424] transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
       {!leftOpen ? (
         <button onClick={() => setLeftOpen(true)}
           className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors m-3 flex-none">
@@ -1007,7 +1007,7 @@ function DemoPageInner() {
 
   // ── 中栏 ──（跟左栏一样不做卡片，直接铺底色，靠跟左栏不同的色块区分）
   const CenterPanel = (
-    <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-[#242424]">
+    <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-[#1c1c1c]">
       <div className="px-3 py-2.5 bg-white/4 flex items-center justify-between flex-none gap-3">
         <div className="flex items-center gap-8 min-w-0">
           {/* 常驻 logo：不管左栏开合都看得到，不用跟着侧栏一起消失 */}
