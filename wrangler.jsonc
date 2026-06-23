@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hushengradar",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-06-23",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "routes": [
+    { "pattern": "hushengradar.com", "custom_domain": true },
+    { "pattern": "www.hushengradar.com", "custom_domain": true }
+  ]
+}
