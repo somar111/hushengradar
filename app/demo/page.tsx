@@ -140,11 +140,11 @@ const SEG_TRACK = "flex items-center gap-1 bg-white/6 rounded-full p-1";
 const SEG_PILL_ON = "bg-white/15 text-white ring-1 ring-white/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.28),0_1px_2px_0_rgba(0,0,0,0.35)] backdrop-blur-sm";
 const SEG_PILL_OFF = "text-white/60 hover:text-white/85";
 
-// "真实结论"现在由AI现场生成，请求没回来之前显示这个，而不是先空着再突然蹦出文字
+// "分析"现在由AI现场生成，请求没回来之前显示这个，而不是先空着再突然蹦出文字
 function InsightsLoading() {
   return (
     <div className="flex items-center gap-2 text-white/35 text-[13px] mt-4">
-      <Loader2 size={12} className="animate-spin" />AI 正在判断这项数据是否值得下结论…
+      <Loader2 size={12} className="animate-spin" />正在分析…
     </div>
   );
 }
@@ -428,7 +428,7 @@ function DemoPageInner() {
     fetch(`/api/demo/stats?${params}`).then((r) => r.json()).then(setStats);
   }, [selectedAppId, selectedApp, locale, since]);
 
-  // "综合分析"面板的"真实结论"由AI根据真实统计数字现场判断、现场生成，只在看这个面板时才拉，
+  // "综合分析"面板"诉求占比"的"分析"由AI根据真实统计数字现场判断、现场生成，只在看这个面板时才拉，
   // 避免切换其他Tab时白白触发DeepSeek调用
   useEffect(() => {
     if (!selectedAppId || !selectedApp || activePanel !== "analysis") return;
@@ -648,16 +648,6 @@ function DemoPageInner() {
                     {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），点的大小代表当天评论量
                   </p>
                   <RatingTrendChart points={stats.dailyRatings} />
-                  {insightsLoading && <InsightsLoading />}
-                  {insights?.versionTrend && (
-                    <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                      <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                      <p className="text-white/80 text-[14px] leading-relaxed">{insights.versionTrend}</p>
-                      <p className="text-white/35 text-[12px] mt-2 leading-relaxed">
-                        版本号本身不一定能按时间排序（不同 App 编号体系不一样，有的还并行维护多条分支），这里是用该版本评论的真实时间近似排出来的，App Store 端因为官方 API 不返回版本号，做不了这个分析。
-                      </p>
-                    </div>
-                  )}
                 </>
               )}
 
@@ -679,19 +669,12 @@ function DemoPageInner() {
                       );
                     })}
                   </div>
-                  {insightsLoading && <InsightsLoading />}
-                  {insights?.ratingDistribution && (
-                    <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                      <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                      <p className="text-white/80 text-[14px] leading-relaxed">{insights.ratingDistribution}</p>
-                    </div>
-                  )}
                 </>
               )}
 
               {ratingView === "locale" && !locale && (
                 <>
-                  <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列（只列样本量够大、对比才有意义的地区）：</p>
+                  <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列（只列样本量够的地区）：</p>
                   {(() => {
                     // 样本量太小的地区算出来的均分没有统计意义，列出来反而误导——用 lib/reviews.ts 的
                     // meaningfulLocaleFloor（同一个门槛也用于喂给AI下结论），保证列表和AI结论永远一致。
@@ -715,13 +698,6 @@ function DemoPageInner() {
                       </div>
                     );
                   })()}
-                  {insightsLoading && <InsightsLoading />}
-                  {insights?.localeGap && (
-                    <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                      <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                      <p className="text-white/80 text-[14px] leading-relaxed">{insights.localeGap}</p>
-                    </div>
-                  )}
                 </>
               )}
             </div>
@@ -755,7 +731,7 @@ function DemoPageInner() {
               {insightsLoading && <InsightsLoading />}
               {insights?.complaintsVsFeatureRequest && (
                 <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
+                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">分析</p>
                   <p className="text-white/80 text-[14px] leading-relaxed">{insights.complaintsVsFeatureRequest}</p>
                 </div>
               )}
@@ -764,7 +740,7 @@ function DemoPageInner() {
             <div className="bg-[#2c2c2b] rounded-3xl p-6">
               <p className="text-white/95 text-[18px] font-bold mb-4">官方回复覆盖率</p>
               <p className="text-white/75 text-[14px] mb-4">
-                整体回复率 {stats.officialReplyRate}%，按问题类型拆开看哪类被回复得多、哪类被回复得少：
+                整体回复率 {stats.officialReplyRate}%
               </p>
               <div className="flex flex-col gap-1.5">
                 {replyByTag.map((r) => (
@@ -778,13 +754,6 @@ function DemoPageInner() {
                   </button>
                 ))}
               </div>
-              {insightsLoading && <InsightsLoading />}
-              {insights?.replyGap && (
-                <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
-                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">真实结论</p>
-                  <p className="text-white/80 text-[14px] leading-relaxed">{insights.replyGap}</p>
-                </div>
-              )}
             </div>
 
           </div>
@@ -1125,7 +1094,7 @@ function DemoPageInner() {
         <div className="flex items-center gap-8 min-w-0">
           {/* 常驻 logo：不管左栏开合都看得到，不用跟着侧栏一起消失 */}
           <div className="flex items-center gap-1.5 flex-none">
-            <Link href="/demo" className="text-lg tracking-tight text-white whitespace-nowrap"
+            <Link href="/demo" className="text-2xl tracking-tight text-white whitespace-nowrap"
               style={{ fontFamily: "'smiley-sans', sans-serif" }}>
               呼声雷达
             </Link>

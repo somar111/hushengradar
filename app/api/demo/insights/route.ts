@@ -17,9 +17,7 @@ export async function GET(request: NextRequest) {
   const stats = await computeStats(app.id, locale, since);
 
   if (!stats.total) {
-    return Response.json({
-      versionTrend: null, ratingDistribution: null, complaintsVsFeatureRequest: null, replyGap: null, localeGap: null,
-    });
+    return Response.json({ complaintsVsFeatureRequest: null });
   }
 
   const metrics = buildAnalysisMetrics(stats);

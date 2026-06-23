@@ -3,11 +3,7 @@ import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt } from "./promptK
 export type ClassifiedTag = { key: string; label: string; evidence?: string };
 
 export type Insights = {
-  versionTrend: string | null;
-  ratingDistribution: string | null;
   complaintsVsFeatureRequest: string | null;
-  replyGap: string | null;
-  localeGap: string | null;
 };
 
 /**
@@ -59,7 +55,7 @@ export async function generateReplySuggestion(opts: {
 }
 
 /**
- * 给"综合分析"面板的5类真实统计数字，让AI判断每一类是否值得展示成一句"真实结论"。
+ * 给"综合分析"面板"诉求占比"的真实统计数字，让AI判断是否值得展示成一句"分析"。
  * 不在这里或调用方预设样本量/差距大小的硬阈值——判不判得上由AI看真实数字决定。
  */
 export async function generateInsights(opts: {
@@ -106,11 +102,7 @@ export async function generateInsights(opts: {
   }
 
   return {
-    versionTrend: parsed.versionTrend ?? null,
-    ratingDistribution: parsed.ratingDistribution ?? null,
     complaintsVsFeatureRequest: parsed.complaintsVsFeatureRequest ?? null,
-    replyGap: parsed.replyGap ?? null,
-    localeGap: parsed.localeGap ?? null,
   };
 }
 
