@@ -20,9 +20,10 @@ export type AppRow = {
   locale_watermarks: Record<string, string>;
   // 该 App 要抓取的语言/地区批次，[lang, country] 数组；为空则 cron-fetch.mjs 用内置默认列表兜底
   target_locales: [string, string][] | null;
-  // 这个App专属的起步分类种子（加App时AI根据context提议），不是全局共用的一份；
-  // 为空则分类时只有 praise/feature_request 两个通用类别 + 该App历史上已造出的custom tags
-  seed_categories: { key: string; label: string }[] | null;
+  // 这个App专属的「问题分类体系」（taxonomy）：顶层类型 + 各自的子问题。由 build-taxonomy.mjs
+  // 从真实评论样本设计生成（add-app 时先用商店listing生成一份粗的、无子问题的兜底）。分类时
+  // 按这套体系归类，不逐条临场发明。为空则只有 praise/feature_request/vague_complaint 三个通用类别。
+  seed_categories: { key: string; label: string; subcategories?: { key: string; label: string }[] }[] | null;
   created_at: string;
 };
 

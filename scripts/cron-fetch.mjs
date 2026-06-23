@@ -81,7 +81,7 @@ async function classifyReview(content, rating, appContext, seedCategories = [], 
   const data = await res.json();
   const parsed = JSON.parse(data.choices[0].message.content);
   if (!Array.isArray(parsed.tags)) return [];
-  return parsed.tags
+  let tags = parsed.tags
     .filter((t) => t && t.key && t.label)
     .map((t) => {
       const key = sanitizeTagKey(t.key);
@@ -95,6 +95,13 @@ async function classifyReview(content, rating, appContext, seedCategories = [], 
         subLabel: noSub ? null : (t.subKey ? (t.subLabel || null) : "其他"),
       };
     });
+  // vague_complaint 互斥兜底：它的定义就是"说不出具体问题"，所以只要同一条评论命中了任何
+  // 具体类型，vague_complaint 就自相矛盾，去掉。这是"意义不明"这个类别的内在不变式，
+  // 不针对任何具体App——prompt 里已经要求模型这么做，这里再兜一层防模型偶尔违背。
+  if (tags.length > 1 && tags.some((t) => t.key === "vague_complaint")) {
+    tags = tags.filter((t) => t.key !== "vague_complaint");
+  }
+  return tags;
 }
 
 async function detectAndTranslate(content) {
