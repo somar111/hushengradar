@@ -40,3 +40,29 @@ export function useQueryState(
 
   return [value, setValue];
 }
+
+// 一次改多个 query 参数用这个，不要在一个事件里连着调多个 useQueryState 的 setValue——
+// 每个 setValue 都基于同一帧的 searchParams 快照各自发一次 router.push，后一次会覆盖前一次，
+// 结果只有最后一个参数生效，其余被悄悄丢掉（之前"选了筛选标签却没反应""切 App 没清掉旧筛选"
+// 都是这个竞态）。这个 setter 把多个参数的改动合进同一次 push，从根上避免覆盖。通用，跟具体
+// 参数无关——传一个 {key: 值} 的 map，值为空字符串/undefined 表示删掉这个 key。
+export function useQueryParams(mode: Mode = "push"): (updates: Record<string, string | undefined>) => void {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  return useCallback(
+    (updates: Record<string, string | undefined>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [key, next] of Object.entries(updates)) {
+        if (!next) params.delete(key);
+        else params.set(key, next);
+      }
+      const qs = params.toString();
+      const url = qs ? `${pathname}?${qs}` : pathname;
+      if (mode === "push") router.push(url, { scroll: false });
+      else router.replace(url, { scroll: false });
+    },
+    [mode, pathname, router, searchParams]
+  );
+}

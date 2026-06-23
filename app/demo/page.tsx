@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
 import type { Insights } from "@/lib/classify";
-import { useQueryState } from "@/lib/useQueryState";
+import { useQueryState, useQueryParams } from "@/lib/useQueryState";
 
 // ─── 类型 ────────────────────────────────────────────────────
 
@@ -244,14 +244,39 @@ function fmtDate(iso: string | null) {
   return iso ? iso.slice(0, 10) : "—";
 }
 
-// "Top反馈"和"评论回复"头部用同一份子问题数据、同一个格式化方式，保证两处展示的子问题
-// 永远一一对应——不是各自维护一份文案，没有子问题时退回AI摘要，两边都没有就给个兜底提示
-function formatTagBreakdown(t: { count: number; summary: string | null; subTags: Record<string, { label: string; count: number }> }) {
+// "Top反馈"和"评论回复"头部用同一份子问题数据、同一个组件渲染，保证两处展示的子问题永远
+// 一一对应——子问题各自带真实数字、可点击；没有子问题时退回AI摘要（比如"意义不明的纯抱怨"
+// 这种本就没有子问题的类别，或还没重分类过的老数据）。onJump 给了就可点：传子问题 key 跳到
+// 该子问题，传 undefined 跳到整个标签；没给 onJump 就是纯展示。activeSubKey 高亮当前选中的子问题。
+function TagBreakdown({ t, onJump, activeSubKey }: {
+  t: { count: number; summary: string | null; subTags: Record<string, { label: string; count: number }> };
+  onJump?: (subKey?: string) => void;
+  activeSubKey?: string;
+}) {
   const subEntries = Object.entries(t.subTags).sort((a, b) => b[1].count - a[1].count);
-  if (subEntries.length > 0) {
-    return subEntries.map(([, s]) => `${s.label}（${s.count}）`).join("、");
+  if (subEntries.length === 0) {
+    const text = t.summary || "点击查看全部真实评论 →";
+    return onJump
+      ? <button onClick={(e) => { e.stopPropagation(); onJump(); }}
+          className="text-white/68 text-[13px] leading-relaxed text-left hover:text-white/90 transition-colors">{text}</button>
+      : <span className="text-white/68 text-[13px] leading-relaxed">{text}</span>;
   }
-  return t.summary || "点击查看全部真实评论 →";
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {subEntries.map(([key, s]) => {
+        const content = `${s.label}（${s.count}）`;
+        const active = activeSubKey === key;
+        return onJump ? (
+          <button key={key} onClick={(e) => { e.stopPropagation(); onJump(key); }}
+            className={`text-[13px] px-2 py-0.5 rounded-md transition-colors ${
+              active ? "bg-white/20 text-white" : "bg-white/5 text-white/68 hover:bg-white/12 hover:text-white/90"
+            }`}>{content}</button>
+        ) : (
+          <span key={key} className="text-[13px] px-2 py-0.5 rounded-md bg-white/5 text-white/68">{content}</span>
+        );
+      })}
+    </div>
+  );
 }
 
 function localeLabel(locale: string | null) {
@@ -282,6 +307,8 @@ export default function DemoPage() {
 
 function DemoPageInner() {
   const [leftOpen, setLeftOpen] = useState(true);
+  // 一次改多个 URL 参数走这个，避免连着调多个单参数 setter 互相覆盖（见 useQueryState.ts 注释）
+  const setParams = useQueryParams();
   const [activePanelRaw, setActivePanelRaw] = useQueryState("panel", "complaints");
   const activePanel = activePanelRaw as RightPanel;
   const setActivePanel = setActivePanelRaw as (v: RightPanel) => void;
@@ -296,9 +323,10 @@ function DemoPageInner() {
   const setTimeRange = setTimeRangeRaw as (v: TimeRange) => void;
   const [locale, setLocaleRaw] = useQueryState("locale", "");
   const setLocale = (v: string | undefined) => setLocaleRaw(v ?? "");
-  const [tagFilter, setTagFilterRaw] = useQueryState("tag", "");
-  // 换主标签时子问题筛选要跟着清空——旧的子问题不一定属于新选的主标签
-  const setTagFilter = (v: string | undefined) => { setTagFilterRaw(v ?? ""); setSubTagFilterRaw(""); };
+  const [tagFilter] = useQueryState("tag", "");
+  // 换主标签时子问题筛选要跟着清空——旧的子问题不一定属于新选的主标签。tag 和 subTag 必须在
+  // 同一次 push 里改，不能各自调单参数 setter（否则后一次覆盖前一次，标签根本设不上去）
+  const setTagFilter = (v: string | undefined) => setParams({ tag: v, subTag: "" });
   const [subTagFilter, setSubTagFilterRaw] = useQueryState("subTag", "");
   const setSubTagFilter = (v: string | undefined) => setSubTagFilterRaw(v ?? "");
   // "" = 全部，"true" = 只看已回复，"false" = 只看未回复
@@ -502,11 +530,11 @@ function DemoPageInner() {
     }
   }
 
-  // 跳转到某个标签的评论列表时，要保留当前已选的地区/时间范围筛选——之前这里会清空 locale，
-  // 导致"最近一月-某国家"下点开的反馈，看到的却是所有地区的评论，跟用户当前看的范围不对应
-  function jumpToTag(tag: string) {
-    setTagFilter(tag);
-    setActivePanel("reply");
+  // 跳转到某个标签（可带具体子问题）的评论列表时，保留当前已选的地区/时间范围筛选。
+  // tag / subTag / panel 三个 URL 参数必须在同一次 push 里改完——之前分三次调 setter，
+  // 互相覆盖，结果只有最后一个生效，标签压根没设上，所以点了没反应（这就是"点击进不去"的根因）。
+  function jumpToTag(tag: string, subTag?: string) {
+    setParams({ tag, subTag: subTag ?? "", panel: "reply" });
     setMobileTab("analyze");
   }
 
@@ -532,27 +560,29 @@ function DemoPageInner() {
       {activePanel === "complaints" && stats && (
         <div>
           <p className="text-white/75 text-[14px] mb-4">
-            {timeRangeLabel}（{fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)}）共 {stats.total} 条公开评论，AI 按问题类型聚类（点击查看该类全部真实评论）：
+            {timeRangeLabel}（{fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)}）共 {stats.total} 条公开评论，AI 按问题类型聚类（点标题看该类全部评论，点子问题直接看该子问题）：
           </p>
           <div className="flex flex-col gap-3">
             {Object.entries(stats.tagCounts)
               .sort((a, b) => b[1].count - a[1].count)
               .map(([tag, t], i) => {
                 const pct = (t.count / stats.total) * 100;
+                // 整张卡不再是一个大 button——子问题要单独可点，button 不能嵌 button。
+                // 圆环+标题行点了跳整个标签，子问题 chip 点了跳到那个具体子问题。
                 return (
-                  <button key={tag} onClick={() => jumpToTag(tag)}
-                    className="text-left border border-white/10 hover:bg-white/8 transition-colors rounded-xl p-4 flex items-center gap-4">
-                    <DonutPercent percent={pct} />
+                  <div key={tag}
+                    className="border border-white/10 hover:bg-white/8 transition-colors rounded-xl p-4 flex items-center gap-4">
+                    <button onClick={() => jumpToTag(tag)} className="flex-none">
+                      <DonutPercent percent={pct} />
+                    </button>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      <button onClick={() => jumpToTag(tag)} className="flex items-center gap-2 mb-1 text-left">
                         <span className="text-white/60 text-[14px] font-mono">#{i + 1}</span>
                         <span className="text-white/95 text-[17px] font-semibold">{t.label}（{t.count}）</span>
-                      </div>
-                      <p className="text-white/68 text-[13px] leading-relaxed">
-                        {formatTagBreakdown(t)}
-                      </p>
+                      </button>
+                      <TagBreakdown t={t} onJump={(subKey) => jumpToTag(tag, subKey)} />
                     </div>
-                  </button>
+                  </div>
                 );
               })}
           </div>
@@ -787,10 +817,10 @@ function DemoPageInner() {
         <div className="flex items-center gap-4 px-4 pt-4 flex-none">
           <DonutPercent percent={(stats.tagCounts[tagFilter].count / stats.total) * 100} size={48} />
           <div className="min-w-0">
-            <p className="text-white/90 text-[15px] font-medium">{stats.tagCounts[tagFilter].label}（{stats.tagCounts[tagFilter].count}）</p>
-            <p className="text-white/68 text-[13px] leading-relaxed">
-              {formatTagBreakdown(stats.tagCounts[tagFilter])}
-            </p>
+            <p className="text-white/90 text-[15px] font-medium mb-1">{stats.tagCounts[tagFilter].label}（{stats.tagCounts[tagFilter].count}）</p>
+            {/* 点子问题 chip 直接把列表筛到那个子问题；已选中的高亮，再点一下取消（回到整个标签） */}
+            <TagBreakdown t={stats.tagCounts[tagFilter]} activeSubKey={subTagFilter || undefined}
+              onJump={(subKey) => setSubTagFilter(subKey === subTagFilter ? undefined : subKey)} />
           </div>
         </div>
       )}
@@ -1021,7 +1051,7 @@ function DemoPageInner() {
             {showAppMenu && (
               <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#2c2c2b] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
                 {apps.map((a) => (
-                  <button key={a.id} onClick={() => { setSelectedAppId(a.id); setLocale(undefined); setTagFilter(undefined); setShowAppMenu(false); }}
+                  <button key={a.id} onClick={() => { setParams({ app: a.id, locale: "", tag: "", subTag: "" }); setShowAppMenu(false); }}
                     className={`text-left px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
                       a.id === selectedAppId ? "bg-white/12 text-white/90" : "text-white/80 hover:bg-white/8"
                     }`}>
@@ -1117,7 +1147,7 @@ function DemoPageInner() {
               <div className="flex flex-col gap-5">
                 <div>
                   <p className="text-white/45 text-[12px] uppercase tracking-wider mb-2">App</p>
-                  <select value={selectedAppId ?? ""} onChange={(e) => { setSelectedAppId(e.target.value); setLocale(undefined); setTagFilter(undefined); }}
+                  <select value={selectedAppId ?? ""} onChange={(e) => setParams({ app: e.target.value, locale: "", tag: "", subTag: "" })}
                     className="w-full bg-white/8 rounded-lg px-3 py-2 text-[16px] text-white/85 outline-none">
                     {apps.map((a) => (
                       <option key={a.id} value={a.id} className="bg-[#2c2c2b]">{a.display_name}</option>
