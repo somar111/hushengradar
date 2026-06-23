@@ -1,4 +1,5 @@
 import { getServiceSupabase, type ReviewRow, type AppRow } from "./supabase";
+import { meaningfulLocaleFloor } from "./analysisShared";
 
 // apps 表几乎不变（只有手动加新 App 时才变），缓存住省掉每次切筛选都白付一次 Supabase round trip
 const APPS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -238,6 +239,7 @@ export async function computeStats(appId: string, locale?: string, since?: strin
  * 单一来源，避免两条AI调用各自拼一份、改一处漏改另一处。
  */
 export function buildAnalysisMetrics(stats: Awaited<ReturnType<typeof computeStats>>) {
+  const localeFloor = meaningfulLocaleFloor(stats.total);
   const overallAvgRating = stats.total
     ? Math.round(
         (Object.entries(stats.ratingDist).reduce((sum, [k, v]) => sum + Number(k) * v, 0) / stats.total) * 100
@@ -262,10 +264,9 @@ export function buildAnalysisMetrics(stats: Awaited<ReturnType<typeof computeSta
       replyRate: t.count ? Math.round((t.repliedCount / t.count) * 1000) / 10 : 0,
     })),
     overallReplyRate: stats.officialReplyRate,
-    localeRatings: stats.localeRatings.map((l) => ({
-      locale: l.locale,
-      reviewCount: l.count,
-      avgRating: l.avgRating,
-    })),
+    // 只把样本量够大的地区喂给AI，跟前端地区列表用同一个门槛，避免AI对被隐藏的小样本地区下结论
+    localeRatings: stats.localeRatings
+      .filter((l) => l.count >= localeFloor)
+      .map((l) => ({ locale: l.locale, reviewCount: l.count, avgRating: l.avgRating })),
   };
 }

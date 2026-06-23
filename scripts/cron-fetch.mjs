@@ -2,7 +2,7 @@
 // 通用脚本，不绑定任何具体 App；加新 App 只需要在 apps 表插一行，这个脚本自动覆盖到它。
 import { createClient } from "@supabase/supabase-js";
 import gplayPkg from "google-play-scraper";
-import { UNIVERSAL_CATEGORIES, buildClassifyPrompt, buildSummaryPrompt, buildTranslatePrompt, dedupeCrossLevelTags, sanitizeTagKey } from "../lib/promptKit.mjs";
+import { UNIVERSAL_CATEGORIES, NO_SUBTAG_KEYS, buildClassifyPrompt, buildSummaryPrompt, buildTranslatePrompt, dedupeCrossLevelTags, sanitizeTagKey } from "../lib/promptKit.mjs";
 
 const UNIVERSAL_KEYS = new Set(UNIVERSAL_CATEGORIES.map((c) => c.key));
 
@@ -83,10 +83,18 @@ async function classifyReview(content, rating, appContext, seedCategories = [], 
   if (!Array.isArray(parsed.tags)) return [];
   return parsed.tags
     .filter((t) => t && t.key && t.label)
-    .map((t) => ({
-      key: sanitizeTagKey(t.key), label: t.label, evidence: t.evidence || null,
-      subKey: t.subKey ? sanitizeTagKey(t.subKey) : null, subLabel: t.subKey ? t.subLabel || null : null,
-    }));
+    .map((t) => {
+      const key = sanitizeTagKey(t.key);
+      // 除 vague_complaint（设计上没有子问题）外，每个问题都必须有子问题，这样"子问题数字加起来
+      // == 问题总数"才永远成立。模型偶尔会漏给 subKey，这里兜底塞一个"其他"，保证全覆盖、不破坏
+      // 加和恒等式。通用规则，跟具体App无关。
+      const noSub = NO_SUBTAG_KEYS.has(key);
+      return {
+        key, label: t.label, evidence: t.evidence || null,
+        subKey: noSub ? null : (t.subKey ? sanitizeTagKey(t.subKey) : "general"),
+        subLabel: noSub ? null : (t.subKey ? (t.subLabel || null) : "其他"),
+      };
+    });
 }
 
 async function detectAndTranslate(content) {
