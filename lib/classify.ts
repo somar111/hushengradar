@@ -73,18 +73,43 @@ export async function generateReplySuggestion(opts: {
     hasAuthorizedContact ? "" : "注意：未配置自定义联系方式，禁止在回复中出现邮箱、网址、电话。",
   ].filter(Boolean).join("\n");
 
-  const data = await callDeepSeek(apiKey, {
-    model: "deepseek-chat",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    temperature: 0.3,
-  });
+  // 模型偶发会把中文词漏进外语回复里（如葡语句子中突然冒出"公平性"）。这种回复要直接发给
+  // 外语用户，夹生很不专业。判据：评论原文几乎没有中文，回复里却出现了中文 → 多半是漏词，
+  // 自动重写一次（追加纠正指令）。重写后仍夹生就只能用现有结果（极罕见，靠 corpus 净化兜底）。
+  const baseMessages: ChatMessage[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ];
 
-  const reply = data.choices?.[0]?.message?.content?.trim() || "";
+  let reply = "";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const messages: ChatMessage[] =
+      attempt === 0
+        ? baseMessages
+        : [
+            ...baseMessages,
+            {
+              role: "system",
+              content: "上一版回复里混入了中文词。请重写：整条回复只用评论原文的语言，绝不夹杂中文或其它语言的词。",
+            },
+          ];
+    const data = await callDeepSeek(apiKey, {
+      model: "deepseek-chat",
+      messages,
+      temperature: 0.3,
+    });
+    reply = data.choices?.[0]?.message?.content?.trim() || "";
+    if (!looksLanguageMixed(reply, opts.content)) break;
+  }
+
   const corpus = [opts.content, opts.replyContext?.contactInfo ?? ""].join("\n");
   return sanitizeUnsourcedContactInfo(reply, corpus);
+}
+
+const HAN_RE = /[\u4e00-\u9fff]/;
+// 评论原文没有中文、回复却带中文 → 判定为模型把中文词漏进了外语回复。
+function looksLanguageMixed(reply: string, source: string): boolean {
+  return HAN_RE.test(reply) && !HAN_RE.test(source);
 }
 
 export type TranslateResult = {
