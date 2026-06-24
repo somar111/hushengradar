@@ -548,10 +548,11 @@ function DemoPageInner() {
   useEffect(() => {
     if (!selectedReview) return;
     const onPointerDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (replyDetailRef.current && !replyDetailRef.current.contains(target)) {
-        setSelectedReview(null);
-      }
+      const el = e.target as Element;
+      if (replyDetailRef.current?.contains(el)) return;
+      // 点在评论卡片上时不关闭——否则 mousedown 先关、click 再开，会闪一下
+      if (el.closest("[data-review-card]")) return;
+      setSelectedReview(null);
     };
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
@@ -665,6 +666,10 @@ function DemoPageInner() {
   }
 
   function handleSelectReview(r: ReviewRow) {
+    if (selectedReview?.id === r.id) {
+      setSelectedReview(null);
+      return;
+    }
     setSelectedReview(r);
     setAiReply("");
     setAiError("");
@@ -1021,7 +1026,7 @@ function DemoPageInner() {
 
   // ── 中间区域：回复模式 ──
   const ReplyResult = (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden relative">
       {tagFilter && stats?.tagCounts[tagFilter] && (
         <div className="flex items-center gap-4 px-4 pt-4 flex-none">
           <DonutPercent percent={(stats.tagCounts[tagFilter].count / stats.total) * 100} size={48} />
@@ -1111,7 +1116,7 @@ function DemoPageInner() {
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className={`flex-1 overflow-y-auto px-4 ${selectedReview ? "pb-56" : "pb-4"}`}>
         {loading ? (
           <div className="flex items-center justify-center h-full text-white/30"><Loader2 className="animate-spin" size={20} /></div>
         ) : (
@@ -1123,8 +1128,8 @@ function DemoPageInner() {
               // 没法精确算渲染后是否真的被截断，用字数估个大概，宁可偶尔多显示一次"展开"也不要漏掉真正被截断的
               const mayBeTruncated = display.text.length > 70;
               return (
-                <button key={r.id} onClick={() => handleSelectReview(r)}
-                  className={`text-left rounded-xl p-4 transition-all ${
+                <button key={r.id} data-review-card onClick={() => handleSelectReview(r)}
+                  className={`text-left rounded-xl p-4 transition-colors ${
                     isSelected ? "ring-1 ring-white/25 bg-white/12" : "border border-white/10 hover:bg-white/8"
                   }`}>
                   <div className="flex items-center justify-between mb-2">
@@ -1162,22 +1167,24 @@ function DemoPageInner() {
         )}
       </div>
 
-      {/* 回复详情 / AI 回复 */}
-      <div ref={replyDetailRef} className="bg-white/4 p-4">
-        {selectedReview ? (
-          <div className="flex flex-col gap-2">
+      {/* 回复详情 / AI 回复：悬浮毛玻璃，仅选中时展示 */}
+      {selectedReview && (
+        <div
+          ref={replyDetailRef}
+          className="absolute bottom-4 left-4 right-4 z-20 rounded-3xl border border-white/18 bg-white/[0.14] backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.45)] p-5 max-h-[min(52vh,420px)] overflow-y-auto">
+          <div className="flex flex-col gap-3">
             {(() => {
               const display = getDisplayContent(selectedReview, translateSettings);
               return (
-                <div className="bg-white/5 rounded-lg px-3 py-2">
-                  <p className="text-white/60 text-[12px] mb-0.5">评论原文</p>
-                  <p className="text-white/80 text-[13px] leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
+                <div className="rounded-xl border border-white/12 bg-white/[0.08] px-3.5 py-3">
+                  <p className="text-white/60 text-[14px] mb-1">评论原文</p>
+                  <p className="text-white/85 text-[16px] leading-relaxed whitespace-pre-line max-h-36 overflow-y-auto">
                     {selectedReview.content}
                   </p>
                   {display.translated && (
                     <>
-                      <p className="text-white/60 text-[12px] mt-2 mb-0.5">译文</p>
-                      <p className="text-white/80 text-[13px] leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
+                      <p className="text-white/60 text-[14px] mt-2.5 mb-1">译文</p>
+                      <p className="text-white/85 text-[16px] leading-relaxed whitespace-pre-line max-h-36 overflow-y-auto">
                         {display.text}
                       </p>
                     </>
@@ -1186,32 +1193,30 @@ function DemoPageInner() {
               );
             })()}
             {selectedReview.official_reply && (
-              <div className="bg-white/5 rounded-lg px-3 py-2">
-                <p className="text-white/50 text-[12px] font-medium mb-0.5">{appName} 官方曾这样回复（公开信息，模板化覆盖海量评论）</p>
-                <p className="text-white/68 text-[13px] leading-relaxed line-clamp-2">{selectedReview.official_reply}</p>
+              <div className="rounded-xl border border-white/12 bg-white/[0.08] px-3.5 py-3">
+                <p className="text-white/55 text-[14px] font-medium mb-1">{appName} 官方曾这样回复（公开信息，模板化覆盖海量评论）</p>
+                <p className="text-white/75 text-[16px] leading-relaxed line-clamp-2">{selectedReview.official_reply}</p>
               </div>
             )}
-            <div className="bg-white/8 rounded-lg px-3 py-2">
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <p className="text-white/80 text-[13px] font-medium">呼声雷达 AI 针对这条的个性化回复建议</p>
-                <button onClick={() => setSelectedReview(null)} className="text-white/20 hover:text-white/75 transition-colors"><X size={14} /></button>
+            <div className="rounded-xl border border-white/14 bg-white/[0.10] px-3.5 py-3">
+              <div className="flex items-start justify-between gap-2 mb-1.5">
+                <p className="text-white/85 text-[15px] font-medium">呼声雷达 AI 针对这条的个性化回复建议</p>
+                <button onClick={() => setSelectedReview(null)} className="text-white/35 hover:text-white/80 transition-colors"><X size={16} /></button>
               </div>
               {aiReply ? (
-                <p className="text-white/85 text-[14px] leading-relaxed whitespace-pre-line">{aiReply}</p>
+                <p className="text-white/90 text-[16px] leading-relaxed whitespace-pre-line">{aiReply}</p>
               ) : (
                 <button onClick={handleGenerateAiReply} disabled={aiLoading}
-                  className="flex items-center gap-1.5 text-[13px] text-white/80 bg-white/10 hover:bg-white/15 disabled:opacity-50 px-3 py-1.5 rounded-lg transition-colors">
-                  {aiLoading && <Loader2 size={12} className="animate-spin" />}
+                  className="flex items-center gap-1.5 text-[15px] text-white/85 bg-white/10 hover:bg-white/15 disabled:opacity-50 px-3.5 py-2 rounded-lg transition-colors">
+                  {aiLoading && <Loader2 size={14} className="animate-spin" />}
                   {aiLoading ? "生成中..." : "生成 AI 回复建议"}
                 </button>
               )}
-              {aiError && <p className="text-red-400 text-[12px] mt-1.5">{aiError}</p>}
+              {aiError && <p className="text-red-400 text-[14px] mt-2">{aiError}</p>}
             </div>
           </div>
-        ) : (
-          <p className="text-white/35 text-[14px] px-1">点击评论卡片，查看 AI 回复建议</p>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 

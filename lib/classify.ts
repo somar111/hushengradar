@@ -58,7 +58,13 @@ export async function generateReplySuggestion(opts: {
     officialReplyExample: opts.officialReplyExample,
   });
 
-  const userPrompt = `评论作者：${opts.author}\n评分：${opts.rating} 星\n问题类型：${opts.tags.map((t) => t.label).join("、") || "无"}\n评论内容：${opts.content}`;
+  const userPrompt = [
+    `评论作者：${opts.author}`,
+    `评分：${opts.rating} 星`,
+    `问题类型：${opts.tags.map((t) => t.label).join("、") || "无"}`,
+    `评论内容：${opts.content}`,
+    opts.officialReplyExample ? "" : "注意：无官方回复示例，禁止在回复中出现邮箱、网址、电话。",
+  ].filter(Boolean).join("\n");
 
   const data = await callDeepSeek(apiKey, {
     model: "deepseek-chat",
@@ -66,10 +72,12 @@ export async function generateReplySuggestion(opts: {
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.5,
+    temperature: 0.3,
   });
 
-  return data.choices?.[0]?.message?.content?.trim() || "";
+  const reply = data.choices?.[0]?.message?.content?.trim() || "";
+  const corpus = [opts.content, opts.officialReplyExample ?? ""].join("\n");
+  return sanitizeUnsourcedContactInfo(reply, corpus);
 }
 
 /**
@@ -127,10 +135,56 @@ function buildAskUserMessage(opts: {
       opts.defaultSince ? `（since=${opts.defaultSince.slice(0, 10)}）` : ""
     }${opts.defaultLocale ? `，地区=${opts.defaultLocale}` : "，全部地区"}`,
     "若问题指定了更细的时间或地区，优先按问题查；未指定时工具可不传 since/locale，将使用上述默认值。",
+    "回答前自检：你准备写的每一句，能否在工具结果里找到对应数字或原文？找不到就删掉或改成「数据不足」。",
+    "禁止编造邮箱、网址、电话；除非评论/官方回复原文里逐字出现。",
     "",
     `开发者的问题：${opts.question}`,
   ].filter((l) => l !== null);
   return lines.join("\n");
+}
+
+function sanitizeUnsourcedContactInfo(answer: string, corpus: string): string {
+  const corpusLower = corpus.toLowerCase();
+  const contactRe = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|https?:\/\/\S+/gi;
+  const isSourced = (token: string) => corpusLower.includes(token.toLowerCase());
+
+  const unsourced = [...answer.matchAll(contactRe)]
+    .map((m) => m[0])
+    .filter((t) => !isSourced(t));
+  if (unsourced.length === 0) return answer;
+
+  let out = answer;
+  for (const token of unsourced) {
+    out = out.split(token).join("");
+  }
+
+  out = out
+    .replace(/\s*(或|和|or|atau|dan)\s+(访问|kelola|manage|visit)\b[^.。\n]*/gi, "")
+    .replace(/(silakan\s+)?(hubungi|contact)\s+(tim\s+)?(dukungan\s+)?(kami\s+)?(di\s+)?/gi, "")
+    .replace(/(建议引导用户)?(联系|通过)\s*(或|和)?\s*/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.，。；;!?])/g, "$1")
+    .trim();
+
+  const lines = out.split("\n").filter((line) => {
+    const t = line.trim();
+    if (!t) return false;
+    if (t.length < 16 && /联系|hubungi|contact|订阅|subscription/i.test(t) && ![...t.matchAll(contactRe)].length) {
+      return false;
+    }
+    return true;
+  });
+
+  const cleaned = lines.join("\n").trim();
+  return cleaned || answer.replace(contactRe, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function sanitizeAskAnswer(answer: string, messages: ChatMessage[]): string {
+  const corpus = messages
+    .filter((m) => m.role === "tool")
+    .map((m) => m.content)
+    .join("\n");
+  return sanitizeUnsourcedContactInfo(answer, corpus);
 }
 
 /**
@@ -178,7 +232,7 @@ export async function answerQuestion(opts: {
       messages,
       tools: ASK_TOOLS,
       tool_choice: "auto",
-      temperature: 0.2,
+      temperature: 0.1,
     });
 
     const msg = data.choices?.[0]?.message;
@@ -211,7 +265,7 @@ export async function answerQuestion(opts: {
     }
 
     const answer = msg.content?.trim();
-    if (answer) return answer;
+    if (answer) return sanitizeAskAnswer(answer, messages);
     throw new Error("DeepSeek 未返回有效回答");
   }
 
