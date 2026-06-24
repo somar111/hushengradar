@@ -178,7 +178,7 @@ export async function answerQuestion(opts: {
       messages,
       tools: ASK_TOOLS,
       tool_choice: "auto",
-      temperature: 0.3,
+      temperature: 0.2,
     });
 
     const msg = data.choices?.[0]?.message;

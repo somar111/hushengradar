@@ -81,6 +81,7 @@ type TranslateSettings = {
 };
 
 const PAGE_SIZE = 200;
+const ASK_DRAFT_STORAGE_PREFIX = "hushengradar.askDraft.v1";
 
 function getDisplayContent(r: ReviewRow, s: TranslateSettings): { text: string; translated: boolean } {
   if (!s.enabled) return { text: r.content, translated: false };
@@ -107,7 +108,7 @@ function Stars({ rating }: { rating: number }) {
 }
 
 function GlassPanel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`bg-[#222222] ${className}`}>{children}</div>;
+  return <div className={`bg-[#1a2030] ${className}`}>{children}</div>;
 }
 
 // 纯展示的信息小图标：用 position:fixed 算坐标弹出说明文字，不用浏览器原生 title
@@ -161,15 +162,19 @@ function MarkdownMessage({ content }: { content: string }) {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>,
-        ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>,
-        ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>,
-        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+        h1: ({ children }) => <h1 className="mb-4 mt-1 text-[34px] leading-[1.2] font-bold text-white">{children}</h1>,
+        h2: ({ children }) => <h2 className="mb-3 mt-1 text-[28px] leading-[1.25] font-bold text-white">{children}</h2>,
+        h3: ({ children }) => <h3 className="mb-3 mt-1 text-[23px] leading-[1.3] font-semibold text-white">{children}</h3>,
+        h4: ({ children }) => <h4 className="mb-2.5 mt-1 text-[20px] leading-[1.35] font-semibold text-white">{children}</h4>,
+        p: ({ children }) => <p className="mb-4 last:mb-0 leading-[1.95] text-[17px]">{children}</p>,
+        ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-1.5">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-1.5">{children}</ol>,
+        li: ({ children }) => <li className="leading-[1.9] text-[17px]">{children}</li>,
         strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-        code: ({ children }) => <code className="px-1.5 py-0.5 rounded bg-white/10 text-white/90">{children}</code>,
-        pre: ({ children }) => <pre className="overflow-x-auto rounded-xl bg-black/25 p-3 mb-3 text-[14px]">{children}</pre>,
+        code: ({ children }) => <code className="px-1.5 py-0.5 rounded bg-white/10 text-white/90 text-[15px]">{children}</code>,
+        pre: ({ children }) => <pre className="overflow-x-auto rounded-xl bg-black/25 p-4 mb-4 text-[15px] leading-relaxed">{children}</pre>,
         blockquote: ({ children }) => (
-          <blockquote className="border-l-2 border-white/25 pl-3 text-white/80 mb-3">{children}</blockquote>
+          <blockquote className="border-l-2 border-white/25 pl-4 text-white/80 mb-4 leading-[1.9]">{children}</blockquote>
         ),
       }}>
       {content}
@@ -416,6 +421,11 @@ function DemoPageInner() {
   const [chatLoading, setChatLoading] = useState(false);
   const chatViewportRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const chatAbortRef = useRef<AbortController | null>(null);
+  const chatStopRequestedRef = useRef(false);
+  const chatRequestStartedAtRef = useRef(0);
+  const chatBusyRef = useRef(false);
+  const composingRef = useRef(false);
 
   const selectedApp = apps.find((a) => a.id === selectedAppId);
   // 锚点用这个App真实数据里最新一条评论的日期，不用服务器当前时间——见 lib/reviews.ts
@@ -428,6 +438,7 @@ function DemoPageInner() {
   }, [timeRange, selectedApp?.latestReviewDate]);
   const timeRangeLabel = timeRange === "week" ? "最近一周" : "最近一月";
   const appName = selectedApp?.display_name ?? "App";
+  const askDraftStorageKey = `${ASK_DRAFT_STORAGE_PREFIX}:${selectedAppId || "no-app"}:${timeRange}:${locale || "all"}`;
 
   // ⌘B / Ctrl+B 切换左侧筛选栏——跟 VS Code、Claude 客户端的"切换侧边栏"快捷键保持一致，
   // Mac 浏览器 chrome 层占用的是 ⌘⇧B（书签栏），裸 ⌘B 是空的，页面可以放心拦截
@@ -514,16 +525,51 @@ function DemoPageInner() {
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
   }, [chatMessages, chatLoading]);
 
-  function autoGrowInput() {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = window.localStorage.getItem(askDraftStorageKey);
+      setChatInput(saved ?? "");
+      requestAnimationFrame(() => autoGrowInput());
+    } catch {
+      // 本地存储不可用时忽略，不影响主流程
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askDraftStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(askDraftStorageKey, chatInput);
+    } catch {
+      // 本地存储不可用时忽略，不影响主流程
+    }
+  }, [askDraftStorageKey, chatInput]);
+
+  function calcChatInputHeight(el: HTMLTextAreaElement) {
+    const max = Math.min(Math.floor(window.innerHeight * 0.45), 420);
+    el.style.height = "auto";
+    const next = Math.max(48, Math.min(el.scrollHeight, max));
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
+  }
+
+  function autoGrowInput(el?: HTMLTextAreaElement) {
+    const target = el ?? chatInputRef.current;
+    if (!target) return;
+    calcChatInputHeight(target);
+  }
+
+  useEffect(() => {
     const el = chatInputRef.current;
     if (!el) return;
-    el.style.height = "0px";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }
+    autoGrowInput(el);
+  }, [activePanel]);
 
   async function streamAssistantAnswer(messageId: string, fullText: string) {
     let acc = "";
     for (const ch of fullText) {
+      if (chatStopRequestedRef.current) break;
       acc += ch;
       setChatMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, a: acc } : m)));
       const ms = charDelay(ch);
@@ -531,27 +577,57 @@ function DemoPageInner() {
     }
   }
 
+  function handleStopChat() {
+    if (!chatBusyRef.current) return;
+    const elapsed = Date.now() - chatRequestStartedAtRef.current;
+    // 刚发送后留一个极短保护窗，避免用户双击发送键被误判为"停止"
+    if (elapsed < 260) return;
+    chatStopRequestedRef.current = true;
+    chatAbortRef.current?.abort();
+    chatBusyRef.current = false;
+    setChatLoading(false);
+  }
+
   // 真实调AI回答——把当前筛选范围内的真实统计数字喂给DeepSeek，不是预设话术匹配
   async function handleSendChat() {
+    // 兼容同一帧内的二次点击：即使还没 re-render，也能立即走"停止"
+    if (chatBusyRef.current) {
+      handleStopChat();
+      return;
+    }
     const q = chatInput.trim();
     if (!q || !selectedAppId || chatLoading) return;
+    chatStopRequestedRef.current = false;
+    chatBusyRef.current = true;
     const msgId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const controller = new AbortController();
+    chatAbortRef.current = controller;
+    chatRequestStartedAtRef.current = Date.now();
     setChatMessages((prev) => [...prev, { id: msgId, q, a: "" }]);
     setChatInput("");
-    if (chatInputRef.current) chatInputRef.current.style.height = "48px";
+    if (chatInputRef.current) {
+      chatInputRef.current.style.height = "48px";
+      chatInputRef.current.style.overflowY = "hidden";
+    }
     setChatLoading(true);
     try {
       const res = await fetch("/api/demo/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({ question: q, appId: selectedAppId, locale, since, timeRangeLabel }),
       });
       const data = await res.json();
       const answer = data.error ? `回答失败：${data.error}` : data.answer;
       await streamAssistantAnswer(msgId, answer || "暂无回答");
-    } catch {
+    } catch (error) {
+      if ((error as Error)?.name === "AbortError" || chatStopRequestedRef.current) {
+        return;
+      }
       await streamAssistantAnswer(msgId, "请求失败，请重试。");
     } finally {
+      chatAbortRef.current = null;
+      chatBusyRef.current = false;
       setChatLoading(false);
     }
   }
@@ -683,7 +759,7 @@ function DemoPageInner() {
 
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-            <div className="bg-[#2c2c2b] rounded-3xl p-6">
+            <div className="bg-[#242c3d] rounded-3xl p-6">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-white/95 text-[18px] font-bold">评分分析</p>
                 <div className={SEG_TRACK}>
@@ -766,7 +842,7 @@ function DemoPageInner() {
               )}
             </div>
 
-            <div className="bg-[#2c2c2b] rounded-3xl p-6">
+            <div className="bg-[#242c3d] rounded-3xl p-6">
               <p className="text-white/95 text-[18px] font-bold mb-4">诉求占比</p>
               <p className="text-white/75 text-[14px] mb-4">
                 真实数据画像：按 AI 分类命中量统计{timeRangeLabel}整体构成，点击任意一块跳转查看该类全部真实评论：
@@ -794,14 +870,14 @@ function DemoPageInner() {
               </div>
               {insightsLoading && <InsightsLoading />}
               {insights?.complaintsVsFeatureRequest && (
-                <div className="bg-emerald-950/30 rounded-xl p-4 mt-4">
+                <div className="bg-emerald-900/35 rounded-xl p-4 mt-4">
                   <p className="text-emerald-400 text-[14px] font-semibold mb-1">分析</p>
                   <p className="text-white/80 text-[14px] leading-relaxed">{insights.complaintsVsFeatureRequest}</p>
                 </div>
               )}
             </div>
 
-            <div className="bg-[#2c2c2b] rounded-3xl p-6">
+            <div className="bg-[#242c3d] rounded-3xl p-6">
               <p className="text-white/95 text-[18px] font-bold mb-4">官方回复覆盖率</p>
               <p className="text-white/75 text-[14px] mb-4">
                 整体回复率 {stats.officialReplyRate}%
@@ -844,7 +920,7 @@ function DemoPageInner() {
                   </div>
                 </div>
                 <div className="flex justify-start">
-                  <div className="max-w-[90%] rounded-2xl border border-white/10 bg-[#2c2c2b] px-4 py-3 text-[17px] text-white/90 leading-relaxed">
+                  <div className="max-w-[90%] rounded-2xl border border-white/15 bg-[#242c3d] px-4 py-3 text-[17px] text-white leading-relaxed">
                     <MarkdownMessage content={m.a || (chatLoading && i === chatMessages.length - 1 ? "正在组织回答…" : "")} />
                   </div>
                 </div>
@@ -858,33 +934,48 @@ function DemoPageInner() {
           </div>
         )}
       </div>
-      <div className="bg-[#1f1f20]/95 backdrop-blur px-5 py-4 flex-none">
-        <div className="max-w-4xl mx-auto flex gap-3 items-end">
+      <div className="px-4 pb-5 pt-3 flex-none">
+        <div className="max-w-4xl mx-auto flex gap-3 items-end rounded-3xl border border-white/12 bg-white/[0.06] backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.45)] px-3.5 py-3">
           <textarea
             ref={chatInputRef}
             value={chatInput}
             rows={1}
-            placeholder={`问我关于这款 App ${timeRangeLabel}评论的问题…（Enter 发送，Shift+Enter 换行）`}
+            placeholder=""
             onChange={(e) => {
               setChatInput(e.target.value);
-              autoGrowInput();
+            }}
+            onInput={(e) => autoGrowInput(e.currentTarget)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false;
             }}
             onKeyDown={(e) => {
+              if (chatBusyRef.current) {
+                return;
+              }
+              if (e.key === "Enter" && (e.nativeEvent as KeyboardEvent).isComposing) {
+                return;
+              }
+              if (e.key === "Enter" && composingRef.current) {
+                return;
+              }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSendChat();
               }
             }}
-            disabled={chatLoading}
-            className="flex-1 resize-none max-h-40 min-h-12 bg-[#2c2c2b] border border-white/20 rounded-2xl px-4 py-3 text-[17px] text-white placeholder-white/30 outline-none focus:border-white/45 transition-colors disabled:opacity-60"
+            style={{ height: "48px" }}
+            className="flex-1 resize-none min-h-12 bg-transparent border-0 rounded-2xl px-3.5 py-3 text-[17px] leading-relaxed text-white placeholder-white/30 outline-none transition-colors overflow-y-hidden"
           />
           <button
             type="button"
-            onClick={handleSendChat}
-            disabled={chatLoading || !chatInput.trim()}
-            aria-label="发送"
-            className="flex-none w-9 h-9 rounded-full flex items-center justify-center transition-colors disabled:cursor-not-allowed bg-white/90 text-[#1f1f1f] hover:bg-white disabled:bg-white/15 disabled:text-white/35">
-            {chatLoading ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={18} strokeWidth={2.25} />}
+            onClick={chatLoading ? handleStopChat : handleSendChat}
+            disabled={!chatLoading && !chatInput.trim()}
+            aria-label={chatLoading ? "停止" : "发送"}
+            className="flex-none h-11 min-w-11 rounded-2xl px-3 flex items-center justify-center transition-colors disabled:cursor-not-allowed bg-[#e6ecff] text-[#20325f] hover:bg-[#f0f4ff] disabled:bg-[#e6ecff]/30 disabled:text-white/35">
+            {chatLoading ? <X size={16} /> : <ArrowUp size={19} strokeWidth={2.4} />}
           </button>
         </div>
       </div>
@@ -911,10 +1002,10 @@ function DemoPageInner() {
           <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput.trim())}
             placeholder="搜索评论内容/作者..."
-            className="w-full bg-[#2c2c2b] border border-white/20 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/25 outline-none focus:border-white/40" />
+            className="w-full bg-[#242c3d] border border-white/20 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/35 outline-none focus:border-white/45" />
         </div>
         <select value={tagFilter || ""} onChange={(e) => setTagFilter(e.target.value || undefined)}
-          className="bg-[#2c2c2b] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/80 outline-none focus:border-white/40">
+          className="bg-[#242c3d] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/45">
           <option value="">全部问题类型</option>
           {stats && Object.entries(stats.tagCounts).sort((a, b) => b[1].count - a[1].count).map(([key, t]) => (
             <option key={key} value={key}>{t.label}（{t.count}）</option>
@@ -922,7 +1013,7 @@ function DemoPageInner() {
         </select>
         {tagFilter && stats?.tagCounts[tagFilter] && Object.keys(stats.tagCounts[tagFilter].subTags).length > 0 && (
           <select value={subTagFilter || ""} onChange={(e) => setSubTagFilter(e.target.value || undefined)}
-            className="bg-[#2c2c2b] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/80 outline-none focus:border-white/40">
+            className="bg-[#242c3d] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/45">
             <option value="">全部子问题</option>
             {Object.entries(stats.tagCounts[tagFilter].subTags).sort((a, b) => b[1].count - a[1].count).map(([key, s]) => (
               <option key={key} value={key}>{s.label}（{s.count}）</option>
@@ -931,7 +1022,7 @@ function DemoPageInner() {
         )}
         <select value={repliedFilter === undefined ? "" : String(repliedFilter)}
           onChange={(e) => setRepliedFilter(e.target.value === "" ? undefined : e.target.value === "true")}
-          className="bg-[#2c2c2b] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/80 outline-none focus:border-white/40">
+          className="bg-[#242c3d] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/45">
           <option value="">全部回复状态</option>
           <option value="true">已回复</option>
           <option value="false">未回复</option>
@@ -950,7 +1041,7 @@ function DemoPageInner() {
             <Settings size={12} />翻译
           </button>
           {showTranslateSettings && (
-            <div className="absolute right-0 top-full mt-1.5 z-10 w-56 bg-[#2c2c2b] border border-white/20 rounded-xl p-3 shadow-xl flex flex-col gap-3">
+            <div className="absolute right-0 top-full mt-1.5 z-10 w-56 bg-[#242c3d] border border-white/20 rounded-xl p-3 shadow-xl flex flex-col gap-3">
               <label className="flex items-center justify-between text-[13px] text-white/80">
                 启用翻译
                 <input type="checkbox" checked={translateSettings.enabled}
@@ -1094,7 +1185,7 @@ function DemoPageInner() {
   // 不做成悬浮卡片——左栏直接用自己的底色铺满整列，跟右栏之间不留缝、不加分割线，
   // 单靠色块深浅区分两栏，贴近一般 LLM 网页版（ChatGPT/Claude）的平铺式布局
   const LeftPanel = (
-    <div className={`flex-none flex flex-col overflow-hidden bg-[#242424] transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
+    <div className={`flex-none flex flex-col overflow-hidden bg-[#1d2433] transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
       {!leftOpen ? (
         <div className="p-3 flex-none">
           <button onClick={() => setLeftOpen(true)}
@@ -1130,7 +1221,7 @@ function DemoPageInner() {
               <ChevronDown size={15} className={`flex-none text-white/60 transition-transform ${showAppMenu ? "rotate-180" : ""}`} />
             </button>
             {showAppMenu && (
-              <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#2c2c2b] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
+              <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#242c3d] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
                 {apps.map((a) => (
                   <button key={a.id} onClick={() => { setParams({ app: a.id, locale: "", tag: "", subTag: "" }); setShowAppMenu(false); }}
                     className={`text-left px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
@@ -1182,7 +1273,7 @@ function DemoPageInner() {
 
   // ── 中栏 ──（跟左栏一样不做卡片，直接铺底色，靠跟左栏不同的色块区分）
   const CenterPanel = (
-    <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-[#1c1c1c]">
+    <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-[#141a27]">
       <div className="px-3 py-2.5 bg-white/4 flex items-center justify-between flex-none gap-3">
         <div className="flex items-center gap-8 min-w-0">
           {/* 常驻 logo：不管左栏开合都看得到，不用跟着侧栏一起消失 */}
@@ -1231,7 +1322,7 @@ function DemoPageInner() {
                   <select value={selectedAppId ?? ""} onChange={(e) => setParams({ app: e.target.value, locale: "", tag: "", subTag: "" })}
                     className="w-full bg-white/8 rounded-lg px-3 py-2 text-[16px] text-white/85 outline-none">
                     {apps.map((a) => (
-                      <option key={a.id} value={a.id} className="bg-[#2c2c2b]">{a.display_name}</option>
+                      <option key={a.id} value={a.id} className="bg-[#242c3d]">{a.display_name}</option>
                     ))}
                   </select>
                 </div>
@@ -1280,7 +1371,7 @@ function DemoPageInner() {
           {mobileTab === "analyze" && CenterPanel}
         </div>
 
-        <div className="bg-[#222222] flex">
+        <div className="bg-[#1a2030] flex">
           {([
             { key: "filter", label: "筛选", icon: <Layers size={18} /> },
             { key: "analyze", label: "分析", icon: <BarChart2 size={18} /> },
