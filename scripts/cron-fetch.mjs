@@ -313,6 +313,15 @@ async function processApp(app) {
     }
   }
 
+  // 1.5 抓取进度立刻落盘——不等分类/翻译跑完；进程中途挂了也不会下次全量回溯
+  if (Object.keys(newWatermarks).length) {
+    const { error } = await supabase.from("apps").update({
+      locale_watermarks: { ...watermarks, ...newWatermarks },
+    }).eq("id", app.id);
+    if (error) throw error;
+    console.log(`水位线已落盘（${Object.keys(newWatermarks).length} 个 locale）`);
+  }
+
   // 2. 分类所有未分类过的（包括这次新抓的 + 之前遗留的），分页拉全量 + 8 路并发
   // 这个App的起步分类种子（加App时AI根据context提议的，不是全局共用的）+ 通用两类，
   // 凡是不在这个集合里的，都算"这个App自己造出来的custom tag"，喂给模型优先复用，
@@ -427,10 +436,9 @@ async function processApp(app) {
     console.log("没有新数据，跳过摘要刷新");
   }
 
-  // 5. 更新水位线（按 locale 分别记，last_fetched_at 留作"整体最后处理时间"的展示用途）
+  // 5. 整条管线跑完，更新展示用时间戳（locale_watermarks 已在抓取后落盘）
   const { error: e4 } = await supabase.from("apps").update({
     last_fetched_at: new Date().toISOString(),
-    locale_watermarks: { ...watermarks, ...newWatermarks },
   }).eq("id", app.id);
   if (e4) throw e4;
   console.log(`${app.display_name} 处理完成`);

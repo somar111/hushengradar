@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -243,43 +243,85 @@ function PieBreakdown({
 }
 
 // 评分随真实日期走的折线图：横轴按实际天数间距（不是均匀分类摆放），纵轴固定 1~5（评分本身的
-// 天然量程，不做自动缩放，避免轴范围操纵带来的误导）；点的大小/透明度按当天评论量加权，
-// 评论数少的那天视觉上自然淡一点小一点，不会被误读成强信号
-function RatingTrendChart({ points, height = 200 }: { points: { date: string; avgRating: number; count: number }[]; height?: number }) {
+// 天然量程，不做自动缩放，避免轴范围操纵带来的误导）；圆点面积与当天评论量成正比（半径按 √count
+// 定标），评论少的那天自然更小更淡
+function RatingTrendChart({
+  points,
+  overallAvg,
+  height = 200,
+}: {
+  points: { date: string; avgRating: number; count: number }[];
+  overallAvg: number;
+  height?: number;
+}) {
   if (points.length === 0) {
     return <div style={{ height }} className="flex items-center justify-center text-white/35 text-[13px]">暂无数据</div>;
   }
   const width = 1000;
+  const dateAxisH = 22;
+  const chartH = height + dateAxisH;
+  const labelW = 30;
+  const dotMaxR = 7;
+  const plotLeft = labelW + dotMaxR;
+  const plotRight = width - dotMaxR;
+  const plotW = plotRight - plotLeft;
+  const yPad = dotMaxR;
+  const plotH = height - yPad * 2;
   const minTime = new Date(points[0].date).getTime();
   const maxTime = new Date(points[points.length - 1].date).getTime();
   const timeSpan = Math.max(maxTime - minTime, 86400000);
-  const x = (date: string) => ((new Date(date).getTime() - minTime) / timeSpan) * width;
-  const y = (rating: number) => height - ((rating - 1) / 4) * height;
+  const x = (date: string) => plotLeft + ((new Date(date).getTime() - minTime) / timeSpan) * plotW;
+  const y = (rating: number) => yPad + plotH - ((rating - 1) / 4) * plotH;
   const maxCount = Math.max(...points.map((p) => p.count), 1);
+  // 点半径按评论量的平方根定标（面积 ∝ 评论量），避免某天评论暴增时圆点视觉上大几十倍
+  const dotRadius = (count: number) => dotMaxR * Math.sqrt(count / maxCount);
   const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${x(p.date).toFixed(1)} ${y(p.avgRating).toFixed(1)}`).join(" ");
   const labelEvery = points.length > 12 ? Math.ceil(points.length / 8) : 1;
+  const avgLabel = overallAvg.toFixed(2);
+  const yLabelPct = (rating: number) => `${(y(rating) / height) * 100}%`;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height + 22}`} className="w-full" style={{ height: height + 22 }} preserveAspectRatio="none">
-      <path d={pathD} fill="none" stroke={THEME_BLUE} strokeWidth={2} vectorEffect="non-scaling-stroke" />
-      {points.map((p) => {
-        const r = 2.5 + (p.count / maxCount) * 4.5;
-        const opacity = 0.4 + (p.count / maxCount) * 0.6;
-        return (
-          <circle key={p.date} cx={x(p.date)} cy={y(p.avgRating)} r={r} fill={THEME_BLUE} opacity={opacity}>
-            <title>{p.date}：均分 {p.avgRating}，{p.count} 条评论</title>
-          </circle>
-        );
-      })}
-      {points.map((p, i) => (
-        i % labelEvery === 0 && (
-          <text key={p.date} x={x(p.date)} y={height + 16} fontSize={10} fill="#ffffff66"
-            textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}>
-            {p.date.slice(5)}
-          </text>
-        )
-      ))}
-    </svg>
+    <div className="relative w-full" style={{ height: chartH }}>
+      <svg viewBox={`0 0 ${width} ${chartH}`} className="w-full block overflow-visible" style={{ height: chartH }} preserveAspectRatio="none">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <line key={`grid-${star}`} x1={plotLeft} y1={y(star)} x2={plotRight} y2={y(star)}
+            stroke="rgba(255,255,255,0.32)" strokeWidth={1} />
+        ))}
+        <line x1={plotLeft} y1={y(overallAvg)} x2={plotRight} y2={y(overallAvg)}
+          stroke="#5781d8" strokeWidth={1.5} strokeDasharray="6 4" />
+        <path d={pathD} fill="none" stroke={THEME_BLUE} strokeWidth={2} />
+        {points.map((p) => {
+          const r = dotRadius(p.count);
+          const opacity = 0.45 + (p.count / maxCount) * 0.55;
+          return (
+            <circle key={p.date} cx={x(p.date)} cy={y(p.avgRating)} r={r} fill={THEME_BLUE} opacity={opacity}>
+              <title>{p.date}：均分 {p.avgRating}，{p.count} 条评论</title>
+            </circle>
+          );
+        })}
+        {points.map((p, i) => (
+          i % labelEvery === 0 && (
+            <text key={p.date} x={x(p.date)} y={height + 16} fontSize={10} fill="rgba(255,255,255,0.55)"
+              textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}>
+              {p.date.slice(5)}
+            </text>
+          )
+        ))}
+      </svg>
+      {/* 刻度叠在图左侧，不占宽度；SVG 仍 w-full 1000 */}
+      <div className="pointer-events-none absolute left-0 top-0 w-10 pr-0.5" style={{ height }}>
+        {[5, 4, 3, 2, 1].map((star) => (
+          <span key={star} className="absolute right-0 -translate-y-1/2 text-[11px] tabular-nums text-white/70 text-right w-full"
+            style={{ top: yLabelPct(star) }}>
+            {star}
+          </span>
+        ))}
+        <span className="absolute right-0 -translate-y-1/2 text-[11px] tabular-nums font-semibold text-right w-full"
+          style={{ top: yLabelPct(overallAvg), color: THEME_BLUE }}>
+          {avgLabel}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -420,6 +462,10 @@ function DemoPageInner() {
   const chatStopRequestedRef = useRef(false);
   const chatRequestStartedAtRef = useRef(0);
   const chatBusyRef = useRef(false);
+  // 流式输出跟滚：用户一旦主动往上滑就锁定，直到滚回底部或发送新问题
+  const chatStickToBottomRef = useRef(true);
+  const chatUserDetachedRef = useRef(false);
+  const chatAutoScrollingRef = useRef(false);
   const composingRef = useRef(false);
   const translateMenuRef = useRef<HTMLDivElement>(null);
   const replyDetailRef = useRef<HTMLDivElement>(null);
@@ -527,11 +573,48 @@ function DemoPageInner() {
   // 切筛选条件时回到第一页（page 已经是 1 就不用再多触发一次 URL replace）
   useEffect(() => { if (page !== 1) setPage(1); }, [selectedAppId, locale, tagFilter, subTagFilter, search, repliedFilter, since]);
 
-  useEffect(() => {
+  function scrollChatToBottomIfNeeded() {
+    if (chatUserDetachedRef.current || !chatStickToBottomRef.current) return;
     const viewport = chatViewportRef.current;
     if (!viewport) return;
-    viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+    chatAutoScrollingRef.current = true;
+    viewport.scrollTop = viewport.scrollHeight;
+    requestAnimationFrame(() => {
+      chatAutoScrollingRef.current = false;
+    });
+  }
+
+  function detachChatFollow() {
+    chatUserDetachedRef.current = true;
+    chatStickToBottomRef.current = false;
+  }
+
+  function resetChatFollow() {
+    chatUserDetachedRef.current = false;
+    chatStickToBottomRef.current = true;
+  }
+
+  // useLayoutEffect：DOM 更新后、绘制前跟滚，比 useEffect 少一帧滞后
+  useLayoutEffect(() => {
+    scrollChatToBottomIfNeeded();
   }, [chatMessages, chatLoading]);
+
+  function handleChatViewportWheel(e: React.WheelEvent) {
+    // 比 onScroll 更早拦截：用户往上滑的瞬间就停止跟滚，避免和逐字更新抢滚动条
+    if (e.deltaY < 0) detachChatFollow();
+  }
+
+  function handleChatViewportScroll() {
+    if (chatAutoScrollingRef.current) return;
+    const viewport = chatViewportRef.current;
+    if (!viewport) return;
+    const distFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    if (distFromBottom < 8) {
+      resetChatFollow();
+    } else if (distFromBottom > 64) {
+      detachChatFollow();
+    }
+  }
 
   useEffect(() => {
     if (!showTranslateSettings) return;
@@ -631,6 +714,7 @@ function DemoPageInner() {
     const q = chatInput.trim();
     if (!q || !selectedAppId || chatLoading) return;
     chatStopRequestedRef.current = false;
+    resetChatFollow();
     chatBusyRef.current = true;
     const msgId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const controller = new AbortController();
@@ -824,9 +908,9 @@ function DemoPageInner() {
                       <span className="text-white/68 text-[16px]">{timeRangeLabel}平均分</span>
                     </div>
                     <p className="text-white/60 text-[14px] mb-5">
-                      {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），点的大小代表当天评论量
+                      {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），圆点面积与当天评论量成正比，左侧虚线为 {timeRangeLabel}均分 {avgRating}
                     </p>
-                    <RatingTrendChart points={stats.dailyRatings} />
+                    <RatingTrendChart points={stats.dailyRatings} overallAvg={avgRating ?? 0} />
                   </>
                 )}
 
@@ -946,8 +1030,13 @@ function DemoPageInner() {
 
   // ── 中间区域：问 AI ──
   const AskResult = (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div ref={chatViewportRef} className="flex-1 overflow-y-auto px-6 py-6">
+    <div className="relative flex-1 overflow-hidden">
+      <div
+        ref={chatViewportRef}
+        onWheel={handleChatViewportWheel}
+        onScroll={handleChatViewportScroll}
+        className="absolute inset-0 overflow-y-auto px-6 pt-6 pb-36 [overflow-anchor:none]"
+      >
         {chatMessages.length === 0 && !chatLoading ? (
           <div className="max-w-3xl mx-auto text-white/60 text-[17px] leading-relaxed">
             <p className="font-medium text-white/80">问我关于这款 App {timeRangeLabel}的评论的任何问题</p>
@@ -976,8 +1065,9 @@ function DemoPageInner() {
           </div>
         )}
       </div>
-      <div className="px-4 pb-5 pt-3 flex-none">
-        <div className="max-w-4xl mx-auto flex gap-3 items-end rounded-3xl border border-white/12 bg-white/[0.06] backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.45)] px-3.5 py-3">
+      {/* 输入框悬浮在消息区上方：渐变遮罩 + 玻璃卡片，不再占 flex 底栏 */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-5 pt-10 bg-gradient-to-t from-[#141a27] from-35% via-[#141a27]/75 to-transparent">
+        <div className="pointer-events-auto max-w-4xl mx-auto flex gap-3 items-end rounded-3xl border border-white/18 bg-[#1a2233]/72 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)_inset] px-3.5 py-3">
           <textarea
             ref={chatInputRef}
             value={chatInput}
