@@ -85,6 +85,7 @@ type AiReplySettings = {
 };
 
 type LeftSidebarView = "filter" | "settings";
+type RatingView = "trend" | "distribution" | "locale";
 
 const RIGHT_PANEL_NAV: { key: RightPanel; label: string }[] = [
   { key: "complaints", label: "Top 反馈" },
@@ -249,6 +250,83 @@ const SEG_PILL_OFF = "text-white/60 hover:text-white/85";
 // 评论回复：顶部筛选各控件独立毛玻璃（无外层包裹条）
 const REPLY_FILTER_FIELD =
   "rounded-xl border border-white/18 bg-white/[0.14] backdrop-blur-xl shadow-[0_8px_24px_rgba(0,0,0,0.35)] outline-none focus:border-white/28 transition-colors text-[15px]";
+
+// 通用分段切换器：选中态做成一块"会滑动的磨砂玻璃胶囊"。胶囊用一个绝对定位的独立元素承载，
+// 实时测量当前选项按钮的位置/尺寸，再用 transform 平滑滑过去——切换时胶囊在两个选项间丝滑滑动，
+// 而不是直接在原地换底色。按钮自身只负责文字颜色过渡，盖在胶囊之上（z-10）。
+// ResizeObserver 跟着轨道/按钮尺寸变化重测（左栏展开动画、窗口缩放、选项增减都能跟上）。
+function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  className = "",
+  itemClassName = "px-3.5 py-1.5 text-[14px]",
+  fill = false,
+}: {
+  options: { value: T; label: React.ReactNode; icon?: React.ReactNode; title?: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  className?: string;
+  itemClassName?: string;
+  fill?: boolean;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef(new Map<T, HTMLButtonElement>());
+  const [pill, setPill] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const optionsKey = options.map((o) => o.value).join("|");
+
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const measure = () => {
+      const active = itemRefs.current.get(value);
+      if (!active) return;
+      setPill({ left: active.offsetLeft, top: active.offsetTop, width: active.offsetWidth, height: active.offsetHeight });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(track);
+    itemRefs.current.forEach((b) => ro.observe(b));
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, optionsKey]);
+
+  return (
+    <div ref={trackRef} className={`relative ${SEG_TRACK} ${className}`}>
+      {pill && (
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute left-0 top-0 rounded-full ${SEG_PILL_ON} transition-[transform,width,height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]`}
+          style={{
+            transform: `translate(${pill.left}px, ${pill.top}px)`,
+            width: pill.width,
+            height: pill.height,
+          }}
+        />
+      )}
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            ref={(node) => {
+              if (node) itemRefs.current.set(opt.value, node);
+              else itemRefs.current.delete(opt.value);
+            }}
+            onClick={() => onChange(opt.value)}
+            title={opt.title}
+            className={`relative z-10 flex items-center justify-center gap-1.5 rounded-full whitespace-nowrap transition-colors ${
+              fill ? "flex-1" : ""
+            } ${itemClassName} ${active ? "text-white font-bold" : `${SEG_PILL_OFF} font-medium`}`}>
+            {opt.icon}
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function MarkdownMessage({ content }: { content: string }) {
   return (
@@ -530,7 +608,7 @@ function DemoPageInner() {
   // "评分趋势/评分分布/地区满意度"是同一份评分数据的三种切面，合并成一张卡片用切换器选看哪个，
   // 不用三张卡片各占一块地方。选中具体地区后"地区满意度"这个切面本身没意义（已经聚焦到一个
   // 地区了），这时候要是还停在这个切面上，自动切回"趋势"，不能留着空切面晃在那
-  const [ratingView, setRatingView] = useState<"trend" | "distribution" | "locale">("trend");
+  const [ratingView, setRatingView] = useState<RatingView>("trend");
   useEffect(() => { if (locale && ratingView === "locale") setRatingView("trend"); }, [locale, ratingView]);
   useEffect(() => { if (leftSidebarView === "settings") setShowAppMenu(false); }, [leftSidebarView]);
   useEffect(() => { setLockedHintPos(null); }, [leftSidebarView]);
@@ -808,6 +886,12 @@ function DemoPageInner() {
     }
     const q = chatInput.trim();
     if (!q || !selectedAppId || chatLoading) return;
+    // 把当前已完成的问答带上当上下文——闭包里的 chatMessages 还是追加新消息之前的值，
+    // 正好是历史轮次（都已经有 a），新问题不在里面，不会自己问自己。
+    const history = chatMessages
+      .filter((m) => m.a.trim())
+      .slice(-8)
+      .map((m) => ({ q: m.q, a: m.a }));
     chatStopRequestedRef.current = false;
     resetChatFollow();
     chatBusyRef.current = true;
@@ -827,7 +911,7 @@ function DemoPageInner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ question: q, appId: selectedAppId, locale, since, timeRangeLabel }),
+        body: JSON.stringify({ question: q, appId: selectedAppId, locale, since, timeRangeLabel, history }),
       });
       const data = await res.json();
       const answer = data.error ? `回答失败：${data.error}` : data.answer;
@@ -984,20 +1068,16 @@ function DemoPageInner() {
               <div className="bg-[#242c3d] rounded-3xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-white/95 text-[18px] font-bold">评分分析</p>
-                  <div className={SEG_TRACK}>
-                    {([
-                      ["trend", "趋势", <LineChart key="i" size={13} />],
-                      ["distribution", "分布", <BarChart2 key="i" size={13} />],
-                      ...(!locale ? [["locale", "地区", <Globe key="i" size={13} />] as const] : []),
-                    ] as const).map(([key, label, icon]) => (
-                      <button key={key} onClick={() => setRatingView(key)}
-                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[13px] whitespace-nowrap transition-colors ${
-                          ratingView === key ? `${SEG_PILL_ON} font-bold` : `${SEG_PILL_OFF} font-medium`
-                        }`}>
-                        {icon}{label}
-                      </button>
-                    ))}
-                  </div>
+                  <SegmentedControl<RatingView>
+                    value={ratingView}
+                    onChange={setRatingView}
+                    itemClassName="px-3 py-1 text-[13px]"
+                    options={[
+                      { value: "trend", label: "趋势", icon: <LineChart size={13} /> },
+                      { value: "distribution", label: "分布", icon: <BarChart2 size={13} /> },
+                      ...(!locale ? [{ value: "locale" as RatingView, label: "地区", icon: <Globe size={13} /> }] : []),
+                    ]}
+                  />
                 </div>
 
                 {ratingView === "trend" && (
@@ -1394,21 +1474,17 @@ function DemoPageInner() {
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
             <PanelLeft size={20} strokeWidth={1.5} />
           </button>
-          <div className={`${SEG_TRACK} flex-1 min-w-0`}>
-            <button onClick={() => setLeftSidebarView("filter")}
-              className={`flex-1 px-2.5 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-colors ${
-                leftSidebarView === "filter" ? SEG_PILL_ON : SEG_PILL_OFF
-              }`}>
-              <span className={leftSidebarView === "filter" ? "font-bold" : "font-medium"}>筛选</span>
-            </button>
-            <button onClick={() => setLeftSidebarView("settings")}
-              className={`flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-colors ${
-                leftSidebarView === "settings" ? SEG_PILL_ON : SEG_PILL_OFF
-              }`}>
-              <Settings size={12} />
-              <span className={leftSidebarView === "settings" ? "font-bold" : "font-medium"}>设置</span>
-            </button>
-          </div>
+          <SegmentedControl<LeftSidebarView>
+            value={leftSidebarView}
+            onChange={setLeftSidebarView}
+            className="flex-1 min-w-0"
+            itemClassName="px-2.5 py-1.5 text-[13px]"
+            fill
+            options={[
+              { value: "filter", label: "筛选" },
+              { value: "settings", label: "设置", icon: <Settings size={12} /> },
+            ]}
+          />
         </div>
         <div className="flex-1 flex flex-col overflow-hidden">
           {leftSidebarView === "filter" && (
@@ -1430,7 +1506,7 @@ function DemoPageInner() {
                   <ChevronDown size={15} className={`flex-none text-white/60 transition-transform ${showAppMenu ? "rotate-180" : ""}`} />
                 </button>
                 {showAppMenu && (
-                  <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#242c3d] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
+                  <div className="absolute left-3 right-3 top-full mt-1.5 z-30 bg-[#242c3d] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
                     {apps.map((a) => (
                       <button key={a.id} onClick={() => { setParams({ app: a.id, locale: "", tag: "", subTag: "" }); setShowAppMenu(false); }}
                         className={`text-left px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
@@ -1443,14 +1519,15 @@ function DemoPageInner() {
                 )}
               </div>
               <div className="py-2 px-3 flex items-center justify-center">
-                <div className={SEG_TRACK}>
-                  {(["week", "month"] as TimeRange[]).map((t) => (
-                    <button key={t} onClick={() => setTimeRange(t)}
-                      className={`px-3.5 py-1.5 rounded-full text-[14px] transition-colors ${timeRange === t ? `${SEG_PILL_ON} font-bold` : `${SEG_PILL_OFF} font-medium`}`}>
-                      {t === "week" ? "最近一周" : "最近一月"}
-                    </button>
-                  ))}
-                </div>
+                <SegmentedControl<TimeRange>
+                  value={timeRange}
+                  onChange={setTimeRange}
+                  itemClassName="px-3.5 py-1.5 text-[14px]"
+                  options={[
+                    { value: "week", label: "最近一周" },
+                    { value: "month", label: "最近一月" },
+                  ]}
+                />
               </div>
             </>
           )}
@@ -1575,17 +1652,13 @@ function DemoPageInner() {
             </Link>
             <InfoTooltip text="声明：本页为产品演示（Demo），与所展示评论所属的 App 官方无任何关联；评论数据均为应用商店公开可见内容" size={14} />
           </div>
-          <div className={`${SEG_TRACK} overflow-x-auto`}>
-            {rightPanelItems.map((item) => (
-              <button key={item.key} onClick={() => setActivePanel(item.key)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[14px] whitespace-nowrap transition-colors ${
-                  activePanel === item.key ? SEG_PILL_ON : SEG_PILL_OFF
-                }`}>
-                {item.icon}
-                <span className={activePanel === item.key ? "font-bold" : "font-medium"}>{item.label}</span>
-              </button>
-            ))}
-          </div>
+          <SegmentedControl<RightPanel>
+            value={activePanel}
+            onChange={setActivePanel}
+            className="overflow-x-auto"
+            itemClassName="px-3.5 py-1.5 text-[14px]"
+            options={rightPanelItems.map((item) => ({ value: item.key, label: item.label, icon: item.icon }))}
+          />
         </div>
         <span className="text-white/45 text-[13px] flex-none">{stats ? `${stats.total} 条评论` : "加载中..."}</span>
       </div>

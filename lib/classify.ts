@@ -253,6 +253,7 @@ export async function answerQuestion(opts: {
   latestReviewDate: string | null;
   defaultSince?: string;
   defaultLocale?: string;
+  history?: { q: string; a: string }[];
 }): Promise<string> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
@@ -275,11 +276,20 @@ export async function answerQuestion(opts: {
 
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
-    {
-      role: "user",
-      content: buildAskUserMessage(opts),
-    },
   ];
+
+  // 把已完成的历史问答按"用户→助手"原样塞进上下文，让模型能领会追问/省略主语的真实意图。
+  // 只取最近若干轮、且对回答做长度截断，避免 token 膨胀；中途的工具调用细节不保留，
+  // 模型需要时会针对新问题重新查工具。
+  for (const turn of (opts.history ?? []).slice(-8)) {
+    const q = turn?.q?.trim();
+    const a = turn?.a?.trim();
+    if (!q || !a) continue;
+    messages.push({ role: "user", content: q });
+    messages.push({ role: "assistant", content: a.slice(0, 1500) });
+  }
+
+  messages.push({ role: "user", content: buildAskUserMessage(opts) });
 
   for (let round = 0; round < ASK_MAX_ROUNDS; round++) {
     const data = await callDeepSeek(apiKey, {
