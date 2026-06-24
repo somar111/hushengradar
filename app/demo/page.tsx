@@ -277,7 +277,6 @@ function RatingTrendChart({
   const dotRadius = (count: number) => dotMaxR * Math.sqrt(count / maxCount);
   const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${x(p.date).toFixed(1)} ${y(p.avgRating).toFixed(1)}`).join(" ");
   const labelEvery = points.length > 12 ? Math.ceil(points.length / 8) : 1;
-  const avgLabel = overallAvg.toFixed(2);
   const yLabelPct = (rating: number) => `${(y(rating) / height) * 100}%`;
 
   return (
@@ -316,10 +315,6 @@ function RatingTrendChart({
             {star}
           </span>
         ))}
-        <span className="absolute right-0 -translate-y-1/2 text-[11px] tabular-nums font-semibold text-right w-full"
-          style={{ top: yLabelPct(overallAvg), color: THEME_BLUE }}>
-          {avgLabel}
-        </span>
       </div>
     </div>
   );
@@ -908,7 +903,7 @@ function DemoPageInner() {
                       <span className="text-white/68 text-[16px]">{timeRangeLabel}平均分</span>
                     </div>
                     <p className="text-white/60 text-[14px] mb-5">
-                      {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），圆点面积与当天评论量成正比，左侧虚线为 {timeRangeLabel}均分 {avgRating}
+                      {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 共 {stats.total} 条，圆点面积与当天评论量成正比
                     </p>
                     <RatingTrendChart points={stats.dailyRatings} overallAvg={avgRating ?? 0} />
                   </>
