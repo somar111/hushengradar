@@ -445,8 +445,19 @@ async function processApp(app) {
 async function main() {
   const { data: apps, error } = await supabase.from("apps").select("*");
   if (error) throw error;
-  console.log(`共 ${apps.length} 个 App`);
-  for (const app of apps) {
+  const appArg = process.argv[2];
+  let targets = apps;
+  if (appArg) {
+    targets = apps.filter(
+      (a) => a.id === appArg || a.external_id === appArg
+        || a.display_name?.toLowerCase().includes(appArg.toLowerCase())
+    );
+    if (!targets.length) throw new Error(`找不到 App：${appArg}`);
+    console.log(`仅处理 ${targets.length} 个 App（筛选：${appArg}）`);
+  } else {
+    console.log(`共 ${apps.length} 个 App`);
+  }
+  for (const app of targets) {
     await processApp(app);
   }
   console.log("\n全部完成。");
