@@ -418,9 +418,52 @@ function PieBreakdown({
   );
 }
 
+// 单调三次样条（Fritsch–Carlson，同 d3 的 curveMonotoneX）：把折线画成平滑曲线，
+// 同时保证不"过冲"——曲线不会鼓到比真实数据点更高/更低的地方（评分轴固定 1~5，普通
+// Catmull-Rom 会在波峰冲出 5、波谷跌破谷值，看着像假数据，这里用单调样条避免）。
+function buildSmoothPath(pts: { x: number; y: number }[]): string {
+  const n = pts.length;
+  if (n === 0) return "";
+  const fmt = (v: number) => v.toFixed(1);
+  if (n === 1) return `M ${fmt(pts[0].x)} ${fmt(pts[0].y)}`;
+  if (n === 2) return `M ${fmt(pts[0].x)} ${fmt(pts[0].y)} L ${fmt(pts[1].x)} ${fmt(pts[1].y)}`;
+
+  const dx: number[] = [];
+  const slope: number[] = []; // 相邻两点的割线斜率
+  for (let i = 0; i < n - 1; i++) {
+    const h = pts[i + 1].x - pts[i].x || 1e-6;
+    dx.push(h);
+    slope.push((pts[i + 1].y - pts[i].y) / h);
+  }
+
+  const tangent: number[] = new Array(n);
+  tangent[0] = slope[0];
+  tangent[n - 1] = slope[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    if (slope[i - 1] * slope[i] <= 0) {
+      tangent[i] = 0; // 极值点处切线压平，杜绝过冲
+    } else {
+      const w1 = 2 * dx[i] + dx[i - 1];
+      const w2 = dx[i] + 2 * dx[i - 1];
+      tangent[i] = (w1 + w2) / (w1 / slope[i - 1] + w2 / slope[i]);
+    }
+  }
+
+  let d = `M ${fmt(pts[0].x)} ${fmt(pts[0].y)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i];
+    const c1x = pts[i].x + h / 3;
+    const c1y = pts[i].y + (tangent[i] * h) / 3;
+    const c2x = pts[i + 1].x - h / 3;
+    const c2y = pts[i + 1].y - (tangent[i + 1] * h) / 3;
+    d += ` C ${fmt(c1x)} ${fmt(c1y)}, ${fmt(c2x)} ${fmt(c2y)}, ${fmt(pts[i + 1].x)} ${fmt(pts[i + 1].y)}`;
+  }
+  return d;
+}
+
 // 评分随真实日期走的折线图：横轴按实际天数间距（不是均匀分类摆放），纵轴固定 1~5（评分本身的
 // 天然量程，不做自动缩放，避免轴范围操纵带来的误导）；圆点面积与当天评论量成正比（半径按 √count
-// 定标），评论少的那天自然更小更淡
+// 定标），评论少的那天自然更小更淡。曲线走单调三次样条，平滑但不过冲。
 function RatingTrendChart({
   points,
   overallAvg,
@@ -451,7 +494,7 @@ function RatingTrendChart({
   const maxCount = Math.max(...points.map((p) => p.count), 1);
   // 点半径按评论量的平方根定标（面积 ∝ 评论量），避免某天评论暴增时圆点视觉上大几十倍
   const dotRadius = (count: number) => dotMaxR * Math.sqrt(count / maxCount);
-  const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${x(p.date).toFixed(1)} ${y(p.avgRating).toFixed(1)}`).join(" ");
+  const pathD = buildSmoothPath(points.map((p) => ({ x: x(p.date), y: y(p.avgRating) })));
   const labelEvery = points.length > 12 ? Math.ceil(points.length / 8) : 1;
   const yLabelPct = (rating: number) => `${(y(rating) / height) * 100}%`;
 
