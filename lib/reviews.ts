@@ -56,6 +56,7 @@ export async function queryReviews(opts: {
   rating?: number;
   q?: string;
   since?: string;
+  until?: string;
   replied?: boolean;
   page: number;
   pageSize: number;
@@ -87,6 +88,7 @@ export async function queryReviews(opts: {
     }
   }
   if (opts.since) query = query.gte("review_date", opts.since);
+  if (opts.until) query = query.lte("review_date", opts.until);
 
   const from = (opts.page - 1) * opts.pageSize;
   const { data, error, count } = await query
@@ -141,12 +143,13 @@ async function getStatsRows(appId: string) {
   return entry;
 }
 
-export async function computeStats(appId: string, locale?: string, since?: string) {
+export async function computeStats(appId: string, locale?: string, since?: string, until?: string) {
   const { rows: allRows, summaryMap } = await getStatsRows(appId);
 
   // localeCounts/localeRatings 都跟 total 用同一份 since 过滤、但不受当前 locale 筛选影响——
   // 这俩是给"对比各地区"用的，如果跟着当前选中的单一 locale 一起过滤就没法对比了
-  const sinceRows = since ? allRows.filter((r) => r.review_date >= since) : allRows;
+  let sinceRows = since ? allRows.filter((r) => r.review_date >= since) : allRows;
+  if (until) sinceRows = sinceRows.filter((r) => r.review_date <= until);
   const localeCounts: Record<string, number> = {};
   const localeRatingMap = new Map<string, { count: number; ratingSum: number }>();
   for (const r of sinceRows) {

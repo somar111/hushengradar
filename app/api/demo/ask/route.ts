@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getApp, getDefaultApp, computeStats, buildAnalysisMetrics } from "@/lib/reviews";
+import { getApp, getDefaultApp, getLatestReviewDate } from "@/lib/reviews";
 import { answerQuestion } from "@/lib/classify";
 
 export async function POST(request: NextRequest) {
@@ -13,15 +13,17 @@ export async function POST(request: NextRequest) {
   }
 
   const app = appId ? await getApp(appId) : await getDefaultApp();
-  const stats = await computeStats(app.id, locale, since);
-  const metrics = buildAnalysisMetrics(stats);
+  const latestReviewDate = await getLatestReviewDate(app.id);
 
   try {
     const answer = await answerQuestion({
       question: String(question),
+      appId: app.id,
       appContext: app.context,
       timeRangeLabel: timeRangeLabel || "所选时间范围",
-      metrics,
+      latestReviewDate,
+      defaultSince: since || undefined,
+      defaultLocale: locale || undefined,
     });
     return Response.json({ answer });
   } catch (e) {

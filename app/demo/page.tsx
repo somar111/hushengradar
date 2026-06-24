@@ -2,10 +2,12 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Layers, Globe,
   ListOrdered, GitCompare, Bot, Reply,
-  Send, X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info,
+  X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp,
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
 import { meaningfulLocaleFloor } from "@/lib/analysisShared";
@@ -66,6 +68,11 @@ type Platform = "googleplay" | "appstore";
 type TargetLang = "zh" | "en";
 type TranslateScope = "non_target" | "non_zh_en";
 type TimeRange = "week" | "month";
+type ChatMessage = {
+  id: string;
+  q: string;
+  a: string;
+};
 
 type TranslateSettings = {
   enabled: boolean;
@@ -147,6 +154,34 @@ function InsightsLoading() {
       <Loader2 size={12} className="animate-spin" />正在分析…
     </div>
   );
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>,
+        ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>,
+        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+        strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+        code: ({ children }) => <code className="px-1.5 py-0.5 rounded bg-white/10 text-white/90">{children}</code>,
+        pre: ({ children }) => <pre className="overflow-x-auto rounded-xl bg-black/25 p-3 mb-3 text-[14px]">{children}</pre>,
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-2 border-white/25 pl-3 text-white/80 mb-3">{children}</blockquote>
+        ),
+      }}>
+      {content}
+    </ReactMarkdown>
+  );
+}
+
+function charDelay(ch: string) {
+  if (ch === "\n") return 0;
+  if ("。！？!?".includes(ch)) return 140;
+  if ("，、,:;；".includes(ch)) return 50;
+  return 12;
 }
 
 function DonutPercent({ percent, size = 40, color = THEME_BLUE }: { percent: number; size?: number; color?: string }) {
@@ -377,8 +412,10 @@ function DemoPageInner() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState<{ q: string; a: string }[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const chatViewportRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   const selectedApp = apps.find((a) => a.id === selectedAppId);
   // 锚点用这个App真实数据里最新一条评论的日期，不用服务器当前时间——见 lib/reviews.ts
@@ -471,11 +508,37 @@ function DemoPageInner() {
   // 切筛选条件时回到第一页（page 已经是 1 就不用再多触发一次 URL replace）
   useEffect(() => { if (page !== 1) setPage(1); }, [selectedAppId, locale, tagFilter, subTagFilter, search, repliedFilter, since]);
 
+  useEffect(() => {
+    const viewport = chatViewportRef.current;
+    if (!viewport) return;
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+  }, [chatMessages, chatLoading]);
+
+  function autoGrowInput() {
+    const el = chatInputRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }
+
+  async function streamAssistantAnswer(messageId: string, fullText: string) {
+    let acc = "";
+    for (const ch of fullText) {
+      acc += ch;
+      setChatMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, a: acc } : m)));
+      const ms = charDelay(ch);
+      if (ms > 0) await new Promise((r) => setTimeout(r, ms));
+    }
+  }
+
   // 真实调AI回答——把当前筛选范围内的真实统计数字喂给DeepSeek，不是预设话术匹配
   async function handleSendChat() {
     const q = chatInput.trim();
     if (!q || !selectedAppId || chatLoading) return;
+    const msgId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setChatMessages((prev) => [...prev, { id: msgId, q, a: "" }]);
     setChatInput("");
+    if (chatInputRef.current) chatInputRef.current.style.height = "48px";
     setChatLoading(true);
     try {
       const res = await fetch("/api/demo/ask", {
@@ -484,9 +547,10 @@ function DemoPageInner() {
         body: JSON.stringify({ question: q, appId: selectedAppId, locale, since, timeRangeLabel }),
       });
       const data = await res.json();
-      setChatMessages((prev) => [...prev, { q, a: data.error ? `回答失败：${data.error}` : data.answer }]);
+      const answer = data.error ? `回答失败：${data.error}` : data.answer;
+      await streamAssistantAnswer(msgId, answer || "暂无回答");
     } catch {
-      setChatMessages((prev) => [...prev, { q, a: "请求失败，请重试。" }]);
+      await streamAssistantAnswer(msgId, "请求失败，请重试。");
     } finally {
       setChatLoading(false);
     }
@@ -765,33 +829,62 @@ function DemoPageInner() {
   // ── 中间区域：问 AI ──
   const AskResult = (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto px-6 py-5">
+      <div ref={chatViewportRef} className="flex-1 overflow-y-auto px-6 py-6">
         {chatMessages.length === 0 && !chatLoading ? (
-          <p className="text-white/45 text-[14px]">问我关于这款 App 的任何问题，比如最近用户在反馈什么、哪个版本评价最差、官方回复率怎么样。</p>
+          <div className="max-w-3xl mx-auto text-white/60 text-[17px] leading-relaxed">
+            <p className="font-medium text-white/80">问我关于这款 App {timeRangeLabel}的评论的任何问题</p>
+          </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="max-w-4xl mx-auto w-full flex flex-col gap-5">
             {chatMessages.map((m, i) => (
-              <div key={i} className="text-[14px]">
-                <p className="text-white/68 mb-1">你：{m.q}</p>
-                <p className="text-white/80 bg-[#2c2c2b] rounded-lg px-3 py-2 leading-relaxed whitespace-pre-line">{m.a}</p>
+              <div key={m.id} className="space-y-2.5">
+                <div className="flex justify-end">
+                  <div className="max-w-[85%] rounded-2xl bg-[#4b5f9f] text-white px-4 py-3 text-[17px] leading-relaxed shadow-[0_8px_24px_rgba(87,129,216,0.25)]">
+                    {m.q}
+                  </div>
+                </div>
+                <div className="flex justify-start">
+                  <div className="max-w-[90%] rounded-2xl border border-white/10 bg-[#2c2c2b] px-4 py-3 text-[17px] text-white/90 leading-relaxed">
+                    <MarkdownMessage content={m.a || (chatLoading && i === chatMessages.length - 1 ? "正在组织回答…" : "")} />
+                  </div>
+                </div>
               </div>
             ))}
             {chatLoading && (
-              <div className="flex items-center gap-2 text-white/45 text-[13px]">
-                <Loader2 size={12} className="animate-spin" />AI 正在根据真实数据回答…
+              <div className="flex items-center gap-2 text-white/45 text-[14px] pl-1">
+                <Loader2 size={14} className="animate-spin" />AI 正在查阅真实评论数据…
               </div>
             )}
           </div>
         )}
       </div>
-      <div className="bg-white/4 p-4 flex-none">
-        <div className="flex gap-2">
-          <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSendChat()} disabled={chatLoading}
-            className="flex-1 bg-[#2c2c2b] border border-white/20 rounded-xl px-4 py-2.5 text-[16px] text-white placeholder-white/25 outline-none focus:border-white/40 transition-colors disabled:opacity-50" />
-          <button onClick={handleSendChat} disabled={chatLoading}
-            className="bg-[rgb(55,57,62)] hover:bg-[rgb(75,78,84)] text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-[16px] font-medium disabled:opacity-50">
-            {chatLoading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+      <div className="bg-[#1f1f20]/95 backdrop-blur px-5 py-4 flex-none">
+        <div className="max-w-4xl mx-auto flex gap-3 items-end">
+          <textarea
+            ref={chatInputRef}
+            value={chatInput}
+            rows={1}
+            placeholder={`问我关于这款 App ${timeRangeLabel}评论的问题…（Enter 发送，Shift+Enter 换行）`}
+            onChange={(e) => {
+              setChatInput(e.target.value);
+              autoGrowInput();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSendChat();
+              }
+            }}
+            disabled={chatLoading}
+            className="flex-1 resize-none max-h-40 min-h-12 bg-[#2c2c2b] border border-white/20 rounded-2xl px-4 py-3 text-[17px] text-white placeholder-white/30 outline-none focus:border-white/45 transition-colors disabled:opacity-60"
+          />
+          <button
+            type="button"
+            onClick={handleSendChat}
+            disabled={chatLoading || !chatInput.trim()}
+            aria-label="发送"
+            className="flex-none w-9 h-9 rounded-full flex items-center justify-center transition-colors disabled:cursor-not-allowed bg-white/90 text-[#1f1f1f] hover:bg-white disabled:bg-white/15 disabled:text-white/35">
+            {chatLoading ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={18} strokeWidth={2.25} />}
           </button>
         </div>
       </div>
