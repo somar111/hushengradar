@@ -4,14 +4,17 @@ import { createClient } from "@supabase/supabase-js";
 import gplayPkg from "google-play-scraper";
 import {
   UNIVERSAL_CATEGORIES,
-  NO_SUBTAG_KEYS,
+  CLASSIFY_RETRY_ATTEMPTS,
   buildClassifyPrompt,
   buildSubTagReusePool,
   buildSummaryPrompt,
+  buildTagCountsFromReviews,
   buildTranslatePrompt,
-  dedupeCrossLevelTags,
-  sanitizeTagKey,
+  finalizeClassifiedTags,
+  findTagCountInconsistencies,
+  parseClassifyTagsFromModel,
   subTagMapToPromptObject,
+  validateClassifiedTags,
 } from "../lib/promptKit.mjs";
 
 const UNIVERSAL_KEYS = new Set(UNIVERSAL_CATEGORIES.map((c) => c.key));
@@ -168,7 +171,7 @@ async function resolveFetchLocales(app) {
   return FALLBACK_LOCALES;
 }
 
-async function classifyReview(content, rating, appContext, seedCategories = [], existingCustomTags = [], existingSubTags = {}) {
+async function classifyReviewRaw(content, rating, appContext, seedCategories = [], existingCustomTags = [], existingSubTags = {}) {
   const systemPrompt = buildClassifyPrompt({ appContext, seedCategories, existingCustomTags, existingSubTags });
 
   const res = await fetch("https://api.deepseek.com/chat/completions", {
@@ -184,28 +187,18 @@ async function classifyReview(content, rating, appContext, seedCategories = [], 
   if (!res.ok) throw new Error(`DeepSeek分类 ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const parsed = JSON.parse(data.choices[0].message.content);
-  if (!Array.isArray(parsed.tags)) return [];
-  let tags = parsed.tags
-    .filter((t) => t && t.key && t.label)
-    .map((t) => {
-      const key = sanitizeTagKey(t.key);
-      // 除 vague_complaint（设计上没有子问题）外，每个问题都必须有子问题，这样"子问题数字加起来
-      // == 问题总数"才永远成立。模型偶尔会漏给 subKey，这里兜底塞一个"其他"，保证全覆盖、不破坏
-      // 加和恒等式。通用规则，跟具体App无关。
-      const noSub = NO_SUBTAG_KEYS.has(key);
-      return {
-        key, label: t.label, evidence: t.evidence || null,
-        subKey: noSub ? null : (t.subKey ? sanitizeTagKey(t.subKey) : "general"),
-        subLabel: noSub ? null : (t.subKey ? (t.subLabel || null) : "其他"),
-      };
-    });
-  // vague_complaint 互斥兜底：它的定义就是"说不出具体问题"，所以只要同一条评论命中了任何
-  // 具体类型，vague_complaint 就自相矛盾，去掉。这是"意义不明"这个类别的内在不变式，
-  // 不针对任何具体App——prompt 里已经要求模型这么做，这里再兜一层防模型偶尔违背。
-  if (tags.length > 1 && tags.some((t) => t.key === "vague_complaint")) {
-    tags = tags.filter((t) => t.key !== "vague_complaint");
+  return parseClassifyTagsFromModel(parsed.tags);
+}
+
+async function classifyReviewWithValidation(content, rating, appContext, seedCategories, existingCustomTags, existingSubTags, knownTopLevelKeys) {
+  const attempts = 1 + CLASSIFY_RETRY_ATTEMPTS;
+  let lastRaw = [];
+  for (let i = 0; i < attempts; i++) {
+    lastRaw = await classifyReviewRaw(content, rating, appContext, seedCategories, existingCustomTags, existingSubTags);
+    const candidate = finalizeClassifiedTags(lastRaw, { knownTopLevelKeys, rating });
+    if (validateClassifiedTags(candidate, knownTopLevelKeys).ok) return candidate;
   }
-  return tags;
+  return finalizeClassifiedTags(lastRaw, { knownTopLevelKeys, rating });
 }
 
 async function detectAndTranslate(content) {
@@ -362,12 +355,10 @@ async function processApp(app) {
     try {
       const existingCustomTags = [...existingCustomTagsMap.entries()].map(([key, label]) => ({ key, label }));
       const existingSubTags = subTagMapToPromptObject(subTagReusePool);
-      const rawTags = await withRetry(() => classifyReview(r.content, r.rating, app.context, seedCategories, existingCustomTags, existingSubTags));
-      // 兜底修正：如果模型还是把"已知顶层类型"塞进了别的标签当子问题（比如把performance_issue
-      // 当成bug的子问题，但performance_issue本身已经是个顶层自定义标签），提升成独立顶层标签，
-      // 避免同一个概念同时以两种身份重复存在
       const knownTopLevelKeys = new Set([...baselineKeys, ...existingCustomTagsMap.keys()]);
-      const tags = dedupeCrossLevelTags(rawTags, knownTopLevelKeys);
+      const tags = await withRetry(() => classifyReviewWithValidation(
+        r.content, r.rating, app.context, seedCategories, existingCustomTags, existingSubTags, knownTopLevelKeys
+      ));
       for (const t of tags) {
         if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
       }
@@ -379,6 +370,17 @@ async function processApp(app) {
       console.error(`分类失败 id=${r.id}:`, e.message);
     }
   });
+
+  const classifiedForAudit = await fetchAllRows(
+    supabase.from("reviews").select("ai_tags").eq("app_id", app.id).not("ai_classified_at", "is", null)
+  );
+  const countIssues = findTagCountInconsistencies(buildTagCountsFromReviews(classifiedForAudit));
+  if (countIssues.length) {
+    console.warn(
+      `标签计数恒等式异常 ${countIssues.length} 个顶层（子问题之和 ≠ 母问题，多为历史数据）：`,
+      countIssues.slice(0, 5).map((i) => `${i.key}(${i.parentCount}/${i.subSum})`).join("、")
+    );
+  }
 
   // 3. 翻译所有未翻译过的，同样分页拉全量 + 并发
   const untranslated = await fetchAllRows(
