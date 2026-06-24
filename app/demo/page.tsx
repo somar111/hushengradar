@@ -111,7 +111,7 @@ const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
 };
 
 const DEFAULT_AI_REPLY_SETTINGS: AiReplySettings = {
-  tone: "用原语言回复。口语化、先表达理解或致歉（如果需要的话），然后再说明，不做过度承诺，多说「收到问题」「已通知开发 team」「已通知设计 team」等",
+  tone: "回复语言：用「评论原文」的原语言回复。口语化、先表达理解或致歉（如果需要的话），然后再说明，不做过度承诺，多说「收到问题」「已通知开发 team」「已通知设计 team」等",
   style: "不要千篇一律，不要冗长",
   contactInfo: "如果有可能要退款的需求：example-refund@gmail；如果是严重问题的反馈、严重 bug 等问题：example-support@gmail（非严重的话就不要加联系方式）",
 };

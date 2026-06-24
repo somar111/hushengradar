@@ -1,5 +1,6 @@
 import { getServiceSupabase, type ReviewRow, type AppRow } from "./supabase";
 import { meaningfulLocaleFloor } from "./analysisShared";
+import { mergeSimilarSubTags } from "./promptKit.mjs";
 
 // apps 表几乎不变（只有手动加新 App 时才变），缓存住省掉每次切筛选都白付一次 Supabase round trip
 const APPS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -198,6 +199,10 @@ export async function computeStats(appId: string, locale?: string, since?: strin
       v.dateSum += new Date(r.review_date).getTime();
       versionMap.set(r.app_version, v);
     }
+  }
+
+  for (const entry of Object.values(tagCounts)) {
+    entry.subTags = mergeSimilarSubTags(entry.subTags);
   }
 
   // 版本号字符串本身不一定能按时间排序（不同App的版本号规则不一样，有的甚至换过编号体系），
