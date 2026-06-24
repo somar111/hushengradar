@@ -1,7 +1,8 @@
 // 从一个 App 的真实评论样本，设计出它专属的「问题分类体系」（顶层类型 + 各自子问题），写回
-// apps.seed_categories。这是分类前的「设计阶段」——先有一套连贯、不重叠的体系，分类时按它归类，
-// 而不是逐条临场发明分类（那会造出 scam≈billing 这种近义顶层、把具体评论丢进"意义不明"）。
-// 通用：任何 App 跑 `node scripts/build-taxonomy.mjs [appId]` 即可，不针对任何具体产品。
+// apps.seed_categories。taxonomy 是可修订数据，不限于接入时定一次：
+//   - 全量重设计：node scripts/build-taxonomy.mjs [appId]
+//   - 增量固化稳定子问题：node scripts/merge-observed-subtags.mjs [appId] [--min 5]
+// 通用：任何 App 均可运行，不针对任何具体产品。
 import { createClient } from "@supabase/supabase-js";
 import { buildTaxonomyPrompt, sanitizeTagKey } from "../lib/promptKit.mjs";
 
