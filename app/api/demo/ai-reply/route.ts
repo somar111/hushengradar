@@ -1,5 +1,10 @@
 import { NextRequest } from "next/server";
-import { generateReplySuggestion } from "@/lib/classify";
+import {
+  detectAndTranslate,
+  generateReplySuggestion,
+  pickReplyTranslation,
+  type ReplyTranslationSettings,
+} from "@/lib/classify";
 import { getApp, getDefaultApp } from "@/lib/reviews";
 
 export async function POST(request: NextRequest) {
@@ -10,7 +15,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { content, rating, tags, author, appId, replyContext } = await request.json();
+  const { content, rating, tags, author, appId, replyContext, translateSettings } = await request.json();
   const app = appId ? await getApp(appId) : await getDefaultApp();
 
   try {
@@ -22,7 +27,15 @@ export async function POST(request: NextRequest) {
       appContext: app.context,
       replyContext: replyContext ?? null,
     });
-    return Response.json({ reply });
+
+    let translation: string | null = null;
+    const ts = translateSettings as ReplyTranslationSettings | undefined;
+    if (ts?.enabled) {
+      const result = await detectAndTranslate(reply);
+      translation = pickReplyTranslation(result, ts);
+    }
+
+    return Response.json({ reply, translation });
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 502 });
   }

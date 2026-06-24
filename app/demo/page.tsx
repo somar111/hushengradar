@@ -541,6 +541,7 @@ function DemoPageInner() {
 
   const [selectedReview, setSelectedReview] = useState<ReviewRow | null>(null);
   const [aiReply, setAiReply] = useState("");
+  const [aiReplyTranslation, setAiReplyTranslation] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -841,6 +842,7 @@ function DemoPageInner() {
     }
     setSelectedReview(r);
     setAiReply("");
+    setAiReplyTranslation(null);
     setAiError("");
   }
 
@@ -873,6 +875,7 @@ function DemoPageInner() {
             style: DEFAULT_AI_REPLY_SETTINGS.style,
             contactInfo: DEFAULT_AI_REPLY_SETTINGS.contactInfo,
           },
+          translateSettings,
         }),
       });
       const data = await res.json();
@@ -880,6 +883,7 @@ function DemoPageInner() {
         setAiError(data.error || "生成失败");
       } else {
         setAiReply(data.reply);
+        setAiReplyTranslation(data.translation ?? null);
       }
     } catch {
       setAiError("请求失败，请重试");
@@ -1334,7 +1338,15 @@ function DemoPageInner() {
                 <button onClick={() => setSelectedReview(null)} className="text-white/35 hover:text-white/80 transition-colors"><X size={16} /></button>
               </div>
               {aiReply ? (
-                <p className="text-white/90 text-[16px] leading-relaxed whitespace-pre-line">{aiReply}</p>
+                <>
+                  <p className="text-white/90 text-[16px] leading-relaxed whitespace-pre-line">{aiReply}</p>
+                  {aiReplyTranslation && (
+                    <>
+                      <p className="text-white/60 text-[14px] mt-2.5 mb-1">译文（该译文不会被发送）</p>
+                      <p className="text-white/85 text-[16px] leading-relaxed whitespace-pre-line">{aiReplyTranslation}</p>
+                    </>
+                  )}
+                </>
               ) : (
                 <button onClick={handleGenerateAiReply} disabled={aiLoading}
                   className="flex items-center gap-1.5 text-[15px] text-white/85 bg-white/10 hover:bg-white/15 disabled:opacity-50 px-3.5 py-2 rounded-lg transition-colors">

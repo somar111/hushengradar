@@ -1,4 +1,4 @@
-import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt } from "./promptKit.mjs";
+import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt, buildTranslatePrompt } from "./promptKit.mjs";
 import { ASK_TOOLS, executeAskTool, type AskContext } from "./askTools";
 
 export type ClassifiedTag = { key: string; label: string; evidence?: string };
@@ -85,6 +85,54 @@ export async function generateReplySuggestion(opts: {
   const reply = data.choices?.[0]?.message?.content?.trim() || "";
   const corpus = [opts.content, opts.replyContext?.contactInfo ?? ""].join("\n");
   return sanitizeUnsourcedContactInfo(reply, corpus);
+}
+
+export type TranslateResult = {
+  detected_lang: string;
+  translated_zh: string | null;
+  translated_en: string | null;
+};
+
+export async function detectAndTranslate(content: string): Promise<TranslateResult> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    throw new Error("DEEPSEEK_API_KEY 未配置");
+  }
+
+  const data = await callDeepSeek(apiKey, {
+    model: "deepseek-chat",
+    messages: [
+      { role: "system", content: buildTranslatePrompt() },
+      { role: "user", content },
+    ],
+    temperature: 0.1,
+    response_format: { type: "json_object" },
+  });
+
+  const raw = data.choices?.[0]?.message?.content ?? "{}";
+  return JSON.parse(raw) as TranslateResult;
+}
+
+export type ReplyTranslationSettings = {
+  enabled: boolean;
+  targetLang: "zh" | "en";
+  scope: "non_target" | "non_zh_en";
+};
+
+/** 按翻译设置从 detectAndTranslate 结果中取出目标语言译文；无需展示时返回 null。 */
+export function pickReplyTranslation(
+  result: TranslateResult,
+  settings: ReplyTranslationSettings
+): string | null {
+  if (!settings.enabled) return null;
+  const lang = result.detected_lang;
+  if (settings.scope === "non_zh_en" && (lang === "zh" || lang === "en")) return null;
+  if (settings.targetLang === "zh") {
+    if (lang === "zh" || !result.translated_zh) return null;
+    return result.translated_zh;
+  }
+  if (lang === "en" || !result.translated_en) return null;
+  return result.translated_en;
 }
 
 /**
