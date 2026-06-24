@@ -111,7 +111,7 @@ const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
 };
 
 const DEFAULT_AI_REPLY_SETTINGS: AiReplySettings = {
-  tone: "口语化、先表达理解或致歉（如果需要的话），然后再说明，不做过度承诺，多说「收到问题」「已通知开发 team」「已通知设计 team」等",
+  tone: "用原语言回复。口语化、先表达理解或致歉（如果需要的话），然后再说明，不做过度承诺，多说「收到问题」「已通知开发 team」「已通知设计 team」等",
   style: "不要千篇一律，不要冗长",
   contactInfo: "如果有可能要退款的需求：example-refund@gmail；如果是严重问题的反馈、严重 bug 等问题：example-support@gmail（非严重的话就不要加联系方式）",
 };
@@ -245,6 +245,10 @@ const THEME_BLUE = "#5781d8";
 const SEG_TRACK = "flex items-center gap-1 bg-white/6 rounded-full p-1";
 const SEG_PILL_ON = "bg-white/15 text-white ring-1 ring-white/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.28),0_1px_2px_0_rgba(0,0,0,0.35)] backdrop-blur-sm";
 const SEG_PILL_OFF = "text-white/60 hover:text-white/85";
+
+// 评论回复：顶部筛选各控件独立毛玻璃（无外层包裹条）
+const REPLY_FILTER_FIELD =
+  "rounded-xl border border-white/18 bg-white/[0.14] backdrop-blur-xl shadow-[0_8px_24px_rgba(0,0,0,0.35)] outline-none focus:border-white/28 transition-colors text-[15px]";
 
 function MarkdownMessage({ content }: { content: string }) {
   return (
@@ -1197,51 +1201,52 @@ function DemoPageInner() {
           <DonutPercent percent={(stats.tagCounts[tagFilter].count / stats.total) * 100} size={48} />
           <div className="min-w-0">
             <p className="text-white/90 text-[15px] font-medium mb-1">{stats.tagCounts[tagFilter].label}（{stats.tagCounts[tagFilter].count}）</p>
-            {/* 点子问题 chip 直接把列表筛到那个子问题；已选中的高亮，再点一下取消（回到整个标签） */}
             <TagBreakdown t={stats.tagCounts[tagFilter]} activeSubKey={subTagFilter || undefined}
               onJump={(subKey) => setSubTagFilter(subKey === subTagFilter ? undefined : subKey)} />
           </div>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-2 px-4 pt-4 pb-2 flex-none">
-        <div className="relative flex-1 min-w-[160px]">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30" />
-          <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput.trim())}
-            placeholder="搜索评论内容/作者..."
-            className="w-full bg-[#242c3d] border border-white/20 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-white placeholder-white/35 outline-none focus:border-white/45" />
-        </div>
-        <select value={tagFilter || ""} onChange={(e) => setTagFilter(e.target.value || undefined)}
-          className="bg-[#242c3d] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/45">
-          <option value="">全部问题类型</option>
-          {stats && Object.entries(stats.tagCounts).sort((a, b) => b[1].count - a[1].count).map(([key, t]) => (
-            <option key={key} value={key}>{t.label}（{t.count}）</option>
-          ))}
-        </select>
-        {tagFilter && stats?.tagCounts[tagFilter] && Object.keys(stats.tagCounts[tagFilter].subTags).length > 0 && (
-          <select value={subTagFilter || ""} onChange={(e) => setSubTagFilter(e.target.value || undefined)}
-            className="bg-[#242c3d] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/45">
-            <option value="">全部子问题</option>
-            {Object.entries(stats.tagCounts[tagFilter].subTags).sort((a, b) => b[1].count - a[1].count).map(([key, s]) => (
-              <option key={key} value={key}>{s.label}（{s.count}）</option>
-            ))}
-          </select>
-        )}
-        <select value={repliedFilter === undefined ? "" : String(repliedFilter)}
-          onChange={(e) => setRepliedFilter(e.target.value === "" ? undefined : e.target.value === "true")}
-          className="bg-[#242c3d] border border-white/20 rounded-lg px-2.5 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/45">
-          <option value="">全部回复状态</option>
-          <option value="true">已回复</option>
-          <option value="false">未回复</option>
-        </select>
-        {search && (
-          <button onClick={() => { setSearch(""); setSearchInput(""); }}
-            className="flex items-center gap-1 px-3 py-1 rounded-full text-[12px] bg-white/15 text-white/90">
-            "{search}" <X size={11} />
-          </button>
-        )}
-      </div>
       <div className={`flex-1 overflow-y-auto px-4 ${selectedReview ? "pb-56" : "pb-4"}`}>
+        <div className="sticky top-0 z-10 -mx-1 px-1 pt-3 pb-3 bg-gradient-to-b from-[#141a27] from-55% to-transparent">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="relative flex-1 min-w-[12rem]">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+              <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput.trim())}
+                placeholder="搜索评论内容/作者..."
+                className={`w-full ${REPLY_FILTER_FIELD} pl-10 pr-3.5 py-2.5 text-white placeholder-white/40`} />
+            </div>
+            <select value={tagFilter || ""} onChange={(e) => setTagFilter(e.target.value || undefined)}
+              className={`${REPLY_FILTER_FIELD} px-3.5 py-2.5 text-white/90 min-w-[10rem]`}>
+              <option value="">全部问题类型</option>
+              {stats && Object.entries(stats.tagCounts).sort((a, b) => b[1].count - a[1].count).map(([key, t]) => (
+                <option key={key} value={key}>{t.label}（{t.count}）</option>
+              ))}
+            </select>
+            {tagFilter && stats?.tagCounts[tagFilter] && Object.keys(stats.tagCounts[tagFilter].subTags).length > 0 && (
+              <select value={subTagFilter || ""} onChange={(e) => setSubTagFilter(e.target.value || undefined)}
+                className={`${REPLY_FILTER_FIELD} px-3.5 py-2.5 text-white/90 min-w-[9rem]`}>
+                <option value="">全部子问题</option>
+                {Object.entries(stats.tagCounts[tagFilter].subTags).sort((a, b) => b[1].count - a[1].count).map(([key, s]) => (
+                  <option key={key} value={key}>{s.label}（{s.count}）</option>
+                ))}
+              </select>
+            )}
+            <select value={repliedFilter === undefined ? "" : String(repliedFilter)}
+              onChange={(e) => setRepliedFilter(e.target.value === "" ? undefined : e.target.value === "true")}
+              className={`${REPLY_FILTER_FIELD} px-3.5 py-2.5 text-white/90 min-w-[9rem]`}>
+              <option value="">全部回复状态</option>
+              <option value="true">已回复</option>
+              <option value="false">未回复</option>
+            </select>
+            {search && (
+              <button onClick={() => { setSearch(""); setSearchInput(""); }}
+                className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-[14px] text-white/90 hover:border-white/28 transition-colors ${REPLY_FILTER_FIELD}`}>
+                "{search}" <X size={13} />
+              </button>
+            )}
+          </div>
+        </div>
         {loading ? (
           <div className="flex items-center justify-center h-full text-white/30"><Loader2 className="animate-spin" size={20} /></div>
         ) : (
@@ -1448,7 +1453,7 @@ function DemoPageInner() {
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center px-3">
-                <p className="text-white/35 text-[12px] text-center leading-relaxed">App Store 这次没有抓取公开评论数据，暂不支持筛选</p>
+                <p className="text-white/35 text-[12px] text-center leading-relaxed">App Store 暂不支持</p>
               </div>
             )
           ) : (
