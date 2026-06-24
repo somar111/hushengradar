@@ -390,6 +390,7 @@ function DemoPageInner() {
   const [showTranslateSettings, setShowTranslateSettings] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [hoveredTag, setHoveredTag] = useState<string | null>(null);
+  const [bootReady, setBootReady] = useState(false);
 
   const [stats, setStats] = useState<Stats | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
@@ -511,6 +512,17 @@ function DemoPageInner() {
       })
       .finally(() => setLoading(false));
   }, [selectedAppId, selectedApp, locale, tagFilter, subTagFilter, search, repliedFilter, page, since]);
+
+  useEffect(() => {
+    if (bootReady) return;
+    if (!selectedAppId || !selectedApp) return;
+    if (!stats) return;
+    if (loading) return;
+    const t = window.setTimeout(() => setBootReady(true), 220);
+    return () => window.clearTimeout(t);
+  }, [bootReady, selectedAppId, selectedApp, stats, loading]);
+
+  const showDataLoading = !bootReady;
 
   // 切筛选条件时回到第一页（page 已经是 1 就不用再多触发一次 URL replace）
   useEffect(() => { if (page !== 1) setPage(1); }, [selectedAppId, locale, tagFilter, subTagFilter, search, repliedFilter, since]);
@@ -780,87 +792,108 @@ function DemoPageInner() {
 
         return (
           <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1fr] gap-5 items-start">
-            <div className="bg-[#242c3d] rounded-3xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-white/95 text-[18px] font-bold">评分分析</p>
-                <div className={SEG_TRACK}>
-                  {([
-                    ["trend", "趋势", <LineChart key="i" size={13} />],
-                    ["distribution", "分布", <BarChart2 key="i" size={13} />],
-                    ...(!locale ? [["locale", "地区", <Globe key="i" size={13} />] as const] : []),
-                  ] as const).map(([key, label, icon]) => (
-                    <button key={key} onClick={() => setRatingView(key)}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[13px] whitespace-nowrap transition-colors ${
-                        ratingView === key ? `${SEG_PILL_ON} font-bold` : `${SEG_PILL_OFF} font-medium`
-                      }`}>
-                      {icon}{label}
+            <div className="flex flex-col gap-3">
+              <div className="bg-[#242c3d] rounded-3xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-white/95 text-[18px] font-bold">评分分析</p>
+                  <div className={SEG_TRACK}>
+                    {([
+                      ["trend", "趋势", <LineChart key="i" size={13} />],
+                      ["distribution", "分布", <BarChart2 key="i" size={13} />],
+                      ...(!locale ? [["locale", "地区", <Globe key="i" size={13} />] as const] : []),
+                    ] as const).map(([key, label, icon]) => (
+                      <button key={key} onClick={() => setRatingView(key)}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[13px] whitespace-nowrap transition-colors ${
+                          ratingView === key ? `${SEG_PILL_ON} font-bold` : `${SEG_PILL_OFF} font-medium`
+                        }`}>
+                        {icon}{label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {ratingView === "trend" && (
+                  <>
+                    <div className="flex items-baseline gap-3 mb-1">
+                      <span className="text-[42px] font-bold text-white">{avgRating}</span>
+                      <span className="text-white/68 text-[16px]">{timeRangeLabel}平均分</span>
+                    </div>
+                    <p className="text-white/60 text-[14px] mb-5">
+                      {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），点的大小代表当天评论量
+                    </p>
+                    <RatingTrendChart points={stats.dailyRatings} />
+                  </>
+                )}
+
+                {ratingView === "distribution" && (
+                  <>
+                    <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel} {ratingTotal} 条评论按星级分布：</p>
+                    <div className="flex flex-col gap-1.5">
+                      {[5, 4, 3, 2, 1].map((star) => {
+                        const count = stats.ratingDist[star] ?? 0;
+                        const pct = pctOf(count);
+                        return (
+                          <div key={star} className="flex items-center gap-3">
+                            <span className="text-white/68 text-[13px] w-10 flex-none text-right">{star}★</span>
+                            <div className="flex-1 h-2.5 bg-white/5 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: THEME_BLUE }} />
+                            </div>
+                            <span className="text-white/60 text-[12px] w-20 flex-none">{count} 条 · {pct}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                {ratingView === "locale" && !locale && (
+                  <>
+                    <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列（只列样本量够的地区）：</p>
+                    {(() => {
+                      // 样本量太小的地区算出来的均分没有统计意义，列出来反而误导——用 lib/reviews.ts 的
+                      // meaningfulLocaleFloor（同一个门槛也用于喂给AI下结论），保证列表和AI结论永远一致。
+                      const minSample = meaningfulLocaleFloor(allLocalesTotal);
+                      const shown = stats.localeRatings.filter((l) => l.count >= minSample);
+                      if (shown.length < 2) {
+                        return <p className="text-white/40 text-[13px]">各地区样本量都偏小（不足 {minSample} 条），暂不做地区满意度对比。</p>;
+                      }
+                      return (
+                        <div className="flex flex-col gap-1.5">
+                          {shown.map((l) => (
+                            <button key={l.locale} onClick={() => setLocale(l.locale === "unknown" ? undefined : l.locale)}
+                              className="flex items-center gap-3 text-left rounded-lg px-2 py-1 hover:bg-white/8 transition-colors">
+                              <span className="text-white/85 text-[13px] w-32 flex-none truncate">{localeLabel(l.locale)}</span>
+                              <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full" style={{ width: `${(l.avgRating / 5) * 100}%`, backgroundColor: THEME_BLUE }} />
+                              </div>
+                              <span className="text-white/60 text-[12px] w-24 flex-none">{l.avgRating}★ · {l.count} 条</span>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </>
+                )}
+              </div>
+
+              <div className="bg-[#242c3d] rounded-3xl p-6">
+                <p className="text-white/95 text-[18px] font-bold mb-3">官方回复覆盖率</p>
+                <p className="text-white/75 text-[14px] mb-4">
+                  整体回复率 {stats.officialReplyRate}%
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {replyByTag.map((r) => (
+                    <button key={r.tag} onClick={() => jumpToTag(r.tag)}
+                      className="flex items-center gap-3 text-left rounded-lg px-2 py-1 hover:bg-white/8 transition-colors">
+                      <span className="text-white/85 text-[13px] w-28 flex-none truncate">{r.label}</span>
+                      <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${r.replyRate}%` }} />
+                      </div>
+                      <span className="text-white/60 text-[12px] w-28 flex-none">{r.count} 条 · 回复 {r.replyRate}%</span>
                     </button>
                   ))}
                 </div>
               </div>
-
-              {ratingView === "trend" && (
-                <>
-                  <div className="flex items-baseline gap-3 mb-1">
-                    <span className="text-[42px] font-bold text-white">{avgRating}</span>
-                    <span className="text-white/68 text-[16px]">{timeRangeLabel}平均分</span>
-                  </div>
-                  <p className="text-white/60 text-[14px] mb-5">
-                    {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 按真实评论日期统计每日均分（共 {stats.total} 条），点的大小代表当天评论量
-                  </p>
-                  <RatingTrendChart points={stats.dailyRatings} />
-                </>
-              )}
-
-              {ratingView === "distribution" && (
-                <>
-                  <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel} {ratingTotal} 条评论按星级分布：</p>
-                  <div className="flex flex-col gap-1.5">
-                    {[5, 4, 3, 2, 1].map((star) => {
-                      const count = stats.ratingDist[star] ?? 0;
-                      const pct = pctOf(count);
-                      return (
-                        <div key={star} className="flex items-center gap-3">
-                          <span className="text-white/68 text-[13px] w-10 flex-none text-right">{star}★</span>
-                          <div className="flex-1 h-2.5 bg-white/5 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: THEME_BLUE }} />
-                          </div>
-                          <span className="text-white/60 text-[12px] w-20 flex-none">{count} 条 · {pct}%</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-              {ratingView === "locale" && !locale && (
-                <>
-                  <p className="text-white/75 text-[14px] mb-4">{timeRangeLabel}各地区真实均分，按评分从低到高排列（只列样本量够的地区）：</p>
-                  {(() => {
-                    // 样本量太小的地区算出来的均分没有统计意义，列出来反而误导——用 lib/reviews.ts 的
-                    // meaningfulLocaleFloor（同一个门槛也用于喂给AI下结论），保证列表和AI结论永远一致。
-                    const minSample = meaningfulLocaleFloor(allLocalesTotal);
-                    const shown = stats.localeRatings.filter((l) => l.count >= minSample);
-                    if (shown.length < 2) {
-                      return <p className="text-white/40 text-[13px]">各地区样本量都偏小（不足 {minSample} 条），暂不做地区满意度对比。</p>;
-                    }
-                    return (
-                      <div className="flex flex-col gap-1.5">
-                        {shown.map((l) => (
-                          <button key={l.locale} onClick={() => setLocale(l.locale === "unknown" ? undefined : l.locale)}
-                            className="flex items-center gap-3 text-left rounded-lg px-2 py-1 hover:bg-white/8 transition-colors">
-                            <span className="text-white/85 text-[13px] w-32 flex-none truncate">{localeLabel(l.locale)}</span>
-                            <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full" style={{ width: `${(l.avgRating / 5) * 100}%`, backgroundColor: THEME_BLUE }} />
-                            </div>
-                            <span className="text-white/60 text-[12px] w-24 flex-none">{l.avgRating}★ · {l.count} 条</span>
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
             </div>
 
             <div className="md:col-start-2">
@@ -897,24 +930,6 @@ function DemoPageInner() {
                     <p className="text-white/80 text-[14px] leading-relaxed">{insights.complaintsVsFeatureRequest}</p>
                   </div>
                 )}
-                <div className="mt-6 pt-5 border-t border-white/10">
-                  <p className="text-white/95 text-[18px] font-bold mb-3">官方回复覆盖率</p>
-                  <p className="text-white/75 text-[14px] mb-4">
-                    整体回复率 {stats.officialReplyRate}%
-                  </p>
-                  <div className="flex flex-col gap-1.5">
-                    {replyByTag.map((r) => (
-                      <button key={r.tag} onClick={() => jumpToTag(r.tag)}
-                        className="flex items-center gap-3 text-left rounded-lg px-2 py-1 hover:bg-white/8 transition-colors">
-                        <span className="text-white/85 text-[13px] w-28 flex-none truncate">{r.label}</span>
-                        <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${r.replyRate}%` }} />
-                        </div>
-                        <span className="text-white/60 text-[12px] w-28 flex-none">{r.count} 条 · 回复 {r.replyRate}%</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -1321,13 +1336,25 @@ function DemoPageInner() {
         <span className="text-white/45 text-[13px] flex-none">{stats ? `${stats.total} 条评论` : "加载中..."}</span>
       </div>
 
-      {activePanel === "reply" ? ReplyResult : activePanel === "ask" ? AskResult : AnalyzeResult}
+      {showDataLoading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-[pulse_1.2s_ease-in-out_infinite]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-[pulse_1.2s_ease-in-out_200ms_infinite]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-[pulse_1.2s_ease-in-out_400ms_infinite]" />
+            </div>
+            <p className="mt-3 text-white/45 text-[13px] tracking-wide">评论数据加载中</p>
+          </div>
+        </div>
+      ) : (
+        activePanel === "reply" ? ReplyResult : activePanel === "ask" ? AskResult : AnalyzeResult
+      )}
     </div>
   );
 
   return (
     <div className="h-screen flex flex-col font-[family-name:var(--font-geist)] overflow-hidden">
-
       <div className="hidden md:flex flex-1 overflow-hidden">
         {LeftPanel}
         {CenterPanel}
