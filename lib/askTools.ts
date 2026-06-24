@@ -79,7 +79,7 @@ export const ASK_TOOLS = [
     function: {
       name: "query_reviews",
       description:
-        "查询真实评论样本（含原文/中文翻译、AI 标签、评分）。用于了解用户具体在抱怨或称赞什么。返回 total 与抽样条数。",
+        "查询真实评论样本（含原文/中文翻译、AI 标签、评分）。用于了解用户具体在抱怨或称赞什么，也支持按关键词检索。返回 total（符合条件的总数，即使只抽样返回少量）与抽样条数——判断『有没有/是否存在某主题』时优先看 total。",
       parameters: {
         type: "object",
         properties: {
@@ -89,6 +89,7 @@ export const ASK_TOOLS = [
           tag: { type: "string", description: "AI 标签 key，如 billing、feature_request" },
           subTag: { type: "string", description: "子问题 subKey，需与 tag 一起使用" },
           rating: { type: "number", description: "筛选星级 1-5" },
+          q: { type: "string", description: "关键词，模糊匹配评论原文、中英文翻译与作者名（如『印度』或『India』）。问『有没有提到X』时用它，并放宽时间范围覆盖全部数据" },
           limit: { type: "number", description: "返回条数，默认 15，最多 30" },
         },
       },
@@ -144,6 +145,7 @@ export async function executeAskTool(
     const tag = typeof args.tag === "string" ? args.tag : undefined;
     const subTag = typeof args.subTag === "string" ? args.subTag : undefined;
     const rating = typeof args.rating === "number" ? args.rating : undefined;
+    const q = typeof args.q === "string" && args.q.trim() ? args.q.trim() : undefined;
     const { items, total } = await queryReviews({
       appId: ctx.appId,
       since,
@@ -152,6 +154,7 @@ export async function executeAskTool(
       tag,
       subTag,
       rating,
+      q,
       page: 1,
       pageSize: limit,
     });
@@ -163,6 +166,7 @@ export async function executeAskTool(
         tag: tag ?? null,
         subTag: subTag ?? null,
         rating: rating ?? null,
+        q: q ?? null,
       },
       total,
       returned: items.length,

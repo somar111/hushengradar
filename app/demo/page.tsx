@@ -111,9 +111,9 @@ const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
 };
 
 const DEFAULT_AI_REPLY_SETTINGS: AiReplySettings = {
-  tone: "回复语言：用「评论原文」的原语言回复。口语化、先表达理解或致歉（如果需要的话），然后再说明，不做过度承诺，多说「收到问题」「已通知开发 team」「已通知设计 team」等",
-  style: "不要千篇一律，不要冗长",
-  contactInfo: "如果有可能要退款的需求：example-refund@gmail；如果是严重问题的反馈、严重 bug 等问题：example-support@gmail（非严重的话就不要加联系方式）",
+  tone: "口语化、像真人而非客服模板。按评论类型调整基调：投诉/差评——先表达理解或致歉（如确有问题），再说明，不过度承诺，多用「已收到问题」「已转达开发团队」「已转达设计团队」；好评——真诚感谢、不要致歉、无需附联系方式；功能请求——感谢建议并说明「已转达产品团队评估」，不承诺一定实现。遇崩溃/闪退/卡顿等 bug，请用户补充设备型号、系统与游戏版本、复现步骤或截图，便于跟进。",
+  style: "不要千篇一律、不要客服腔模板，自然简洁。长度控制在 2~4 句、约 40~120 字，差评也不要堆砌道歉。默认不主动使用 emoji；仅在回复好评等轻松场景最多用 1 个，投诉、退款、账号、扣费、严重 bug 等场景一律不用。",
+  contactInfo: "涉及退款需求：refund@yourapp.com；涉及账号（丢失/封号/申诉）、充值未到账、扣费/乱扣费、严重 bug 等需核实订单或身份的问题：support@yourapp.com；其余普通问题不要附加任何联系方式。（占位邮箱，请替换为团队真实邮箱）",
 };
 
 function loadJsonSetting<T>(key: string, fallback: T): T {
