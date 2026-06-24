@@ -1,75 +1,52 @@
-// 把评论里已稳定出现的 subTag 写回 apps.seed_categories（只追加，不删改已有项）。
-// taxonomy 是可修订数据：跑完一批分类、人工看过子问题分布后，用此脚本把反复出现的子问题
-// 固化进 taxonomy，下次分类会优先复用。
-// 用法：node scripts/merge-observed-subtags.mjs [appId] [--min 5]
+// 已并入自治的 taxonomy 修订：管线检测到"已稳定出现但还没进体系的子问题"会自动触发一次
+// AI 修订，由模型在整体审视中完成固化（promote）/改名/合并——比单纯机械追加更准（顺手去重近义）。
+// 本脚本保留为薄入口，等价于"现在强制跑一次修订"，与每日 cron 同一条代码路径。
+// 用法：node scripts/merge-observed-subtags.mjs [appId|external_id|名称片段] [--dry-run]
 import { createClient } from "@supabase/supabase-js";
-import { SUBTAG_REUSE_MIN_COUNT, mergeObservedSubTagsIntoTaxonomy } from "../lib/promptKit.mjs";
+import { createDeepSeekCaller } from "../lib/deepseek.mjs";
+import { runTaxonomyStage } from "../lib/taxonomy.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY;
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  throw new Error("缺少环境变量：NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SECRET_KEY");
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+if (!SUPABASE_URL || !SUPABASE_KEY || !DEEPSEEK_API_KEY) {
+  throw new Error("缺少环境变量：NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SECRET_KEY / DEEPSEEK_API_KEY");
 }
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-async function fetchAll(query) {
-  const all = [];
-  let from = 0;
-  while (true) {
-    const { data, error } = await query.range(from, from + 999);
+async function resolveApp(arg) {
+  if (!arg) {
+    const { data, error } = await supabase.from("apps").select("*").order("created_at").limit(1).single();
     if (error) throw error;
-    all.push(...(data || []));
-    if (!data || data.length < 1000) break;
-    from += 1000;
+    return data;
   }
-  return all;
-}
-
-function parseArgs(argv) {
-  let minCount = SUBTAG_REUSE_MIN_COUNT;
-  const pos = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--min") {
-      const n = Number(argv[++i]);
-      if (!Number.isFinite(n) || n < 1) throw new Error("--min 必须是正整数");
-      minCount = n;
-    } else {
-      pos.push(argv[i]);
-    }
-  }
-  return { appId: pos[0], minCount };
+  const { data: byId } = await supabase.from("apps").select("*").eq("id", arg).maybeSingle();
+  if (byId) return byId;
+  const { data: byExt } = await supabase.from("apps").select("*").eq("external_id", arg).maybeSingle();
+  if (byExt) return byExt;
+  const { data: all, error } = await supabase.from("apps").select("*");
+  if (error) throw error;
+  const q = arg.toLowerCase();
+  const matches = (all ?? []).filter(
+    (a) => a.display_name?.toLowerCase().includes(q) || a.external_id?.toLowerCase().includes(q)
+  );
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) throw new Error(`「${arg}」匹配到多个 App：${matches.map((a) => a.display_name).join("、")}`);
+  throw new Error(`找不到 App：${arg}`);
 }
 
 async function main() {
-  const { appId, minCount } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const dryRun = argv.includes("--dry-run");
+  const appArg = argv.find((a) => !a.startsWith("--"));
 
-  const { data: app, error: appErr } = appId
-    ? await supabase.from("apps").select("*").eq("id", appId).single()
-    : await supabase.from("apps").select("*").order("created_at").limit(1).single();
-  if (appErr) throw appErr;
-  console.log(`App: ${app.display_name} (${app.id})，稳定阈值 >= ${minCount} 次`);
+  const app = await resolveApp(appArg);
+  console.log(`App: ${app.display_name} (${app.id})${dryRun ? "　[dry-run]" : ""}`);
+  console.log("提示：子问题固化已并入自治修订，这里等价于强制跑一次 taxonomy 修订。");
 
-  const classified = await fetchAll(
-    supabase.from("reviews").select("ai_tags").eq("app_id", app.id).not("ai_classified_at", "is", null)
-  );
-  const { taxonomy, added } = mergeObservedSubTagsIntoTaxonomy(app.seed_categories ?? [], classified, minCount);
-  if (!added) {
-    console.log("没有新的子问题需要写入 taxonomy。");
-    return;
-  }
-
-  const { error } = await supabase.from("apps").update({ seed_categories: taxonomy }).eq("id", app.id);
-  if (error) throw error;
-
-  console.log(`已追加 ${added} 个子问题到 apps.seed_categories。`);
-  for (const c of taxonomy) {
-    if (!c.subcategories?.length) continue;
-    console.log(`- ${c.key}(${c.label})`);
-    console.log(`    ${c.subcategories.map((s) => `${s.key}(${s.label})`).join("、")}`);
-  }
+  const callModel = createDeepSeekCaller(DEEPSEEK_API_KEY, { temperature: 0.3 });
+  const report = await runTaxonomyStage({ supabase, app, callModel, options: { force: true, dryRun } });
+  console.log(`\n结果：${report.action}${report.version ? `（v${report.version}）` : ""}`);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main().catch((e) => { console.error(e); process.exit(1); });

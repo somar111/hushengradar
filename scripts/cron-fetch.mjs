@@ -16,6 +16,8 @@ import {
   subTagMapToPromptObject,
   validateClassifiedTags,
 } from "../lib/promptKit.mjs";
+import { runTaxonomyStage } from "../lib/taxonomy.mjs";
+import { createDeepSeekCaller } from "../lib/deepseek.mjs";
 
 const UNIVERSAL_KEYS = new Set(UNIVERSAL_CATEGORIES.map((c) => c.key));
 
@@ -372,7 +374,7 @@ async function processApp(app) {
   });
 
   const classifiedForAudit = await fetchAllRows(
-    supabase.from("reviews").select("ai_tags").eq("app_id", app.id).not("ai_classified_at", "is", null)
+    supabase.from("reviews").select("ai_tags, review_date").eq("app_id", app.id).not("ai_classified_at", "is", null)
   );
   const countIssues = findTagCountInconsistencies(buildTagCountsFromReviews(classifiedForAudit));
   if (countIssues.length) {
@@ -380,6 +382,23 @@ async function processApp(app) {
       `标签计数恒等式异常 ${countIssues.length} 个顶层（子问题之和 ≠ 母问题，多为历史数据）：`,
       countIssues.slice(0, 5).map((i) => `${i.key}(${i.parentCount}/${i.subSum})`).join("、")
     );
+  }
+
+  // 2.5 taxonomy 自治阶段：基于本轮分类后的真实标签分布，让 AI 判断体系是否合身并产出修订。
+  // 非破坏性修订（改名/合并子问题/固化）自动应用并版本化；破坏性（需重读）写 pending_reclassify
+  // 等人工确认。失败不影响抓取/翻译主流程——分类体系维护是增量优化，不是关键路径。
+  let taxonomyChanged = false;
+  try {
+    const callModel = createDeepSeekCaller(DEEPSEEK_API_KEY, { temperature: 0.3 });
+    const report = await runTaxonomyStage({
+      supabase,
+      app,
+      callModel,
+      options: { classifiedReviews: classifiedForAudit },
+    });
+    taxonomyChanged = report.action !== "none" && !report.dryRun;
+  } catch (e) {
+    console.error("taxonomy 阶段失败（已跳过，不影响主流程）：", e.message);
   }
 
   // 3. 翻译所有未翻译过的，同样分页拉全量 + 并发
@@ -403,7 +422,7 @@ async function processApp(app) {
   // 4. 重新生成所有标签的摘要——不能只看"今天有没有抓到新评论"（fetched），重新分类老评论
   // （unclassified > 0，比如批量重置 ai_classified_at 触发的全量重分类）同样会改变标签内容，
   // 必须一起触发刷新，否则摘要会带着旧的（污染过的）样本继续放着，重分类等于白做
-  if (fetched.length > 0 || unclassified.length > 0) {
+  if (fetched.length > 0 || unclassified.length > 0 || taxonomyChanged) {
     const allReviews = await fetchAllRows(
       supabase.from("reviews").select("content, ai_tags").eq("app_id", app.id)
     );
@@ -431,7 +450,7 @@ async function processApp(app) {
       }
     }
   } else {
-    console.log("没有新数据，跳过摘要刷新");
+    console.log("没有新数据、也无 taxonomy 变更，跳过摘要刷新");
   }
 
   // 5. 整条管线跑完，更新展示用时间戳（locale_watermarks 已在抓取后落盘）

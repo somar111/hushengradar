@@ -1,10 +1,17 @@
-// 重置指定 App 的全部 AI 分类结果，并只对该 App 跑 cron-fetch（抓取+分类+翻译+摘要）。
-// 通用：node scripts/reclassify-app.mjs <appId|external_id|名称片段>
-// 仅重置、不跑 cron：node scripts/reclassify-app.mjs <...> --reset-only
+// 执行"破坏性重分类"——taxonomy 修订里需重读评论才能落地的那部分（apps.pending_reclassify）。
+// 这是产品里唯一需要人工确认的破坏性动作（其余非破坏性修订由管线自动应用）。
+//
+// 默认按 pending_reclassify 的 scope 走（通常是 incremental：只重置受影响评论，省 API 额度）：
+//   node scripts/reclassify-app.mjs <appId|external_id|名称片段>
+// 强制全量重分类（清空该 App 全部分类后重跑，忽略 pending 的增量范围）：
+//   node scripts/reclassify-app.mjs <...> --full
+// 只重置、不跑 cron：
+//   node scripts/reclassify-app.mjs <...> --reset-only
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { createClient } from "@supabase/supabase-js";
+import { resetReviewsForReclassify } from "../lib/taxonomy.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY;
@@ -31,76 +38,67 @@ async function resolveApp(arg) {
   throw new Error(`找不到 App：${arg}`);
 }
 
-async function resetClassification(app) {
-  const { count: classified, error: countErr } = await supabase
-    .from("reviews")
-    .select("*", { count: "exact", head: true })
-    .eq("app_id", app.id)
-    .not("ai_classified_at", "is", null);
-  if (countErr) throw countErr;
-
-  const { count: total, error: totalErr } = await supabase
-    .from("reviews")
-    .select("*", { count: "exact", head: true })
-    .eq("app_id", app.id);
-  if (totalErr) throw totalErr;
-
-  console.log(`将重置 ${app.display_name}：共 ${total ?? 0} 条评论，其中已分类 ${classified ?? 0} 条`);
-
-  const { error: updErr } = await supabase
-    .from("reviews")
-    .update({ ai_tags: [], ai_tag_keys: [], ai_classified_at: null })
-    .eq("app_id", app.id);
-  if (updErr) throw updErr;
-
-  const { error: sumErr } = await supabase.from("tag_summaries").delete().eq("app_id", app.id);
-  if (sumErr) throw sumErr;
-
-  console.log("已清空 ai_tags / ai_classified_at 与 tag_summaries。");
-}
-
 function runCronForApp(appKey) {
   const cronPath = join(dirname(fileURLToPath(import.meta.url)), "cron-fetch.mjs");
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cronPath, appKey], {
-      stdio: "inherit",
-      env: process.env,
-    });
+    const child = spawn(process.execPath, [cronPath, appKey], { stdio: "inherit", env: process.env });
     child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`cron-fetch 退出码 ${code}`));
-    });
+    child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`cron-fetch 退出码 ${code}`))));
   });
 }
 
 async function main() {
   const argv = process.argv.slice(2);
   const resetOnly = argv.includes("--reset-only");
+  const forceFull = argv.includes("--full");
   const appArg = argv.find((a) => !a.startsWith("--"));
   if (!appArg) {
-    console.error("用法：node scripts/reclassify-app.mjs <appId|external_id|名称片段> [--reset-only]");
+    console.error("用法：node scripts/reclassify-app.mjs <appId|external_id|名称片段> [--full] [--reset-only]");
     process.exit(1);
   }
 
   const app = await resolveApp(appArg);
   console.log(`App: ${app.display_name} (${app.id})`);
 
-  await resetClassification(app);
-  if (resetOnly) {
-    console.log("--reset-only：未启动 cron-fetch。可稍后执行：node scripts/cron-fetch.mjs", app.external_id || app.id);
-    return;
+  const pending = app.pending_reclassify ?? null;
+  // 范围决策：--full 强制全量；否则跟随 pending 的 scope；没有 pending 也没 --full 时默认全量（手动语义）
+  let scope = "full";
+  let affectedKeys = [];
+  if (!forceFull && pending) {
+    scope = pending.scope ?? "incremental";
+    affectedKeys = pending.affectedKeys ?? [];
+    console.log(`按待确认提案执行（v${pending.fromVersion}→v${pending.toVersion}，${scope}）：${pending.reason ?? ""}`);
+    if (affectedKeys.length) console.log(`受影响顶层 key：${affectedKeys.join("、")}`);
+  } else if (!pending && !forceFull) {
+    console.log("没有待确认的 pending_reclassify，按全量重分类处理（可用 --full 显式声明）。");
+  } else if (forceFull) {
+    console.log("--full：强制全量重分类，忽略 pending 的增量范围。");
   }
 
-  if (!process.env.DEEPSEEK_API_KEY) {
-    throw new Error("重分类需要 DEEPSEEK_API_KEY");
+  const reset = await resetReviewsForReclassify({ supabase, app, scope, affectedKeys });
+  console.log(`已重置 ${reset} 条评论的分类（${scope}）。`);
+
+  // 受影响评论的旧标签摘要会随重分类刷新；增量场景下 tag_summaries 由 cron 末尾按全量重算覆盖
+  if (scope === "full") {
+    const { error } = await supabase.from("tag_summaries").delete().eq("app_id", app.id);
+    if (error) throw error;
+    console.log("已清空 tag_summaries（全量场景）。");
   }
+
+  // 消费掉 pending（已落地）
+  if (pending && !resetOnly) {
+    const { error } = await supabase.from("apps").update({ pending_reclassify: null }).eq("id", app.id);
+    if (error) throw error;
+  }
+
+  if (resetOnly) {
+    console.log("--reset-only：未启动 cron-fetch。稍后执行：node scripts/cron-fetch.mjs", app.external_id || app.id);
+    return;
+  }
+  if (!process.env.DEEPSEEK_API_KEY) throw new Error("重分类需要 DEEPSEEK_API_KEY");
 
   console.log("\n开始对该 App 跑 cron-fetch（抓取 + 分类 + 翻译 + 摘要）…");
   await runCronForApp(app.external_id || app.id);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main().catch((e) => { console.error(e); process.exit(1); });
