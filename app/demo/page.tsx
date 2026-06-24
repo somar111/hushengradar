@@ -632,9 +632,14 @@ function DemoPageInner() {
   }, [selectedAppId, selectedApp, locale, since]);
 
   // 拉评论列表（筛选/翻页变化时）
+  // 筛选一变，这个 effect 会先用旧 page 发一次请求，紧接着翻页重置 effect 再用 page=1 发一次；
+  // 两次请求没有时序保证，要是先发的那次（可能落在一个空页上）反而后返回，就会把正确结果覆盖成空，
+  // 表现为"评论区有时候不显示"。用一个自增的请求序号当守卫，只让最新一次请求的结果落地、丢弃过期返回。
+  const reviewsReqIdRef = useRef(0);
   useEffect(() => {
     if (!selectedAppId || !selectedApp) return;
     setLoading(true);
+    const reqId = ++reviewsReqIdRef.current;
     const params = new URLSearchParams();
     params.set("appId", selectedAppId);
     params.set("since", since);
@@ -648,10 +653,13 @@ function DemoPageInner() {
     fetch(`/api/demo/reviews?${params}`)
       .then((r) => r.json())
       .then((data) => {
-        setReviews(data.items);
-        setTotal(data.total);
+        if (reqId !== reviewsReqIdRef.current) return;
+        setReviews(data.items ?? []);
+        setTotal(data.total ?? 0);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (reqId === reviewsReqIdRef.current) setLoading(false);
+      });
   }, [selectedAppId, selectedApp, locale, tagFilter, subTagFilter, search, repliedFilter, page, since]);
 
   useEffect(() => {
