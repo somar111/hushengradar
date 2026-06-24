@@ -5,7 +5,7 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Layers, Globe,
+  Globe,
   ListOrdered, GitCompare, Bot, Reply,
   X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp,
 } from "lucide-react";
@@ -63,7 +63,6 @@ type Stats = {
 };
 
 type RightPanel = "complaints" | "analysis" | "ask" | "reply";
-type MobileTab = "filter" | "analyze";
 type Platform = "googleplay" | "appstore";
 type TargetLang = "zh" | "en";
 type TranslateScope = "non_target" | "non_zh_en";
@@ -105,10 +104,6 @@ function Stars({ rating }: { rating: number }) {
       {"★".repeat(rating)}{"☆".repeat(5 - rating)}
     </span>
   );
-}
-
-function GlassPanel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`bg-[#1a2030] ${className}`}>{children}</div>;
 }
 
 // 纯展示的信息小图标：用 position:fixed 算坐标弹出说明文字，不用浏览器原生 title
@@ -387,7 +382,6 @@ function DemoPageInner() {
   const [pageRaw, setPageRaw] = useQueryState("page", "1", "replace");
   const page = Number(pageRaw) || 1;
   const setPage = (v: number) => setPageRaw(String(v));
-  const [mobileTab, setMobileTab] = useState<MobileTab>("analyze");
   const [translateSettings, setTranslateSettings] = useState<TranslateSettings>({
     enabled: true,
     targetLang: "zh",
@@ -426,6 +420,8 @@ function DemoPageInner() {
   const chatRequestStartedAtRef = useRef(0);
   const chatBusyRef = useRef(false);
   const composingRef = useRef(false);
+  const translateMenuRef = useRef<HTMLDivElement>(null);
+  const replyDetailRef = useRef<HTMLDivElement>(null);
 
   const selectedApp = apps.find((a) => a.id === selectedAppId);
   // 锚点用这个App真实数据里最新一条评论的日期，不用服务器当前时间——见 lib/reviews.ts
@@ -524,6 +520,30 @@ function DemoPageInner() {
     if (!viewport) return;
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
   }, [chatMessages, chatLoading]);
+
+  useEffect(() => {
+    if (!showTranslateSettings) return;
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (translateMenuRef.current && !translateMenuRef.current.contains(target)) {
+        setShowTranslateSettings(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [showTranslateSettings]);
+
+  useEffect(() => {
+    if (!selectedReview) return;
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (replyDetailRef.current && !replyDetailRef.current.contains(target)) {
+        setSelectedReview(null);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [selectedReview]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -683,7 +703,6 @@ function DemoPageInner() {
   // 互相覆盖，结果只有最后一个生效，标签压根没设上，所以点了没反应（这就是"点击进不去"的根因）。
   function jumpToTag(tag: string, subTag?: string) {
     setParams({ tag, subTag: subTag ?? "", panel: "reply" });
-    setMobileTab("analyze");
   }
 
   const rightPanelItems: { key: RightPanel; label: string; icon: React.ReactNode }[] = [
@@ -718,16 +737,18 @@ function DemoPageInner() {
                 // 整张卡不再是一个大 button——子问题要单独可点，button 不能嵌 button。
                 // 圆环+标题行点了跳整个标签，子问题 chip 点了跳到那个具体子问题。
                 return (
-                  <div key={tag}
-                    className="border border-white/10 hover:bg-white/8 transition-colors rounded-xl p-4 flex items-center gap-4">
-                    <button onClick={() => jumpToTag(tag)} className="flex-none">
+                  <div
+                    key={tag}
+                    onClick={() => jumpToTag(tag)}
+                    className="border border-white/10 hover:bg-white/8 transition-colors rounded-xl p-4 flex items-center gap-4 cursor-pointer">
+                    <div className="flex-none">
                       <DonutPercent percent={pct} />
-                    </button>
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <button onClick={() => jumpToTag(tag)} className="flex items-center gap-2 mb-1 text-left">
+                      <div className="flex items-center gap-2 mb-1 text-left">
                         <span className="text-white/60 text-[14px] font-mono">#{i + 1}</span>
                         <span className="text-white/95 text-[17px] font-semibold">{t.label}（{t.count}）</span>
-                      </button>
+                      </div>
                       <TagBreakdown t={t} onJump={(subKey) => jumpToTag(tag, subKey)} />
                     </div>
                   </div>
@@ -758,7 +779,7 @@ function DemoPageInner() {
         }));
 
         return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1fr] gap-5 items-start">
             <div className="bg-[#242c3d] rounded-3xl p-6">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-white/95 text-[18px] font-bold">评分分析</p>
@@ -842,57 +863,58 @@ function DemoPageInner() {
               )}
             </div>
 
-            <div className="bg-[#242c3d] rounded-3xl p-6">
-              <p className="text-white/95 text-[18px] font-bold mb-4">诉求占比</p>
-              <p className="text-white/75 text-[14px] mb-4">
-                真实数据画像：按 AI 分类命中量统计{timeRangeLabel}整体构成，点击任意一块跳转查看该类全部真实评论：
-              </p>
-              <div className="flex items-center gap-6 flex-wrap">
-                <PieBreakdown
-                  slices={sorted.map(([tag, t], i) => ({ key: tag, count: t.count, color: sliceColors[i] }))}
-                  hoveredKey={hoveredTag} onHoverKey={setHoveredTag} />
-                <div className="flex-1 min-w-[220px] flex flex-col gap-1.5">
-                  {sorted.map(([tag, t], i) => {
-                    const pct = stats.total ? Math.round((t.count / stats.total) * 1000) / 10 : 0;
-                    return (
-                      <button key={tag} onClick={() => jumpToTag(tag)}
-                        onMouseEnter={() => setHoveredTag(tag)} onMouseLeave={() => setHoveredTag(null)}
-                        className={`flex items-center gap-2 text-left rounded-lg px-2 py-1.5 transition-colors ${
-                          hoveredTag === tag ? "bg-white/10" : "hover:bg-white/8"
-                        }`}>
-                        <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ backgroundColor: sliceColors[i] }} />
-                        <span className="text-white/85 text-[13px] flex-1 min-w-0 truncate">{t.label}</span>
-                        <span className="text-white/60 text-[12px] flex-none">{t.count} 条 · {pct}%</span>
+            <div className="md:col-start-2">
+              <div className="bg-[#242c3d] rounded-3xl p-6">
+                <p className="text-white/95 text-[18px] font-bold mb-4">诉求占比</p>
+                <p className="text-white/75 text-[14px] mb-4">
+                  真实数据画像：按 AI 分类命中量统计{timeRangeLabel}整体构成，点击任意一块跳转查看该类全部真实评论：
+                </p>
+                <div className="flex items-center gap-6 flex-wrap">
+                  <PieBreakdown
+                    slices={sorted.map(([tag, t], i) => ({ key: tag, count: t.count, color: sliceColors[i] }))}
+                    hoveredKey={hoveredTag} onHoverKey={setHoveredTag} />
+                  <div className="flex-1 min-w-[220px] flex flex-col gap-1.5">
+                    {sorted.map(([tag, t], i) => {
+                      const pct = stats.total ? Math.round((t.count / stats.total) * 1000) / 10 : 0;
+                      return (
+                        <button key={tag} onClick={() => jumpToTag(tag)}
+                          onMouseEnter={() => setHoveredTag(tag)} onMouseLeave={() => setHoveredTag(null)}
+                          className={`flex items-center gap-2 text-left rounded-lg px-2 py-1.5 transition-colors ${
+                            hoveredTag === tag ? "bg-white/10" : "hover:bg-white/8"
+                          }`}>
+                          <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ backgroundColor: sliceColors[i] }} />
+                          <span className="text-white/85 text-[13px] flex-1 min-w-0 truncate">{t.label}</span>
+                          <span className="text-white/60 text-[12px] flex-none">{t.count} 条 · {pct}%</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {insightsLoading && <InsightsLoading />}
+                {insights?.complaintsVsFeatureRequest && (
+                  <div className="bg-emerald-900/35 rounded-xl p-4 mt-4">
+                    <p className="text-emerald-400 text-[14px] font-semibold mb-1">分析</p>
+                    <p className="text-white/80 text-[14px] leading-relaxed">{insights.complaintsVsFeatureRequest}</p>
+                  </div>
+                )}
+                <div className="mt-6 pt-5 border-t border-white/10">
+                  <p className="text-white/95 text-[18px] font-bold mb-3">官方回复覆盖率</p>
+                  <p className="text-white/75 text-[14px] mb-4">
+                    整体回复率 {stats.officialReplyRate}%
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    {replyByTag.map((r) => (
+                      <button key={r.tag} onClick={() => jumpToTag(r.tag)}
+                        className="flex items-center gap-3 text-left rounded-lg px-2 py-1 hover:bg-white/8 transition-colors">
+                        <span className="text-white/85 text-[13px] w-28 flex-none truncate">{r.label}</span>
+                        <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${r.replyRate}%` }} />
+                        </div>
+                        <span className="text-white/60 text-[12px] w-28 flex-none">{r.count} 条 · 回复 {r.replyRate}%</span>
                       </button>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
-              </div>
-              {insightsLoading && <InsightsLoading />}
-              {insights?.complaintsVsFeatureRequest && (
-                <div className="bg-emerald-900/35 rounded-xl p-4 mt-4">
-                  <p className="text-emerald-400 text-[14px] font-semibold mb-1">分析</p>
-                  <p className="text-white/80 text-[14px] leading-relaxed">{insights.complaintsVsFeatureRequest}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-[#242c3d] rounded-3xl p-6">
-              <p className="text-white/95 text-[18px] font-bold mb-4">官方回复覆盖率</p>
-              <p className="text-white/75 text-[14px] mb-4">
-                整体回复率 {stats.officialReplyRate}%
-              </p>
-              <div className="flex flex-col gap-1.5">
-                {replyByTag.map((r) => (
-                  <button key={r.tag} onClick={() => jumpToTag(r.tag)}
-                    className="flex items-center gap-3 text-left rounded-lg px-2 py-1 hover:bg-white/8 transition-colors">
-                    <span className="text-white/85 text-[13px] w-28 flex-none truncate">{r.label}</span>
-                    <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full bg-emerald-500" style={{ width: `${r.replyRate}%` }} />
-                    </div>
-                    <span className="text-white/60 text-[12px] w-28 flex-none">{r.count} 条 · 回复 {r.replyRate}%</span>
-                  </button>
-                ))}
               </div>
             </div>
 
@@ -1033,7 +1055,7 @@ function DemoPageInner() {
             "{search}" <X size={11} />
           </button>
         )}
-        <div className="relative">
+        <div className="relative" ref={translateMenuRef}>
           <button onClick={() => setShowTranslateSettings((v) => !v)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-colors ${
               translateSettings.enabled ? "bg-white/12 text-white/80" : "bg-white/6 text-white/60"
@@ -1126,7 +1148,7 @@ function DemoPageInner() {
       </div>
 
       {/* 回复详情 / AI 回复 */}
-      <div className="bg-white/4 p-4">
+      <div ref={replyDetailRef} className="bg-white/4 p-4">
         {selectedReview ? (
           <div className="flex flex-col gap-2">
             {(() => {
@@ -1172,7 +1194,7 @@ function DemoPageInner() {
             </div>
           </div>
         ) : (
-          <p className="text-white/35 text-[14px] px-1">点击左侧评论卡片，查看 AI 回复建议</p>
+          <p className="text-white/35 text-[14px] px-1">点击评论卡片，查看 AI 回复建议</p>
         )}
       </div>
     </div>
@@ -1311,77 +1333,12 @@ function DemoPageInner() {
         {CenterPanel}
       </div>
 
-      <div className="flex md:hidden flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-hidden p-3">
-          {mobileTab === "filter" && (
-            <GlassPanel className="h-full rounded-2xl overflow-y-auto p-4">
-              <p className="text-white/68 text-[14px] uppercase tracking-wider mb-4">筛选条件</p>
-              <div className="flex flex-col gap-5">
-                <div>
-                  <p className="text-white/45 text-[12px] uppercase tracking-wider mb-2">App</p>
-                  <select value={selectedAppId ?? ""} onChange={(e) => setParams({ app: e.target.value, locale: "", tag: "", subTag: "" })}
-                    className="w-full bg-white/8 rounded-lg px-3 py-2 text-[16px] text-white/85 outline-none">
-                    {apps.map((a) => (
-                      <option key={a.id} value={a.id} className="bg-[#242c3d]">{a.display_name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <p className="text-white/45 text-[12px] uppercase tracking-wider mb-2">时间范围</p>
-                  <div className={`${SEG_TRACK} w-fit`}>
-                    {(["week", "month"] as TimeRange[]).map((t) => (
-                      <button key={t} onClick={() => setTimeRange(t)}
-                        className={`px-3.5 py-1.5 rounded-full text-[14px] transition-colors ${timeRange === t ? `${SEG_PILL_ON} font-bold` : `${SEG_PILL_OFF} font-medium`}`}>
-                        {t === "week" ? "最近一周" : "最近一月"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-white/45 text-[12px] uppercase tracking-wider mb-2">平台</p>
-                  {(["googleplay", "appstore"] as Platform[]).map((p) => (
-                    <button key={p} onClick={() => setPlatform(p)}
-                      className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${platform === p ? "bg-white/12 text-white/90" : "text-white/75 hover:bg-white/10"}`}>
-                      {p === "appstore" ? "App Store（暂无数据）" : "Google Play"}
-                    </button>
-                  ))}
-                </div>
-                {platform === "googleplay" && stats && (
-                  <div>
-                    <p className="text-white/60 text-[14px] uppercase tracking-wider font-semibold mb-2 flex items-center gap-1.5">
-                      语言/地区批次
-                      <InfoTooltip text="此为 Google Play 官方分类方式，不代表评论的真实语言或所在地区" size={15} />
-                    </p>
-                    <button onClick={() => setLocale(undefined)}
-                      className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${!locale ? "bg-white/12 text-white/90" : "text-white/75 hover:bg-white/10"}`}>
-                      <Globe size={13} />全部 ({allLocalesTotal})
-                    </button>
-                    {Object.entries(stats.localeCounts).sort((a, b) => b[1] - a[1]).map(([l, count]) => (
-                      <button key={l} onClick={() => setLocale(l)}
-                        className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg mb-1 text-[16px] transition-colors ${locale === l ? "bg-white/12 text-white/90" : "text-white/75 hover:bg-white/10"}`}>
-                        <Globe size={13} />{localeLabel(l)} ({count})
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </GlassPanel>
-          )}
-
-          {mobileTab === "analyze" && CenterPanel}
-        </div>
-
-        <div className="bg-[#1a2030] flex">
-          {([
-            { key: "filter", label: "筛选", icon: <Layers size={18} /> },
-            { key: "analyze", label: "分析", icon: <BarChart2 size={18} /> },
-          ] as { key: MobileTab; label: string; icon: React.ReactNode }[]).map((tab) => (
-            <button key={tab.key} onClick={() => setMobileTab(tab.key)}
-              className={`flex-1 flex flex-col items-center py-3 gap-1 text-[13px] transition-colors ${mobileTab === tab.key ? "text-white/80" : "text-white/45"}`}>
-              {tab.icon}
-              <span>{tab.label}</span>
-            </button>
-          ))}
+      <div className="flex md:hidden flex-1 flex-col overflow-hidden items-center justify-center px-6 text-center">
+        <div className="max-w-sm">
+          <h1 className="text-2xl font-bold text-white mb-3">呼声雷达 Demo</h1>
+          <p className="text-white/65 leading-relaxed">
+            请在电脑端浏览器访问，移动端 Demo 暂未适配。
+          </p>
         </div>
       </div>
     </div>
