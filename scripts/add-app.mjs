@@ -92,7 +92,14 @@ async function main() {
   const { error } = await supabase
     .from("apps")
     .upsert(
-      { platform, external_id: externalId, display_name: displayName, context, seed_categories: seedCategories },
+      {
+        platform,
+        external_id: externalId,
+        display_name: displayName,
+        context,
+        seed_categories: seedCategories,
+        locale_discovery: { enabled: true, minWeeklyReviews: 50, reprobeDays: 7 },
+      },
       { onConflict: "platform,external_id" }
     );
   if (error) throw error;

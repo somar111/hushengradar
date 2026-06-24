@@ -30,6 +30,19 @@ const FALLBACK_LOCALES = [
   ["ja", "jp"], ["ko", "kr"],
 ];
 
+// locale_discovery 开启时的探测候选（[lang, country]）；各 App 可在 locale_discovery.candidates 覆盖
+const LOCALE_CANDIDATES = [
+  ["en", "us"], ["en", "gb"], ["en", "ph"], ["en", "my"], ["en", "sg"], ["en", "in"], ["en", "au"], ["en", "ca"],
+  ["id", "id"], ["th", "th"], ["vi", "vn"], ["pt", "br"], ["es", "mx"], ["es", "es"], ["fr", "fr"],
+  ["de", "de"], ["ru", "ru"], ["ja", "jp"], ["ko", "kr"], ["zh", "tw"], ["zh", "hk"],
+  ["ar", "sa"], ["tr", "tr"], ["hi", "in"], ["it", "it"], ["pl", "pl"], ["nl", "nl"],
+  ["ms", "my"], ["tl", "ph"],
+];
+
+const DEFAULT_MIN_WEEKLY_REVIEWS = 50;
+const DEFAULT_REPROBE_DAYS = 7;
+const PROBE_MAX_PAGES = 5;
+
 async function withRetry(fn, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
@@ -62,6 +75,87 @@ async function fetchReviewsSince(packageName, sinceDate, lang, country) {
     text: r.text ?? "", version: r.version ?? null,
     replyDate: r.replyDate ?? null, replyText: r.replyText ?? null,
   }));
+}
+
+// 探测某个 locale 最近 7 天能刷到多少条评论；够阈值就提前停，不全量翻页
+async function probeWeeklyReviewCount(packageName, lang, country, minReviews = DEFAULT_MIN_WEEKLY_REVIEWS) {
+  const since = new Date(Date.now() - 7 * 86400000);
+  let count = 0;
+  let token;
+  for (let page = 0; page < PROBE_MAX_PAGES; page++) {
+    const res = await gplay.reviews({
+      appId: packageName, sort: SORT_NEWEST, num: 150, lang, country,
+      paginate: true, nextPaginationToken: token,
+    });
+    if (!res.data.length) break;
+    for (const r of res.data) {
+      if (new Date(r.date) >= since) {
+        count++;
+        if (count >= minReviews) return count;
+      } else {
+        return count;
+      }
+    }
+    token = res.nextPaginationToken;
+    if (!token) break;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return count;
+}
+
+async function resolveActiveLocales(app) {
+  const discovery = app.locale_discovery ?? {};
+  const minWeekly = discovery.minWeeklyReviews ?? DEFAULT_MIN_WEEKLY_REVIEWS;
+  const reprobeDays = discovery.reprobeDays ?? DEFAULT_REPROBE_DAYS;
+  const candidates = discovery.candidates?.length ? discovery.candidates : LOCALE_CANDIDATES;
+
+  if (app.locale_probed_at) {
+    const probedAt = new Date(app.locale_probed_at);
+    const cutoff = new Date(Date.now() - reprobeDays * 86400000);
+    if (probedAt > cutoff) {
+      const cached = app.active_locales ?? [];
+      console.log(`使用缓存 active_locales（${cached.length} 个），上次探测 ${app.locale_probed_at}`);
+      return cached;
+    }
+  }
+
+  console.log(`探测 ${candidates.length} 个候选 locale（本周 ≥${minWeekly} 条才纳入）...`);
+  const active = [];
+  for (const [lang, country] of candidates) {
+    const localeKey = `${lang}_${country}`;
+    try {
+      const count = await withRetry(() => probeWeeklyReviewCount(app.external_id, lang, country, minWeekly));
+      if (count >= minWeekly) {
+        active.push([lang, country]);
+        console.log(`  ✓ ${localeKey}: ${count} 条/周`);
+      } else {
+        console.log(`  · ${localeKey}: ${count} 条/周，跳过`);
+      }
+    } catch (e) {
+      console.error(`  ✗ ${localeKey} 探测失败:`, e.message);
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+
+  const { error } = await supabase.from("apps").update({
+    active_locales: active,
+    locale_probed_at: new Date().toISOString(),
+  }).eq("id", app.id);
+  if (error) throw error;
+  console.log(`探测完成，活跃 locale ${active.length} 个`);
+  return active;
+}
+
+async function resolveFetchLocales(app) {
+  if (app.target_locales?.length) {
+    console.log(`手动 target_locales：${app.target_locales.length} 个`);
+    return app.target_locales;
+  }
+  if (app.locale_discovery?.enabled) {
+    return resolveActiveLocales(app);
+  }
+  console.log(`兜底 FALLBACK_LOCALES：${FALLBACK_LOCALES.length} 个`);
+  return FALLBACK_LOCALES;
 }
 
 async function classifyReview(content, rating, appContext, seedCategories = [], existingCustomTags = [], existingSubTags = {}) {
@@ -186,8 +280,12 @@ async function processApp(app) {
   const newWatermarks = {};
 
   // 1. 多语言批次抓增量，每个 locale 用各自的水位线
-  const locales = app.target_locales?.length ? app.target_locales : FALLBACK_LOCALES;
+  // 优先级：target_locales（手动）> locale_discovery（自动探测）> FALLBACK_LOCALES
+  const locales = await resolveFetchLocales(app);
   let fetched = [];
+  if (!locales.length) {
+    console.log("无活跃 locale，跳过抓取");
+  }
   for (const [lang, country] of locales) {
     const localeKey = `${lang}_${country}`;
     const since = watermarks[localeKey]

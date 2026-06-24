@@ -24,6 +24,15 @@ export type AppRow = {
   // 从真实评论样本设计生成（add-app 时先用商店listing生成一份粗的、无子问题的兜底）。分类时
   // 按这套体系归类，不逐条临场发明。为空则只有 praise/feature_request/vague_complaint 三个通用类别。
   seed_categories: { key: string; label: string; subcategories?: { key: string; label: string }[] }[] | null;
+  // 自动探测活跃 locale：enabled 时 cron-fetch 按本周评论数阈值筛选抓取批次（见 active_locales）
+  locale_discovery: {
+    enabled?: boolean;
+    minWeeklyReviews?: number;
+    reprobeDays?: number;
+    candidates?: [string, string][];
+  } | null;
+  active_locales: [string, string][] | null;
+  locale_probed_at: string | null;
   created_at: string;
 };
 
