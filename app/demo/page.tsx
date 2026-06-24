@@ -575,8 +575,9 @@ function DemoPageInner() {
   const appName = selectedApp?.display_name ?? "App";
   const askDraftStorageKey = `${ASK_DRAFT_STORAGE_PREFIX}:${selectedAppId || "no-app"}:${timeRange}:${locale || "all"}`;
 
-  // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 切换右侧栏目；评论回复下 ⌥T 开关翻译。
-  // 输入框聚焦时不拦截，避免 ⌥ 组合键打出特殊字符。
+  // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目；评论回复下 ⌥T / Alt+T 开关翻译。
+  // 逻辑同时认 metaKey/ctrlKey 与 altKey，Mac 与 Windows 都生效；面板用中性写法同时标注两套修饰键，
+  // 不依赖平台检测。输入框聚焦时不拦截，避免组合键打出特殊字符或触发浏览器菜单。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
@@ -1535,11 +1536,11 @@ function DemoPageInner() {
               <section>
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">快捷键</p>
                 <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-2">
-                  <ShortcutRow keys={["⌘", "B"]} desc="显示 / 隐藏左侧栏" />
+                  <ShortcutRow keys={["⌘/Ctrl", "B"]} desc="显示 / 隐藏左侧栏" />
                   {RIGHT_PANEL_NAV.map((item, i) => (
-                    <ShortcutRow key={item.key} keys={["⌥", String(i + 1)]} desc={item.label} />
+                    <ShortcutRow key={item.key} keys={["⌥/Alt", String(i + 1)]} desc={item.label} />
                   ))}
-                  <ShortcutRow keys={["⌥", "T"]} desc="开关翻译（评论回复栏目）" />
+                  <ShortcutRow keys={["⌥/Alt", "T"]} desc="开关翻译（评论回复栏目）" />
                 </div>
                 <p className="text-white/40 text-[12px] mt-2 px-1 leading-relaxed">
                   在输入框内打字时不触发，避免误操作。
