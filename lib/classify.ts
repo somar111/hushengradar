@@ -37,8 +37,7 @@ async function callDeepSeek(apiKey: string, body: Record<string, unknown>) {
 }
 
 /**
- * 给 AI 写个性化回复建议。officialReplyExample 是这条评论下（如果有）官方真实回复过的文本，
- * 传进去让模型有真实联系方式/处理流程可参考，而不是在没有真实素材时凭空编造。
+ * 给 AI 写个性化回复建议。联系方式与话术风格由开发者 settings 里的 replyContext 提供。
  */
 export type ReplyContext = {
   tone?: string;
@@ -52,7 +51,6 @@ export async function generateReplySuggestion(opts: {
   author: string;
   tags: ClassifiedTag[];
   appContext?: string | null;
-  officialReplyExample?: string | null;
   replyContext?: ReplyContext | null;
 }): Promise<string> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -62,20 +60,17 @@ export async function generateReplySuggestion(opts: {
 
   const systemPrompt = buildReplyPrompt({
     appContext: opts.appContext,
-    officialReplyExample: opts.officialReplyExample,
     replyContext: opts.replyContext,
   });
 
-  const hasAuthorizedContact = Boolean(
-    opts.officialReplyExample?.trim() || opts.replyContext?.contactInfo?.trim()
-  );
+  const hasAuthorizedContact = Boolean(opts.replyContext?.contactInfo?.trim());
 
   const userPrompt = [
     `评论作者：${opts.author}`,
     `评分：${opts.rating} 星`,
     `问题类型：${opts.tags.map((t) => t.label).join("、") || "无"}`,
     `评论内容：${opts.content}`,
-    hasAuthorizedContact ? "" : "注意：无官方回复示例且未配置自定义联系方式，禁止在回复中出现邮箱、网址、电话。",
+    hasAuthorizedContact ? "" : "注意：未配置自定义联系方式，禁止在回复中出现邮箱、网址、电话。",
   ].filter(Boolean).join("\n");
 
   const data = await callDeepSeek(apiKey, {
@@ -88,7 +83,7 @@ export async function generateReplySuggestion(opts: {
   });
 
   const reply = data.choices?.[0]?.message?.content?.trim() || "";
-  const corpus = [opts.content, opts.officialReplyExample ?? "", opts.replyContext?.contactInfo ?? ""].join("\n");
+  const corpus = [opts.content, opts.replyContext?.contactInfo ?? ""].join("\n");
   return sanitizeUnsourcedContactInfo(reply, corpus);
 }
 

@@ -86,10 +86,23 @@ type AiReplySettings = {
 
 type LeftSidebarView = "filter" | "settings";
 
+const RIGHT_PANEL_NAV: { key: RightPanel; label: string }[] = [
+  { key: "complaints", label: "Top 反馈" },
+  { key: "analysis", label: "综合分析" },
+  { key: "ask", label: "问 AI" },
+  { key: "reply", label: "评论回复" },
+];
+
+const PANEL_ICONS: Record<RightPanel, React.ReactNode> = {
+  complaints: <ListOrdered size={15} />,
+  analysis: <GitCompare size={14} />,
+  ask: <Bot size={14} />,
+  reply: <Reply size={14} />,
+};
+
 const PAGE_SIZE = 200;
 const ASK_DRAFT_STORAGE_PREFIX = "hushengradar.askDraft.v1";
 const TRANSLATE_SETTINGS_KEY = "hushengradar.translateSettings.v1";
-const AI_REPLY_SETTINGS_PREFIX = "hushengradar.aiReplySettings.v1";
 
 const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
   enabled: true,
@@ -98,9 +111,9 @@ const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
 };
 
 const DEFAULT_AI_REPLY_SETTINGS: AiReplySettings = {
-  tone: "",
-  style: "",
-  contactInfo: "",
+  tone: "口语化、先表达理解或致歉（如果需要的话），然后再说明，不做过度承诺，多说「收到问题」「已通知开发 team」「已通知设计 team」等",
+  style: "不要千篇一律，不要冗长",
+  contactInfo: "如果有可能要退款的需求：example-refund@gmail；如果是严重问题的反馈、严重 bug 等问题：example-support@gmail（非严重的话就不要加联系方式）",
 };
 
 function loadJsonSetting<T>(key: string, fallback: T): T {
@@ -122,6 +135,55 @@ function saveJsonSetting(key: string, value: unknown) {
     // ignore quota / private mode
   }
 }
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target.isContentEditable) return true;
+  return Boolean(target.closest("[contenteditable='true']"));
+}
+
+function ShortcutRow({ keys, desc }: { keys: string[]; desc: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-white/75">
+      <span className="min-w-0 leading-snug">{desc}</span>
+      <span className="flex items-center gap-1 flex-none">
+        {keys.map((k) => (
+          <kbd key={k} className="min-w-[1.35rem] text-center px-1.5 py-0.5 rounded bg-[#1d2433] border border-white/12 text-[11px] text-white/70 font-mono">
+            {k}
+          </kbd>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+function LockedFeatureHint({ pos, onClose }: { pos: { top: number; left: number } | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!pos) return;
+    const onPointerDown = (e: MouseEvent) => {
+      const el = e.target as Element;
+      if (el.closest("[data-locked-hint]") || el.closest("[data-ai-reply-field]")) return;
+      onClose();
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [pos, onClose]);
+
+  if (!pos) return null;
+  return (
+    <div
+      data-locked-hint
+      className="fixed z-[100] max-w-[11.5rem] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+      style={{ top: pos.top, left: pos.left }}>
+      暂时不可自定义哦，敬请期待
+    </div>
+  );
+}
+
+const AI_REPLY_FIELD_CLASS =
+  "w-full bg-[#1d2433] border border-white/15 rounded-lg px-2.5 py-2 text-[13px] text-white/85 placeholder-white/35 outline-none resize-none cursor-pointer hover:border-white/25 focus:border-white/30";
 
 function getDisplayContent(r: ReviewRow, s: TranslateSettings): { text: string; translated: boolean } {
   if (!s.enabled) return { text: r.content, translated: false };
@@ -454,8 +516,8 @@ function DemoPageInner() {
   const [translateSettings, setTranslateSettings] = useState<TranslateSettings>(() =>
     loadJsonSetting(TRANSLATE_SETTINGS_KEY, DEFAULT_TRANSLATE_SETTINGS)
   );
-  const [aiReplySettings, setAiReplySettings] = useState<AiReplySettings>(DEFAULT_AI_REPLY_SETTINGS);
   const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("filter");
+  const [lockedHintPos, setLockedHintPos] = useState<{ top: number; left: number } | null>(null);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [hoveredTag, setHoveredTag] = useState<string | null>(null);
   const [bootReady, setBootReady] = useState(false);
@@ -467,6 +529,7 @@ function DemoPageInner() {
   const [ratingView, setRatingView] = useState<"trend" | "distribution" | "locale">("trend");
   useEffect(() => { if (locale && ratingView === "locale") setRatingView("trend"); }, [locale, ratingView]);
   useEffect(() => { if (leftSidebarView === "settings") setShowAppMenu(false); }, [leftSidebarView]);
+  useEffect(() => { setLockedHintPos(null); }, [leftSidebarView]);
 
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -506,20 +569,38 @@ function DemoPageInner() {
   const timeRangeLabel = timeRange === "week" ? "最近一周" : "最近一月";
   const appName = selectedApp?.display_name ?? "App";
   const askDraftStorageKey = `${ASK_DRAFT_STORAGE_PREFIX}:${selectedAppId || "no-app"}:${timeRange}:${locale || "all"}`;
-  const aiReplySettingsKey = `${AI_REPLY_SETTINGS_PREFIX}:${selectedAppId || "no-app"}`;
 
-  // ⌘B / Ctrl+B 切换左侧筛选栏——跟 VS Code、Claude 客户端的"切换侧边栏"快捷键保持一致，
-  // Mac 浏览器 chrome 层占用的是 ⌘⇧B（书签栏），裸 ⌘B 是空的，页面可以放心拦截
+  // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 切换右侧栏目；评论回复下 ⌥T 开关翻译。
+  // 输入框聚焦时不拦截，避免 ⌥ 组合键打出特殊字符。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
         setLeftOpen((v) => !v);
+        return;
+      }
+
+      if (!e.altKey || e.metaKey || e.ctrlKey) return;
+      if (isEditableTarget(e.target)) return;
+
+      const digit = e.code.match(/^Digit([1-4])$/)?.[1];
+      if (digit) {
+        const panel = RIGHT_PANEL_NAV[Number(digit) - 1]?.key;
+        if (panel) {
+          e.preventDefault();
+          setActivePanel(panel);
+        }
+        return;
+      }
+
+      if (e.code === "KeyT" && activePanel === "reply") {
+        e.preventDefault();
+        setTranslateSettings((s) => ({ ...s, enabled: !s.enabled }));
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [activePanel, setActivePanel]);
 
   // 拉 App 列表，默认选第一个
   useEffect(() => {
@@ -662,18 +743,6 @@ function DemoPageInner() {
     saveJsonSetting(TRANSLATE_SETTINGS_KEY, translateSettings);
   }, [translateSettings]);
 
-  useEffect(() => {
-    setAiReplySettings(loadJsonSetting(aiReplySettingsKey, DEFAULT_AI_REPLY_SETTINGS));
-  }, [aiReplySettingsKey]);
-
-  function updateAiReplySettings(patch: Partial<AiReplySettings> | ((prev: AiReplySettings) => AiReplySettings)) {
-    setAiReplySettings((prev) => {
-      const next = typeof patch === "function" ? patch(prev) : { ...prev, ...patch };
-      saveJsonSetting(aiReplySettingsKey, next);
-      return next;
-    });
-  }
-
   function calcChatInputHeight(el: HTMLTextAreaElement) {
     const max = Math.min(Math.floor(window.innerHeight * 0.45), 420);
     el.style.height = "auto";
@@ -794,12 +863,11 @@ function DemoPageInner() {
           rating: selectedReview.rating,
           tags: selectedReview.ai_tags,
           author: selectedReview.author,
-          officialReply: selectedReview.official_reply,
           appId: selectedAppId,
           replyContext: {
-            tone: aiReplySettings.tone,
-            style: aiReplySettings.style,
-            contactInfo: aiReplySettings.contactInfo,
+            tone: DEFAULT_AI_REPLY_SETTINGS.tone,
+            style: DEFAULT_AI_REPLY_SETTINGS.style,
+            contactInfo: DEFAULT_AI_REPLY_SETTINGS.contactInfo,
           },
         }),
       });
@@ -823,12 +891,10 @@ function DemoPageInner() {
     setParams({ tag, subTag: subTag ?? "", panel: "reply" });
   }
 
-  const rightPanelItems: { key: RightPanel; label: string; icon: React.ReactNode }[] = [
-    { key: "complaints", label: "Top 反馈", icon: <ListOrdered size={15} /> },
-    { key: "analysis", label: "综合分析", icon: <GitCompare size={14} /> },
-    { key: "ask", label: "问 AI", icon: <Bot size={14} /> },
-    { key: "reply", label: "评论回复", icon: <Reply size={14} /> },
-  ];
+  const rightPanelItems = RIGHT_PANEL_NAV.map((item) => ({
+    ...item,
+    icon: PANEL_ICONS[item.key],
+  }));
 
   const totalTagCount = stats ? Object.values(stats.tagCounts).reduce((a, b) => a + b.count, 0) : 0;
   // "全部"要跟当前选的 locale 无关，不能直接用 stats.total（那是按 locale 筛过的），用 localeCounts 求和才是真正的全量
@@ -1424,41 +1490,42 @@ function DemoPageInner() {
                 </div>
               </section>
               <section>
-                <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">AI 回复</p>
+                <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">AI回复context设置</p>
                 <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-3">
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-white/55 text-[12px]">语气</span>
-                    <textarea
-                      value={aiReplySettings.tone}
-                      onChange={(e) => updateAiReplySettings({ tone: e.target.value })}
-                      placeholder="如：亲切、口语化，先表达理解再说明"
-                      rows={2}
-                      className="w-full bg-[#1d2433] border border-white/15 rounded-lg px-2.5 py-2 text-[13px] text-white/85 placeholder-white/30 outline-none focus:border-white/35 resize-none"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-white/55 text-[12px]">句式</span>
-                    <textarea
-                      value={aiReplySettings.style}
-                      onChange={(e) => updateAiReplySettings({ style: e.target.value })}
-                      placeholder="如：短句为主，先致歉再说明处理方向"
-                      rows={2}
-                      className="w-full bg-[#1d2433] border border-white/15 rounded-lg px-2.5 py-2 text-[13px] text-white/85 placeholder-white/30 outline-none focus:border-white/35 resize-none"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-white/55 text-[12px]">联系方式</span>
-                    <textarea
-                      value={aiReplySettings.contactInfo}
-                      onChange={(e) => updateAiReplySettings({ contactInfo: e.target.value })}
-                      placeholder="如：客服邮箱 support@example.com，或引导用户前往应用内反馈"
-                      rows={3}
-                      className="w-full bg-[#1d2433] border border-white/15 rounded-lg px-2.5 py-2 text-[13px] text-white/85 placeholder-white/30 outline-none focus:border-white/35 resize-none"
-                    />
-                  </label>
+                  {([
+                    ["语气", DEFAULT_AI_REPLY_SETTINGS.tone, 2],
+                    ["句式", DEFAULT_AI_REPLY_SETTINGS.style, 2],
+                    ["联系方式", DEFAULT_AI_REPLY_SETTINGS.contactInfo, 3],
+                  ] as const).map(([label, placeholder, rows]) => (
+                    <div key={label} className="flex flex-col gap-1.5">
+                      <span className="text-white/55 text-[12px]">{label}</span>
+                      <textarea
+                        readOnly
+                        data-ai-reply-field
+                        value=""
+                        placeholder={placeholder}
+                        rows={rows}
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setLockedHintPos({ top: rect.top, left: rect.right + 8 });
+                        }}
+                        className={AI_REPLY_FIELD_CLASS}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section>
+                <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">快捷键</p>
+                <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-2">
+                  <ShortcutRow keys={["⌘", "B"]} desc="显示 / 隐藏左侧栏" />
+                  {RIGHT_PANEL_NAV.map((item, i) => (
+                    <ShortcutRow key={item.key} keys={["⌥", String(i + 1)]} desc={item.label} />
+                  ))}
+                  <ShortcutRow keys={["⌥", "T"]} desc="开关翻译（评论回复栏目）" />
                 </div>
                 <p className="text-white/40 text-[12px] mt-2 px-1 leading-relaxed">
-                  AI 回复设置按 App 分别保存；切换 App 请在「筛选」里操作。
+                  在输入框内打字时不触发，避免误操作。
                 </p>
               </section>
             </div>
@@ -1529,6 +1596,8 @@ function DemoPageInner() {
           </p>
         </div>
       </div>
+
+      <LockedFeatureHint pos={lockedHintPos} onClose={() => setLockedHintPos(null)} />
     </div>
   );
 }

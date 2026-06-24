@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { content, rating, tags, author, officialReply, appId, replyContext } = await request.json();
+  const { content, rating, tags, author, appId, replyContext } = await request.json();
   const app = appId ? await getApp(appId) : await getDefaultApp();
 
   try {
@@ -20,7 +20,6 @@ export async function POST(request: NextRequest) {
       author,
       tags: tags ?? [],
       appContext: app.context,
-      officialReplyExample: officialReply ?? null,
       replyContext: replyContext ?? null,
     });
     return Response.json({ reply });
