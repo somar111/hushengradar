@@ -1,11 +1,11 @@
--- 清掉旧的 Steam-only 设计表，重建通用 schema（不绑定任何具体 App）
+-- 通用 schema（不绑定任何具体 App）
 drop table if exists public.reviews;
 drop table if exists public.apps;
 
 create table public.apps (
   id uuid primary key default gen_random_uuid(),
-  platform text not null check (platform in ('google_play', 'app_store', 'steam')),
-  external_id text not null, -- 包名 / App Store ID / Steam AppID
+  platform text not null check (platform in ('google_play', 'app_store')),
+  external_id text not null, -- 包名 / App Store ID
   display_name text not null,
   context text, -- 自由文本：App 背景信息，喂给 AI 分类时作为提示词上下文，换 App 不用改代码
   last_fetched_at timestamptz, -- 增量抓取的水位线

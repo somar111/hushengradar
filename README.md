@@ -1,4 +1,4 @@
-# 呼声雷达（VoiceRadar）
+# 呼声雷达
 
 AI 驱动的应用商店评论监控与分析工具。抓取 Google Play 公开评论，用 DeepSeek 做分类、翻译、摘要和回复建议，在 Demo 面板里集中查看。
 
@@ -156,4 +156,4 @@ npm run deploy
 - **AI 管线**：业务判断和措辞由 DeepSeek 在运行时生成；代码侧只负责数据聚合、调度和格式校验（如 `sanitizeTagKey`）。
 - **分类体系**：每个 App 独立。通用三类（功能请求 / 好评 / 意义不明抱怨）固定；其余由 `build-taxonomy.mjs` 从真实评论归纳。
 - **抓取范围**：`apps.target_locales` 配置 `[lang, country]` 列表；为空则用 `cron-fetch.mjs` 内置 14 组默认 locale。
-- **平台支持**：自动抓取目前仅 `google_play`；`app_store` / `steam` 在 schema 中预留，cron 会跳过。
+- **平台支持**：自动抓取目前仅 `google_play`；`app_store` 在 schema 中预留，cron 会跳过。

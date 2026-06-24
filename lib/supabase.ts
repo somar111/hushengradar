@@ -12,7 +12,7 @@ export function getServiceSupabase() {
 
 export type AppRow = {
   id: string;
-  platform: "google_play" | "app_store" | "steam";
+  platform: "google_play" | "app_store";
   external_id: string;
   display_name: string;
   context: string | null;

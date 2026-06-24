@@ -27,7 +27,7 @@ if (!platform || !externalId) {
 }
 
 // 商店listing抓取目前只接了 google-play-scraper；其他平台还没有对应的 listing 来源，
-// 接入时只能照着这份生成逻辑手写 context（不阻塞 cron-fetch.mjs 对 app_store/steam 的支持）。
+// 接入时只能照着这份生成逻辑手写 context（不阻塞 cron-fetch.mjs 对 app_store 的支持）。
 if (platform !== "google_play") {
   throw new Error(`目前只支持 google_play 自动生成 context，platform="${platform}" 需要手动在 apps 表里补 context。`);
 }
