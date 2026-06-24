@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
 import { meaningfulLocaleFloor } from "@/lib/analysisShared";
-import type { Insights } from "@/lib/classify";
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
 
 // ─── 类型 ────────────────────────────────────────────────────
@@ -79,8 +78,50 @@ type TranslateSettings = {
   scope: TranslateScope;
 };
 
+type AiReplySettings = {
+  tone: string;
+  style: string;
+  contactInfo: string;
+};
+
+type LeftSidebarView = "filter" | "settings";
+
 const PAGE_SIZE = 200;
 const ASK_DRAFT_STORAGE_PREFIX = "hushengradar.askDraft.v1";
+const TRANSLATE_SETTINGS_KEY = "hushengradar.translateSettings.v1";
+const AI_REPLY_SETTINGS_PREFIX = "hushengradar.aiReplySettings.v1";
+
+const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
+  enabled: true,
+  targetLang: "zh",
+  scope: "non_target",
+};
+
+const DEFAULT_AI_REPLY_SETTINGS: AiReplySettings = {
+  tone: "",
+  style: "",
+  contactInfo: "",
+};
+
+function loadJsonSetting<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    return { ...fallback, ...JSON.parse(raw) };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveJsonSetting(key: string, value: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore quota / private mode
+  }
+}
 
 function getDisplayContent(r: ReviewRow, s: TranslateSettings): { text: string; translated: boolean } {
   if (!s.enabled) return { text: r.content, translated: false };
@@ -142,15 +183,6 @@ const THEME_BLUE = "#5781d8";
 const SEG_TRACK = "flex items-center gap-1 bg-white/6 rounded-full p-1";
 const SEG_PILL_ON = "bg-white/15 text-white ring-1 ring-white/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.28),0_1px_2px_0_rgba(0,0,0,0.35)] backdrop-blur-sm";
 const SEG_PILL_OFF = "text-white/60 hover:text-white/85";
-
-// "分析"现在由AI现场生成，请求没回来之前显示这个，而不是先空着再突然蹦出文字
-function InsightsLoading() {
-  return (
-    <div className="flex items-center gap-2 text-white/35 text-[13px] mt-4">
-      <Loader2 size={12} className="animate-spin" />正在分析…
-    </div>
-  );
-}
 
 function MarkdownMessage({ content }: { content: string }) {
   return (
@@ -419,24 +451,22 @@ function DemoPageInner() {
   const [pageRaw, setPageRaw] = useQueryState("page", "1", "replace");
   const page = Number(pageRaw) || 1;
   const setPage = (v: number) => setPageRaw(String(v));
-  const [translateSettings, setTranslateSettings] = useState<TranslateSettings>({
-    enabled: true,
-    targetLang: "zh",
-    scope: "non_target",
-  });
-  const [showTranslateSettings, setShowTranslateSettings] = useState(false);
+  const [translateSettings, setTranslateSettings] = useState<TranslateSettings>(() =>
+    loadJsonSetting(TRANSLATE_SETTINGS_KEY, DEFAULT_TRANSLATE_SETTINGS)
+  );
+  const [aiReplySettings, setAiReplySettings] = useState<AiReplySettings>(DEFAULT_AI_REPLY_SETTINGS);
+  const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("filter");
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [hoveredTag, setHoveredTag] = useState<string | null>(null);
   const [bootReady, setBootReady] = useState(false);
 
   const [stats, setStats] = useState<Stats | null>(null);
-  const [insights, setInsights] = useState<Insights | null>(null);
-  const [insightsLoading, setInsightsLoading] = useState(false);
   // "评分趋势/评分分布/地区满意度"是同一份评分数据的三种切面，合并成一张卡片用切换器选看哪个，
   // 不用三张卡片各占一块地方。选中具体地区后"地区满意度"这个切面本身没意义（已经聚焦到一个
   // 地区了），这时候要是还停在这个切面上，自动切回"趋势"，不能留着空切面晃在那
   const [ratingView, setRatingView] = useState<"trend" | "distribution" | "locale">("trend");
   useEffect(() => { if (locale && ratingView === "locale") setRatingView("trend"); }, [locale, ratingView]);
+  useEffect(() => { if (leftSidebarView === "settings") setShowAppMenu(false); }, [leftSidebarView]);
 
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -462,7 +492,6 @@ function DemoPageInner() {
   const chatUserDetachedRef = useRef(false);
   const chatAutoScrollingRef = useRef(false);
   const composingRef = useRef(false);
-  const translateMenuRef = useRef<HTMLDivElement>(null);
   const replyDetailRef = useRef<HTMLDivElement>(null);
 
   const selectedApp = apps.find((a) => a.id === selectedAppId);
@@ -477,6 +506,7 @@ function DemoPageInner() {
   const timeRangeLabel = timeRange === "week" ? "最近一周" : "最近一月";
   const appName = selectedApp?.display_name ?? "App";
   const askDraftStorageKey = `${ASK_DRAFT_STORAGE_PREFIX}:${selectedAppId || "no-app"}:${timeRange}:${locale || "all"}`;
+  const aiReplySettingsKey = `${AI_REPLY_SETTINGS_PREFIX}:${selectedAppId || "no-app"}`;
 
   // ⌘B / Ctrl+B 切换左侧筛选栏——跟 VS Code、Claude 客户端的"切换侧边栏"快捷键保持一致，
   // Mac 浏览器 chrome 层占用的是 ⌘⇧B（书签栏），裸 ⌘B 是空的，页面可以放心拦截
@@ -513,23 +543,6 @@ function DemoPageInner() {
     if (locale) params.set("locale", locale);
     fetch(`/api/demo/stats?${params}`).then((r) => r.json()).then(setStats);
   }, [selectedAppId, selectedApp, locale, since]);
-
-  // "综合分析"面板"诉求占比"的"分析"由AI根据真实统计数字现场判断、现场生成，只在看这个面板时才拉，
-  // 避免切换其他Tab时白白触发DeepSeek调用
-  useEffect(() => {
-    if (!selectedAppId || !selectedApp || activePanel !== "analysis") return;
-    setInsights(null);
-    setInsightsLoading(true);
-    const params = new URLSearchParams();
-    params.set("appId", selectedAppId);
-    params.set("since", since);
-    params.set("timeRangeLabel", timeRangeLabel);
-    if (locale) params.set("locale", locale);
-    fetch(`/api/demo/insights?${params}`)
-      .then((r) => r.json())
-      .then((data) => setInsights(data.error ? null : data))
-      .finally(() => setInsightsLoading(false));
-  }, [selectedAppId, selectedApp, locale, since, timeRangeLabel, activePanel]);
 
   // 拉评论列表（筛选/翻页变化时）
   useEffect(() => {
@@ -612,18 +625,6 @@ function DemoPageInner() {
   }
 
   useEffect(() => {
-    if (!showTranslateSettings) return;
-    const onPointerDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (translateMenuRef.current && !translateMenuRef.current.contains(target)) {
-        setShowTranslateSettings(false);
-      }
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [showTranslateSettings]);
-
-  useEffect(() => {
     if (!selectedReview) return;
     const onPointerDown = (e: MouseEvent) => {
       const el = e.target as Element;
@@ -656,6 +657,22 @@ function DemoPageInner() {
       // 本地存储不可用时忽略，不影响主流程
     }
   }, [askDraftStorageKey, chatInput]);
+
+  useEffect(() => {
+    saveJsonSetting(TRANSLATE_SETTINGS_KEY, translateSettings);
+  }, [translateSettings]);
+
+  useEffect(() => {
+    setAiReplySettings(loadJsonSetting(aiReplySettingsKey, DEFAULT_AI_REPLY_SETTINGS));
+  }, [aiReplySettingsKey]);
+
+  function updateAiReplySettings(patch: Partial<AiReplySettings> | ((prev: AiReplySettings) => AiReplySettings)) {
+    setAiReplySettings((prev) => {
+      const next = typeof patch === "function" ? patch(prev) : { ...prev, ...patch };
+      saveJsonSetting(aiReplySettingsKey, next);
+      return next;
+    });
+  }
 
   function calcChatInputHeight(el: HTMLTextAreaElement) {
     const max = Math.min(Math.floor(window.innerHeight * 0.45), 420);
@@ -779,6 +796,11 @@ function DemoPageInner() {
           author: selectedReview.author,
           officialReply: selectedReview.official_reply,
           appId: selectedAppId,
+          replyContext: {
+            tone: aiReplySettings.tone,
+            style: aiReplySettings.style,
+            contactInfo: aiReplySettings.contactInfo,
+          },
         }),
       });
       const data = await res.json();
@@ -863,8 +885,7 @@ function DemoPageInner() {
         // 诉求占比的颜色：按排序后的序号循环取通用调色板，不跟具体 tag key 绑定
         const sliceColors = sorted.map((_, i) => CATEGORY_PALETTE[i % CATEGORY_PALETTE.length]);
 
-        // 评分分布：好评(4-5★)/差评(1-2★)/中评(3★)三段占比——只负责算数字给图表用，
-        // "算不算两极分化"这个判断交给 /api/demo/insights 的AI，不在这里拍阈值
+        // 评分分布：好评(4-5★)/差评(1-2★)/中评(3★)三段占比
         const ratingTotal = Object.values(stats.ratingDist).reduce((a, b) => a + b, 0);
         const pctOf = (n: number) => (ratingTotal ? Math.round((n / ratingTotal) * 1000) / 10 : 0);
 
@@ -1007,13 +1028,6 @@ function DemoPageInner() {
                     })}
                   </div>
                 </div>
-                {insightsLoading && <InsightsLoading />}
-                {insights?.complaintsVsFeatureRequest && (
-                  <div className="bg-emerald-900/35 rounded-xl p-4 mt-4">
-                    <p className="text-emerald-400 text-[14px] font-semibold mb-1">分析</p>
-                    <p className="text-white/80 text-[14px] leading-relaxed">{insights.complaintsVsFeatureRequest}</p>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -1160,46 +1174,6 @@ function DemoPageInner() {
             "{search}" <X size={11} />
           </button>
         )}
-        <div className="relative" ref={translateMenuRef}>
-          <button onClick={() => setShowTranslateSettings((v) => !v)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-colors ${
-              translateSettings.enabled ? "bg-white/12 text-white/80" : "bg-white/6 text-white/60"
-            }`}>
-            <Settings size={12} />翻译
-          </button>
-          {showTranslateSettings && (
-            <div className="absolute right-0 top-full mt-1.5 z-10 w-56 bg-[#242c3d] border border-white/20 rounded-xl p-3 shadow-xl flex flex-col gap-3">
-              <label className="flex items-center justify-between text-[13px] text-white/80">
-                启用翻译
-                <input type="checkbox" checked={translateSettings.enabled}
-                  onChange={(e) => setTranslateSettings((s) => ({ ...s, enabled: e.target.checked }))} />
-              </label>
-              <div>
-                <p className="text-white/45 text-[11px] uppercase tracking-wider mb-1.5">目标语言</p>
-                {([["zh", "中文"], ["en", "英文"]] as const).map(([v, label]) => (
-                  <label key={v} className="flex items-center gap-2 text-[13px] text-white/80 py-0.5">
-                    <input type="radio" checked={translateSettings.targetLang === v}
-                      onChange={() => setTranslateSettings((s) => ({ ...s, targetLang: v }))} />
-                    {label}
-                  </label>
-                ))}
-              </div>
-              <div>
-                <p className="text-white/45 text-[11px] uppercase tracking-wider mb-1.5">翻译范围</p>
-                {([
-                  ["non_target", "翻译所有非目标语言"],
-                  ["non_zh_en", "只翻译非中英文（保留英文原文）"],
-                ] as const).map(([v, label]) => (
-                  <label key={v} className="flex items-center gap-2 text-[13px] text-white/80 py-0.5">
-                    <input type="radio" checked={translateSettings.scope === v}
-                      onChange={() => setTranslateSettings((s) => ({ ...s, scope: v }))} />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
       </div>
       <div className={`flex-1 overflow-y-auto px-4 ${selectedReview ? "pb-56" : "pb-4"}`}>
         {loading ? (
@@ -1323,73 +1297,170 @@ function DemoPageInner() {
       ) : (
       <div className="flex flex-col overflow-hidden flex-1 w-52">
         {/* 跟收起状态用一样的 p-3，图标在两种状态下像素对齐，切换时看起来"原地"不挪 */}
-        <div className="p-3 flex items-center justify-between flex-none">
+        <div className="p-3 flex items-center justify-between flex-none gap-2">
           <button onClick={() => setLeftOpen(false)}
             className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
             <PanelLeft size={20} strokeWidth={1.5} />
           </button>
-          <span className="text-white/80 text-[13px] font-semibold whitespace-nowrap">筛选</span>
-        </div>
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="py-2 flex items-center justify-center gap-3">
-            <button onClick={() => setPlatform("googleplay")}
-              className={`p-2.5 rounded-xl transition-all ${platform === "googleplay" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
-              <img src="/Google_Play_2022_icon.svg.png" alt="Google Play" className="w-7 h-7" />
+          <div className={`${SEG_TRACK} flex-1 min-w-0`}>
+            <button onClick={() => setLeftSidebarView("filter")}
+              className={`flex-1 px-2.5 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-colors ${
+                leftSidebarView === "filter" ? SEG_PILL_ON : SEG_PILL_OFF
+              }`}>
+              <span className={leftSidebarView === "filter" ? "font-bold" : "font-medium"}>筛选</span>
             </button>
-            <button onClick={() => setPlatform("appstore")} title="暂无数据"
-              className={`p-2.5 rounded-xl transition-all relative ${platform === "appstore" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
-              <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7 opacity-40" />
+            <button onClick={() => setLeftSidebarView("settings")}
+              className={`flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-colors ${
+                leftSidebarView === "settings" ? SEG_PILL_ON : SEG_PILL_OFF
+              }`}>
+              <Settings size={12} />
+              <span className={leftSidebarView === "settings" ? "font-bold" : "font-medium"}>设置</span>
             </button>
           </div>
-          <div className="py-2 px-3 relative">
-            <button onClick={() => setShowAppMenu((v) => !v)}
-              className="w-full flex items-center justify-between gap-2 bg-white/8 hover:bg-white/12 transition-colors rounded-lg px-3 py-2 text-[15px] font-semibold text-white/90">
-              <span className="truncate">{selectedApp?.display_name ?? "选择 App"}</span>
-              <ChevronDown size={15} className={`flex-none text-white/60 transition-transform ${showAppMenu ? "rotate-180" : ""}`} />
-            </button>
-            {showAppMenu && (
-              <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#242c3d] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
-                {apps.map((a) => (
-                  <button key={a.id} onClick={() => { setParams({ app: a.id, locale: "", tag: "", subTag: "" }); setShowAppMenu(false); }}
-                    className={`text-left px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
-                      a.id === selectedAppId ? "bg-white/12 text-white/90" : "text-white/80 hover:bg-white/8"
-                    }`}>
-                    {a.display_name}
+        </div>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {leftSidebarView === "filter" && (
+            <>
+              <div className="py-2 flex items-center justify-center gap-3">
+                <button onClick={() => setPlatform("googleplay")}
+                  className={`p-2.5 rounded-xl transition-all ${platform === "googleplay" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
+                  <img src="/Google_Play_2022_icon.svg.png" alt="Google Play" className="w-7 h-7" />
+                </button>
+                <button onClick={() => setPlatform("appstore")} title="暂无数据"
+                  className={`p-2.5 rounded-xl transition-all relative ${platform === "appstore" ? "bg-white/12 ring-1 ring-white/20" : "hover:bg-white/10"}`}>
+                  <img src="/App_Store_(iOS).svg.png" alt="App Store" className="w-7 h-7 opacity-40" />
+                </button>
+              </div>
+              <div className="py-2 px-3 relative">
+                <button onClick={() => setShowAppMenu((v) => !v)}
+                  className="w-full flex items-center justify-between gap-2 bg-white/8 hover:bg-white/12 transition-colors rounded-lg px-3 py-2 text-[15px] font-semibold text-white/90">
+                  <span className="truncate">{selectedApp?.display_name ?? "选择 App"}</span>
+                  <ChevronDown size={15} className={`flex-none text-white/60 transition-transform ${showAppMenu ? "rotate-180" : ""}`} />
+                </button>
+                {showAppMenu && (
+                  <div className="absolute left-3 right-3 top-full mt-1.5 z-10 bg-[#242c3d] border border-white/20 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
+                    {apps.map((a) => (
+                      <button key={a.id} onClick={() => { setParams({ app: a.id, locale: "", tag: "", subTag: "" }); setShowAppMenu(false); }}
+                        className={`text-left px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
+                          a.id === selectedAppId ? "bg-white/12 text-white/90" : "text-white/80 hover:bg-white/8"
+                        }`}>
+                        {a.display_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="py-2 px-3 flex items-center justify-center">
+                <div className={SEG_TRACK}>
+                  {(["week", "month"] as TimeRange[]).map((t) => (
+                    <button key={t} onClick={() => setTimeRange(t)}
+                      className={`px-3.5 py-1.5 rounded-full text-[14px] transition-colors ${timeRange === t ? `${SEG_PILL_ON} font-bold` : `${SEG_PILL_OFF} font-medium`}`}>
+                      {t === "week" ? "最近一周" : "最近一月"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+          {leftSidebarView === "filter" ? (
+            platform === "googleplay" ? (
+              <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1 text-[14px]">
+                <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-1.5 px-1 flex items-center gap-1.5">
+                  语言/地区批次
+                  <InfoTooltip text="此为 Google Play 官方分类方式，不代表评论的真实语言或所在地区" size={14} />
+                </p>
+                <button onClick={() => setLocale(undefined)}
+                  className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${!locale ? "bg-white/12 text-white/80" : "text-white/68 hover:text-white/80 hover:bg-white/10"}`}>
+                  <Globe size={12} /><span>全部 {stats ? `(${allLocalesTotal})` : ""}</span>
+                </button>
+                {stats && Object.entries(stats.localeCounts).sort((a, b) => b[1] - a[1]).map(([l, count]) => (
+                  <button key={l} onClick={() => setLocale(l)}
+                    className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${locale === l ? "bg-white/12 text-white/80" : "text-white/68 hover:text-white/80 hover:bg-white/10"}`}>
+                    <Globe size={12} /><span>{localeLabel(l)} ({count})</span>
                   </button>
                 ))}
               </div>
-            )}
-          </div>
-          <div className="py-2 px-3 flex items-center justify-center">
-            <div className={SEG_TRACK}>
-              {(["week", "month"] as TimeRange[]).map((t) => (
-                <button key={t} onClick={() => setTimeRange(t)}
-                  className={`px-3.5 py-1.5 rounded-full text-[14px] transition-colors ${timeRange === t ? `${SEG_PILL_ON} font-bold` : `${SEG_PILL_OFF} font-medium`}`}>
-                  {t === "week" ? "最近一周" : "最近一月"}
-                </button>
-              ))}
-            </div>
-          </div>
-          {platform === "googleplay" ? (
-            <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1 text-[14px]">
-              <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-1.5 px-1 flex items-center gap-1.5">
-                语言/地区批次
-                <InfoTooltip text="此为 Google Play 官方分类方式，不代表评论的真实语言或所在地区" size={14} />
-              </p>
-              <button onClick={() => setLocale(undefined)}
-                className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${!locale ? "bg-white/12 text-white/80" : "text-white/68 hover:text-white/80 hover:bg-white/10"}`}>
-                <Globe size={12} /><span>全部 {stats ? `(${allLocalesTotal})` : ""}</span>
-              </button>
-              {stats && Object.entries(stats.localeCounts).sort((a, b) => b[1] - a[1]).map(([l, count]) => (
-                <button key={l} onClick={() => setLocale(l)}
-                  className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg transition-colors ${locale === l ? "bg-white/12 text-white/80" : "text-white/68 hover:text-white/80 hover:bg-white/10"}`}>
-                  <Globe size={12} /><span>{localeLabel(l)} ({count})</span>
-                </button>
-              ))}
-            </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center px-3">
+                <p className="text-white/35 text-[12px] text-center leading-relaxed">App Store 这次没有抓取公开评论数据，暂不支持筛选</p>
+              </div>
+            )
           ) : (
-            <div className="flex-1 flex items-center justify-center px-3">
-              <p className="text-white/35 text-[12px] text-center leading-relaxed">App Store 这次没有抓取公开评论数据，暂不支持筛选</p>
+            <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-5 text-[14px]">
+              <p className="text-white/50 text-[12px] px-1">
+                当前 App：{selectedApp?.display_name ?? "未选择"}
+              </p>
+              <section>
+                <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">翻译</p>
+                <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-3">
+                  <label className="flex items-center justify-between text-[13px] text-white/80">
+                    启用翻译
+                    <input type="checkbox" checked={translateSettings.enabled}
+                      onChange={(e) => setTranslateSettings((s) => ({ ...s, enabled: e.target.checked }))} />
+                  </label>
+                  <div>
+                    <p className="text-white/45 text-[11px] uppercase tracking-wider mb-1.5">目标语言</p>
+                    {([["zh", "中文"], ["en", "英文"]] as const).map(([v, label]) => (
+                      <label key={v} className="flex items-center gap-2 text-[13px] text-white/80 py-0.5">
+                        <input type="radio" checked={translateSettings.targetLang === v}
+                          onChange={() => setTranslateSettings((s) => ({ ...s, targetLang: v }))} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  <div>
+                    <p className="text-white/45 text-[11px] uppercase tracking-wider mb-1.5">翻译范围</p>
+                    {([
+                      ["non_target", "翻译所有非目标语言"],
+                      ["non_zh_en", "只翻译非中英文（保留英文原文）"],
+                    ] as const).map(([v, label]) => (
+                      <label key={v} className="flex items-center gap-2 text-[13px] text-white/80 py-0.5">
+                        <input type="radio" checked={translateSettings.scope === v}
+                          onChange={() => setTranslateSettings((s) => ({ ...s, scope: v }))} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </section>
+              <section>
+                <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">AI 回复</p>
+                <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-3">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-white/55 text-[12px]">语气</span>
+                    <textarea
+                      value={aiReplySettings.tone}
+                      onChange={(e) => updateAiReplySettings({ tone: e.target.value })}
+                      placeholder="如：亲切、口语化，先表达理解再说明"
+                      rows={2}
+                      className="w-full bg-[#1d2433] border border-white/15 rounded-lg px-2.5 py-2 text-[13px] text-white/85 placeholder-white/30 outline-none focus:border-white/35 resize-none"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-white/55 text-[12px]">句式</span>
+                    <textarea
+                      value={aiReplySettings.style}
+                      onChange={(e) => updateAiReplySettings({ style: e.target.value })}
+                      placeholder="如：短句为主，先致歉再说明处理方向"
+                      rows={2}
+                      className="w-full bg-[#1d2433] border border-white/15 rounded-lg px-2.5 py-2 text-[13px] text-white/85 placeholder-white/30 outline-none focus:border-white/35 resize-none"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-white/55 text-[12px]">联系方式</span>
+                    <textarea
+                      value={aiReplySettings.contactInfo}
+                      onChange={(e) => updateAiReplySettings({ contactInfo: e.target.value })}
+                      placeholder="如：客服邮箱 support@example.com，或引导用户前往应用内反馈"
+                      rows={3}
+                      className="w-full bg-[#1d2433] border border-white/15 rounded-lg px-2.5 py-2 text-[13px] text-white/85 placeholder-white/30 outline-none focus:border-white/35 resize-none"
+                    />
+                  </label>
+                </div>
+                <p className="text-white/40 text-[12px] mt-2 px-1 leading-relaxed">
+                  AI 回复设置按 App 分别保存；切换 App 请在「筛选」里操作。
+                </p>
+              </section>
             </div>
           )}
         </div>
