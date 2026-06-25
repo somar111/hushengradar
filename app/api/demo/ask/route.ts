@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getApp, getDefaultApp, getLatestReviewDate } from "@/lib/reviews";
-import { answerQuestion } from "@/lib/classify";
+import { answerQuestionStream } from "@/lib/classify";
 
 export async function POST(request: NextRequest) {
   if (!process.env.DEEPSEEK_API_KEY) {
@@ -24,22 +24,50 @@ export async function POST(request: NextRequest) {
         .slice(-8)
     : undefined;
 
-  const app = appId ? await getApp(appId) : await getDefaultApp();
-  const latestReviewDate = await getLatestReviewDate(app.id);
-
+  let app: Awaited<ReturnType<typeof getApp>>;
+  let latestReviewDate: string | null;
   try {
-    const answer = await answerQuestion({
-      question: String(question),
-      appId: app.id,
-      appContext: app.context,
-      timeRangeLabel: timeRangeLabel || "所选时间范围",
-      latestReviewDate,
-      defaultSince: since || undefined,
-      defaultLocale: locale || undefined,
-      history: safeHistory,
-    });
-    return Response.json({ answer });
+    app = appId ? await getApp(appId) : await getDefaultApp();
+    latestReviewDate = await getLatestReviewDate(app.id);
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 502 });
   }
+
+  // NDJSON 流：每行一个事件 {type:"delta"|"replace"|"done"|"error", ...}，答案 token 边生成边下发
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      try {
+        for await (const event of answerQuestionStream({
+          question: String(question),
+          appId: app.id,
+          appContext: app.context,
+          timeRangeLabel: timeRangeLabel || "所选时间范围",
+          latestReviewDate,
+          defaultSince: since || undefined,
+          defaultLocale: locale || undefined,
+          history: safeHistory,
+          signal: request.signal,
+        })) {
+          send(event);
+        }
+      } catch (e) {
+        if ((e as Error)?.name === "AbortError") {
+          // 客户端主动断开（点了"停止"），静默收尾即可
+        } else {
+          send({ type: "error", message: (e as Error).message });
+        }
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+    },
+  });
 }

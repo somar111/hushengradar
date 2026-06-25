@@ -267,10 +267,62 @@ function sanitizeAskAnswer(answer: string, messages: ChatMessage[]): string {
   return sanitizeUnsourcedContactInfo(answer, corpus);
 }
 
+export type AskStreamEvent =
+  | { type: "delta"; text: string }
+  | { type: "replace"; text: string }
+  | { type: "done" }
+  | { type: "error"; message: string };
+
+// 读 DeepSeek 的 SSE 流，逐块解析。tool_calls 在流式里是按 index 分片送来的，要按 index 累加拼回。
+async function* parseDeepSeekStream(res: Response): AsyncGenerator<{
+  contentDelta?: string;
+  toolCallDelta?: { index: number; id?: string; name?: string; args?: string };
+}> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("DeepSeek 未返回流");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      let json: { choices?: { delta?: { content?: string; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[] };
+      try {
+        json = JSON.parse(payload);
+      } catch {
+        continue;
+      }
+      const delta = json.choices?.[0]?.delta;
+      if (!delta) continue;
+      if (typeof delta.content === "string" && delta.content) {
+        yield { contentDelta: delta.content };
+      }
+      for (const tc of delta.tool_calls ?? []) {
+        yield {
+          toolCallDelta: {
+            index: tc.index ?? 0,
+            id: tc.id,
+            name: tc.function?.name,
+            args: tc.function?.arguments,
+          },
+        };
+      }
+    }
+  }
+}
+
 /**
- * "问 AI"面板：AI 通过工具查询真实评论与统计，再基于证据回答。
+ * "问 AI"面板（流式）：AI 通过工具查询真实评论与统计，再基于证据回答。
+ * 工具调用轮全程流式拉取，最终答案的 token 边生成边吐给前端——不再等整段生成完、也不靠前端假打字。
  */
-export async function answerQuestion(opts: {
+export async function* answerQuestionStream(opts: {
   question: string;
   appId: string;
   appContext?: string | null;
@@ -279,7 +331,8 @@ export async function answerQuestion(opts: {
   defaultSince?: string;
   defaultLocale?: string;
   history?: { q: string; a: string }[];
-}): Promise<string> {
+  signal?: AbortSignal;
+}): AsyncGenerator<AskStreamEvent> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY 未配置");
@@ -299,9 +352,7 @@ export async function answerQuestion(opts: {
     latestReviewDate: opts.latestReviewDate,
   });
 
-  const messages: ChatMessage[] = [
-    { role: "system", content: systemPrompt },
-  ];
+  const messages: ChatMessage[] = [{ role: "system", content: systemPrompt }];
 
   // 把已完成的历史问答按"用户→助手"原样塞进上下文，让模型能领会追问/省略主语的真实意图。
   // 只取最近若干轮、且对回答做长度截断，避免 token 膨胀；中途的工具调用细节不保留，
@@ -316,47 +367,85 @@ export async function answerQuestion(opts: {
 
   messages.push({ role: "user", content: buildAskUserMessage(opts) });
 
-  for (let round = 0; round < ASK_MAX_ROUNDS; round++) {
-    const data = await callDeepSeek(apiKey, {
-      model: "deepseek-chat",
-      messages,
-      tools: ASK_TOOLS,
-      tool_choice: "auto",
-      temperature: 0.1,
-    });
+  // 已经吐给前端的最终答案文本，用于收尾时跟净化后的版本比对，必要时整段替换
+  let streamedAnswer = "";
 
-    const msg = data.choices?.[0]?.message;
-    if (!msg) {
-      throw new Error("DeepSeek 返回为空");
+  for (let round = 0; round < ASK_MAX_ROUNDS; round++) {
+    const res = await fetch(DEEPSEEK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages,
+        tools: ASK_TOOLS,
+        tool_choice: "auto",
+        temperature: 0.1,
+        stream: true,
+      }),
+      signal: opts.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`DeepSeek API 出错：${await res.text()}`);
     }
 
-    if (msg.tool_calls?.length) {
-      messages.push({
-        role: "assistant",
-        content: msg.content ?? null,
-        tool_calls: msg.tool_calls,
-      });
+    const toolCalls: ToolCall[] = [];
+    let roundContent = "";
+    let sawToolCall = false;
 
-      for (const tc of msg.tool_calls as ToolCall[]) {
-        let args: Record<string, unknown> = {};
-        try {
-          args = JSON.parse(tc.function.arguments || "{}");
-        } catch {
-          args = {};
+    for await (const chunk of parseDeepSeekStream(res)) {
+      if (chunk.toolCallDelta) {
+        sawToolCall = true;
+        const { index, id, name, args } = chunk.toolCallDelta;
+        if (!toolCalls[index]) {
+          toolCalls[index] = { id: "", type: "function", function: { name: "", arguments: "" } };
         }
-        const result = await executeAskTool(tc.function.name, args, ctx);
-        messages.push({
-          role: "tool",
-          tool_call_id: tc.id,
-          content: result,
-        });
+        const tc = toolCalls[index];
+        if (id) tc.id = id;
+        if (name) tc.function.name += name;
+        if (args) tc.function.arguments += args;
+      }
+      if (chunk.contentDelta) {
+        roundContent += chunk.contentDelta;
+        // 工具轮通常不带正文；只有"还没出现 tool_call"的纯正文才即时下发，避免把工具轮的
+        // 思考碎片当成答案吐出去。极少数"先正文后 tool_call"的情况靠收尾的 replace 自愈。
+        if (!sawToolCall) {
+          streamedAnswer += chunk.contentDelta;
+          yield { type: "delta", text: chunk.contentDelta };
+        }
+      }
+    }
+
+    const collected = toolCalls.filter(Boolean);
+    if (collected.length > 0) {
+      messages.push({ role: "assistant", content: roundContent || null, tool_calls: collected });
+      const results = await Promise.all(
+        collected.map(async (tc) => {
+          let args: Record<string, unknown> = {};
+          try {
+            args = JSON.parse(tc.function.arguments || "{}");
+          } catch {
+            args = {};
+          }
+          const content = await executeAskTool(tc.function.name, args, ctx);
+          return { tool_call_id: tc.id, content };
+        })
+      );
+      for (const r of results) {
+        messages.push({ role: "tool", tool_call_id: r.tool_call_id, content: r.content });
       }
       continue;
     }
 
-    const answer = msg.content?.trim();
-    if (answer) return sanitizeAskAnswer(answer, messages);
-    throw new Error("DeepSeek 未返回有效回答");
+    const answer = roundContent.trim();
+    if (!answer) throw new Error("DeepSeek 未返回有效回答");
+    // 净化兜底：删掉没有数据来源的邮箱/网址等。若净化后跟已流出的文本不一致（含罕见的
+    // 正文前缀污染），发一条 replace 让前端整段替换成干净版本。
+    const cleaned = sanitizeAskAnswer(answer, messages);
+    if (cleaned !== streamedAnswer) {
+      yield { type: "replace", text: cleaned };
+    }
+    yield { type: "done" };
+    return;
   }
 
   throw new Error("工具调用轮次超限，请简化问题后重试");

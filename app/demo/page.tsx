@@ -353,13 +353,6 @@ function MarkdownMessage({ content }: { content: string }) {
   );
 }
 
-function charDelay(ch: string) {
-  if (ch === "\n") return 0;
-  if ("。！？!?".includes(ch)) return 140;
-  if ("，、,:;；".includes(ch)) return 50;
-  return 12;
-}
-
 function DonutPercent({ percent, size = 40, color = THEME_BLUE }: { percent: number; size?: number; color?: string }) {
   const r = size / 2 - 3;
   const c = 2 * Math.PI * r;
@@ -898,15 +891,8 @@ function DemoPageInner() {
     autoGrowInput(el);
   }, [activePanel]);
 
-  async function streamAssistantAnswer(messageId: string, fullText: string) {
-    let acc = "";
-    for (const ch of fullText) {
-      if (chatStopRequestedRef.current) break;
-      acc += ch;
-      setChatMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, a: acc } : m)));
-      const ms = charDelay(ch);
-      if (ms > 0) await new Promise((r) => setTimeout(r, ms));
-    }
+  function setMessageAnswer(messageId: string, text: string) {
+    setChatMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, a: text } : m)));
   }
 
   function handleStopChat() {
@@ -956,14 +942,52 @@ function DemoPageInner() {
         signal: controller.signal,
         body: JSON.stringify({ question: q, appId: selectedAppId, locale, since, timeRangeLabel, history }),
       });
-      const data = await res.json();
-      const answer = data.error ? `回答失败：${data.error}` : data.answer;
-      await streamAssistantAnswer(msgId, answer || "暂无回答");
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => null);
+        setMessageAnswer(msgId, `回答失败：${data?.error || "请求失败，请重试。"}`);
+        return;
+      }
+      // 读 NDJSON 流：真实 token 边到边渲染，不再等整段返回、也不靠假打字延时
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let acc = "";
+      let streamErr = "";
+      const handleEvent = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        let ev: { type: string; text?: string; message?: string };
+        try {
+          ev = JSON.parse(trimmed);
+        } catch {
+          return;
+        }
+        if (ev.type === "delta" && ev.text) {
+          acc += ev.text;
+          setMessageAnswer(msgId, acc);
+        } else if (ev.type === "replace" && typeof ev.text === "string") {
+          acc = ev.text;
+          setMessageAnswer(msgId, acc);
+        } else if (ev.type === "error") {
+          streamErr = ev.message || "回答失败";
+        }
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) handleEvent(line);
+      }
+      if (buffer) handleEvent(buffer);
+      if (streamErr) setMessageAnswer(msgId, `回答失败：${streamErr}`);
+      else if (!acc) setMessageAnswer(msgId, "暂无回答");
     } catch (error) {
       if ((error as Error)?.name === "AbortError" || chatStopRequestedRef.current) {
         return;
       }
-      await streamAssistantAnswer(msgId, "请求失败，请重试。");
+      setMessageAnswer(msgId, "请求失败，请重试。");
     } finally {
       chatAbortRef.current = null;
       chatBusyRef.current = false;
