@@ -187,7 +187,7 @@ function LockedFeatureHint({ pos, onClose }: { pos: { top: number; left: number 
     if (!pos) return;
     const onPointerDown = (e: MouseEvent) => {
       const el = e.target as Element;
-      if (el.closest("[data-locked-hint]") || el.closest("[data-ai-reply-field]")) return;
+      if (el.closest("[data-locked-hint]") || el.closest("[data-ai-reply-field]") || el.closest("[data-terminology-block]")) return;
       onClose();
     };
     document.addEventListener("mousedown", onPointerDown);
@@ -2132,25 +2132,37 @@ function DemoPageInner() {
                 <p className="text-white/40 text-[12px] mb-2 px-1 leading-relaxed">
                   按 App 维护专名映射，对本 App 的翻译、问 AI、回复建议均生效。术语表为空时仍遵守「未知专名保留原文、禁止意译」。
                 </p>
-                <TerminologyGlossaryEditor
-                  appId={selectedAppId}
-                  appName={selectedApp?.display_name ?? "当前 App"}
-                  rows={terminologyDraft}
-                  onChange={setTerminologyDraft}
-                  onSaved={(glossary) => {
-                    setTerminologyDraft(
-                      glossary.map((e) => ({
-                        source: e.source ?? "",
-                        zh: e.zh ?? "",
-                        en: e.en ?? "",
-                        note: e.note ?? "",
-                      }))
-                    );
-                    setApps((prev) =>
-                      prev.map((a) => (a.id === selectedAppId ? { ...a, terminology_glossary: glossary } : a))
-                    );
-                  }}
-                />
+                <div className="relative">
+                  <TerminologyGlossaryEditor
+                    appId={selectedAppId}
+                    appName={selectedApp?.display_name ?? "当前 App"}
+                    rows={terminologyDraft}
+                    onChange={setTerminologyDraft}
+                    onSaved={(glossary) => {
+                      setTerminologyDraft(
+                        glossary.map((e) => ({
+                          source: e.source ?? "",
+                          zh: e.zh ?? "",
+                          en: e.en ?? "",
+                          note: e.note ?? "",
+                        }))
+                      );
+                      setApps((prev) =>
+                        prev.map((a) => (a.id === selectedAppId ? { ...a, terminology_glossary: glossary } : a))
+                      );
+                    }}
+                  />
+                  <button
+                    type="button"
+                    data-terminology-block
+                    className="absolute inset-0 z-10 w-full h-full cursor-pointer rounded-xl bg-transparent border-0 p-0"
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setLockedHintPos({ top: rect.top, left: rect.right + 8 });
+                    }}
+                    aria-label="暂不支持自定义"
+                  />
+                </div>
               </section>
               <section>
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">AI 回复建议 context 设置</p>
