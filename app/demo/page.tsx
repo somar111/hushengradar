@@ -523,7 +523,6 @@ function ReplyTranslateToggle({ enabled, onChange }: { enabled: boolean; onChang
 
 function ReplyReclassifyButton({
   locked = false,
-  onLockedClick,
   disabled,
   disabledReason,
   loading,
@@ -531,7 +530,6 @@ function ReplyReclassifyButton({
   onClick,
 }: {
   locked?: boolean;
-  onLockedClick?: (e: React.MouseEvent<HTMLElement>) => void;
   disabled: boolean;
   disabledReason: string;
   loading: boolean;
@@ -539,9 +537,22 @@ function ReplyReclassifyButton({
   onClick: () => void;
 }) {
   const [showHint, setShowHint] = useState(false);
+  const [showLockedHint, setShowLockedHint] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const visuallyDisabled = locked || disabled || loading;
+
+  useEffect(() => {
+    if (!showLockedHint) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (rootRef.current?.contains(e.target as Node)) return;
+      setShowLockedHint(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [showLockedHint]);
+
   return (
-    <div className="relative flex-none">
+    <div ref={rootRef} className="relative flex-none">
       <button
         type="button"
         disabled={!locked && (disabled || loading)}
@@ -568,13 +579,20 @@ function ReplyReclassifyButton({
           <span className="text-[12px] font-semibold text-[#8fb0ff]">{count}</span>
         )}
       </button>
-      {locked && onLockedClick && (
+      {locked && (
         <button
           type="button"
           className="absolute inset-0 z-10 cursor-pointer rounded-xl bg-transparent border-0 p-0"
-          onClick={onLockedClick}
+          onClick={() => setShowLockedHint(true)}
           aria-label="暂无权限"
         />
+      )}
+      {locked && showLockedHint && (
+        <div
+          role="tooltip"
+          className="pointer-events-none absolute top-full right-0 mt-2 z-50 whitespace-nowrap rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          暂无权限
+        </div>
       )}
       {showHint && !locked && (
         <div
@@ -2076,7 +2094,6 @@ function DemoPageInner() {
             />
             <ReplyReclassifyButton
               locked={!canReclassify}
-              onLockedClick={(e) => showLockedHint(e, "暂无权限")}
               disabled={Boolean(reclassifyBlockedReason)}
               disabledReason={reclassifyBlockedReason || "重跑当前筛选结果的分类"}
               loading={reclassifyLoading}
