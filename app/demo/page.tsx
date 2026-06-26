@@ -813,7 +813,7 @@ function buildSmoothPath(pts: { x: number; y: number }[]): string {
 
 // 评分随真实日期走的折线图：横轴按实际天数间距（不是均匀分类摆放），纵轴固定 1~5（评分本身的
 // 天然量程，不做自动缩放，避免轴范围操纵带来的误导）；圆点面积与当天评论量成正比（半径按 √count
-// 定标），评论少的那天自然更小更淡。曲线走单调三次样条，平滑但不过冲。
+// 定标），定标上限取当前点集（已按所选地区筛选）的峰值，不用全地区合并峰值。
 function RatingTrendChart({
   points,
   overallAvg,
@@ -841,9 +841,8 @@ function RatingTrendChart({
   const timeSpan = Math.max(maxTime - minTime, 86400000);
   const x = (date: string) => plotLeft + ((new Date(date).getTime() - minTime) / timeSpan) * plotW;
   const y = (rating: number) => yPad + plotH - ((rating - 1) / 4) * plotH;
-  const maxCount = Math.max(...points.map((p) => p.count), 1);
-  // 点半径按评论量的平方根定标（面积 ∝ 评论量），避免某天评论暴增时圆点视觉上大几十倍
-  const dotRadius = (count: number) => dotMaxR * Math.sqrt(count / maxCount);
+  const scaleMax = Math.max(...points.map((p) => p.count), 1);
+  const dotRadius = (count: number) => dotMaxR * Math.sqrt(count / scaleMax);
   const pathD = buildSmoothPath(points.map((p) => ({ x: x(p.date), y: y(p.avgRating) })));
   const labelEvery = points.length > 12 ? Math.ceil(points.length / 8) : 1;
   const yLabelPct = (rating: number) => `${(y(rating) / height) * 100}%`;
@@ -860,7 +859,7 @@ function RatingTrendChart({
         <path d={pathD} fill="none" stroke={THEME_BLUE} strokeWidth={2} />
         {points.map((p) => {
           const r = dotRadius(p.count);
-          const opacity = 0.45 + (p.count / maxCount) * 0.55;
+          const opacity = 0.45 + (p.count / scaleMax) * 0.55;
           return (
             <circle key={p.date} cx={x(p.date)} cy={y(p.avgRating)} r={r} fill={THEME_BLUE} opacity={opacity}>
               <title>{p.date}：均分 {p.avgRating}，{p.count} 条评论</title>
@@ -1045,6 +1044,8 @@ function DemoPageInner() {
   const pendingChatScrollRef = useRef<"top" | "bottom" | null>(null);
   const composingRef = useRef(false);
   const replyDetailRef = useRef<HTMLDivElement>(null);
+  const reviewsReqIdRef = useRef(0);
+  const statsReqIdRef = useRef(0);
 
   const selectedApp = apps.find((a) => a.id === selectedAppId);
 
@@ -1143,9 +1144,11 @@ function DemoPageInner() {
     params.set("since", since);
     if (locale) params.set("locale", locale);
     if (statsFresh) params.set("fresh", "1");
+    const reqId = ++statsReqIdRef.current;
     fetch(`/api/demo/stats?${params}`)
       .then((r) => r.json())
       .then((data) => {
+        if (reqId !== statsReqIdRef.current) return;
         setStats(data);
         if (statsFresh) setStatsFresh(false);
       });
@@ -1155,7 +1158,6 @@ function DemoPageInner() {
   // 筛选一变，这个 effect 会先用旧 page 发一次请求，紧接着翻页重置 effect 再用 page=1 发一次；
   // 两次请求没有时序保证，要是先发的那次（可能落在一个空页上）反而后返回，就会把正确结果覆盖成空，
   // 表现为"评论区有时候不显示"。用一个自增的请求序号当守卫，只让最新一次请求的结果落地、丢弃过期返回。
-  const reviewsReqIdRef = useRef(0);
   useEffect(() => {
     if (!selectedAppId || !selectedApp) return;
     setLoading(true);
@@ -1718,9 +1720,10 @@ function DemoPageInner() {
                       <span className="text-white/68 text-[16px]">{timeRangeLabel}平均分</span>
                     </div>
                     <p className="text-white/60 text-[14px] mb-5">
-                      {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 共 {stats.total} 条，圆点面积与当天评论量成正比
+                      {appName} · {fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)} · Google Play · 共 {stats.total} 条
+                      {locale ? `（${localeLabel(locale)}）` : ""}，圆点面积与当天{locale ? "该地区" : ""}评论量成正比
                     </p>
-                    <RatingTrendChart points={stats.dailyRatings} overallAvg={avgRating ?? 0} />
+                    <RatingTrendChart key={locale || "all"} points={stats.dailyRatings} overallAvg={avgRating ?? 0} />
                   </>
                 )}
 
