@@ -7,9 +7,9 @@ import remarkGfm from "remark-gfm";
 import {
   Globe,
   ListOrdered, GitCompare, Bot, Reply,
-  X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp, Trash2, Smile,
+  X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp, Trash2, Smile, Plus,
 } from "lucide-react";
-import { type ReviewRow, type AppRow } from "@/lib/supabase";
+import { type ReviewRow, type AppRow, type TerminologyEntry } from "@/lib/supabase";
 import { meaningfulLocaleFloor } from "@/lib/analysisShared";
 import { DEFAULT_DEMO_TIME_RANGE, resolveDefaultDemoApp } from "@/lib/demoDefaults";
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
@@ -206,6 +206,127 @@ function LockedFeatureHint({ pos, onClose }: { pos: { top: number; left: number 
 
 const AI_REPLY_FIELD_CLASS =
   "w-full bg-[#1d2433] border border-white/15 rounded-lg px-2.5 py-2 text-[13px] text-white/85 placeholder-white/35 outline-none resize-none cursor-pointer hover:border-white/25 focus:border-white/30";
+
+const TERMINOLOGY_INPUT_CLASS =
+  "w-full min-w-0 bg-[#1d2433] border border-white/15 rounded-lg px-2 py-1.5 text-[12px] text-white/85 placeholder-white/35 outline-none focus:border-white/30";
+
+function emptyTerminologyRow(): TerminologyEntry {
+  return { source: "", zh: "", en: "", note: "" };
+}
+
+function TerminologyGlossaryEditor({
+  appId,
+  appName,
+  rows,
+  onChange,
+  onSaved,
+}: {
+  appId: string | undefined;
+  appName: string;
+  rows: TerminologyEntry[];
+  onChange: (rows: TerminologyEntry[]) => void;
+  onSaved: (glossary: TerminologyEntry[]) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const updateRow = (index: number, patch: Partial<TerminologyEntry>) => {
+    onChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+    setMsg(null);
+  };
+
+  const addRow = () => onChange([...rows, emptyTerminologyRow()]);
+  const removeRow = (index: number) => onChange(rows.filter((_, i) => i !== index));
+
+  const save = async () => {
+    if (!appId) return;
+    setSaving(true);
+    setMsg(null);
+    try {
+      const payload = rows
+        .map((r) => ({
+          source: r.source?.trim() ?? "",
+          zh: r.zh?.trim() || null,
+          en: r.en?.trim() || null,
+          note: r.note?.trim() || null,
+        }))
+        .filter((r) => r.source);
+      const res = await fetch(`/api/demo/apps/${appId}/terminology`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ glossary: payload }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "保存失败");
+      onSaved(data.glossary ?? []);
+      setMsg("已保存");
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-3">
+      {rows.length === 0 ? (
+        <p className="text-white/40 text-[12px] leading-relaxed px-0.5">
+          暂无术语条目。添加后对本 App 的翻译、问 AI、回复建议均生效。
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-[1fr_1fr_1fr_0.8fr_28px] gap-1.5 text-[11px] text-white/45 px-0.5">
+            <span>原文/专名</span>
+            <span>中文</span>
+            <span>英文</span>
+            <span>备注</span>
+            <span />
+          </div>
+          {rows.map((row, i) => (
+            <div key={i} className="grid grid-cols-[1fr_1fr_1fr_0.8fr_28px] gap-1.5 items-center">
+              {(["source", "zh", "en", "note"] as const).map((field) => (
+                <input
+                  key={field}
+                  type="text"
+                  value={row[field] ?? ""}
+                  placeholder={field === "source" ? "Honor of Kings" : field === "zh" ? "王者荣耀" : field === "en" ? "Honor of Kings" : "可选"}
+                  onChange={(e) => updateRow(i, { [field]: e.target.value })}
+                  className={TERMINOLOGY_INPUT_CLASS}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => removeRow(i)}
+                className="flex items-center justify-center h-8 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/8"
+                aria-label="删除此行">
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={addRow}
+          disabled={!appId}
+          className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 text-[12px] text-white/75 hover:bg-white/8 disabled:opacity-40">
+          <Plus size={13} />
+          添加条目
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          disabled={!appId || saving}
+          className="inline-flex items-center gap-1 rounded-lg bg-white/12 px-2.5 py-1.5 text-[12px] text-white/85 hover:bg-white/18 disabled:opacity-40">
+          {saving ? <Loader2 size={13} className="animate-spin" /> : null}
+          保存到 {appName}
+        </button>
+        {msg && <span className={`text-[12px] ${msg === "已保存" ? "text-emerald-400/90" : "text-red-400/90"}`}>{msg}</span>}
+      </div>
+    </div>
+  );
+}
 
 function getDisplayContent(r: ReviewRow, s: TranslateSettings): { text: string; translated: boolean } {
   if (!s.enabled) return { text: r.content, translated: false };
@@ -792,6 +913,7 @@ function DemoPageInner() {
   const [askSettings, setAskSettings] = useState<AskSettings>(() =>
     loadJsonSetting(ASK_SETTINGS_KEY, DEFAULT_ASK_SETTINGS)
   );
+  const [terminologyDraft, setTerminologyDraft] = useState<TerminologyEntry[]>([]);
   const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("filter");
   const [lockedHintPos, setLockedHintPos] = useState<{ top: number; left: number } | null>(null);
   const [showAppMenu, setShowAppMenu] = useState(false);
@@ -842,6 +964,22 @@ function DemoPageInner() {
   const replyDetailRef = useRef<HTMLDivElement>(null);
 
   const selectedApp = apps.find((a) => a.id === selectedAppId);
+
+  useEffect(() => {
+    if (!selectedApp) {
+      setTerminologyDraft([]);
+      return;
+    }
+    setTerminologyDraft(
+      (selectedApp.terminology_glossary ?? []).map((e) => ({
+        source: e.source ?? "",
+        zh: e.zh ?? "",
+        en: e.en ?? "",
+        note: e.note ?? "",
+      }))
+    );
+  }, [selectedAppId, selectedApp?.terminology_glossary, selectedApp]);
+
   // 锚点用这个App真实数据里最新一条评论的日期，不用服务器当前时间——见 lib/reviews.ts
   // 的 getLatestReviewDate 注释，Google Play 评论接口本身有索引延迟，锚定"现在"会让窗口
   // 尾部总是空着一截，看起来像漏了数据。还没拿到任何App数据时（比如apps还没加载完）才退回当前时间。
@@ -1989,6 +2127,31 @@ function DemoPageInner() {
                     ))}
                   </div>
                 </div>
+              </section>
+              <section>
+                <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">产品术语 / 专名</p>
+                <p className="text-white/40 text-[12px] mb-2 px-1 leading-relaxed">
+                  按 App 维护专名映射，对本 App 的翻译、问 AI、回复建议均生效。术语表为空时仍遵守「未知专名保留原文、禁止意译」。
+                </p>
+                <TerminologyGlossaryEditor
+                  appId={selectedAppId}
+                  appName={selectedApp?.display_name ?? "当前 App"}
+                  rows={terminologyDraft}
+                  onChange={setTerminologyDraft}
+                  onSaved={(glossary) => {
+                    setTerminologyDraft(
+                      glossary.map((e) => ({
+                        source: e.source ?? "",
+                        zh: e.zh ?? "",
+                        en: e.en ?? "",
+                        note: e.note ?? "",
+                      }))
+                    );
+                    setApps((prev) =>
+                      prev.map((a) => (a.id === selectedAppId ? { ...a, terminology_glossary: glossary } : a))
+                    );
+                  }}
+                />
               </section>
               <section>
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">AI 回复建议 context 设置</p>

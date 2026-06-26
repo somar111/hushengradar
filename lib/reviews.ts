@@ -1,6 +1,6 @@
-import { getServiceSupabase, type ReviewRow, type AppRow } from "./supabase";
+import { getServiceSupabase, type ReviewRow, type AppRow, type TerminologyEntry } from "./supabase";
 import { meaningfulLocaleFloor } from "./analysisShared";
-import { mergeSimilarSubTags } from "./promptKit.mjs";
+import { mergeSimilarSubTags, sanitizeTerminologyGlossary } from "./promptKit.mjs";
 import { resolveDefaultDemoApp } from "./demoDefaults";
 
 // apps 表几乎不变（只有手动加新 App 时才变），缓存住省掉每次切筛选都白付一次 Supabase round trip
@@ -14,6 +14,19 @@ async function getCachedApps(): Promise<AppRow[]> {
   if (error) throw error;
   appsCache = { apps: data ?? [], fetchedAt: Date.now() };
   return appsCache.apps;
+}
+
+export function invalidateAppsCache() {
+  appsCache = null;
+}
+
+export async function updateAppTerminologyGlossary(appId: string, glossary: TerminologyEntry[]): Promise<TerminologyEntry[]> {
+  const cleaned = sanitizeTerminologyGlossary(glossary) as TerminologyEntry[];
+  const supabase = getServiceSupabase();
+  const { error } = await supabase.from("apps").update({ terminology_glossary: cleaned }).eq("id", appId);
+  if (error) throw error;
+  invalidateAppsCache();
+  return cleaned;
 }
 
 export async function listApps(): Promise<AppRow[]> {

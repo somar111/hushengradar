@@ -25,13 +25,19 @@ export async function POST(request: NextRequest) {
       author,
       tags: tags ?? [],
       appContext: app.context,
+      displayName: app.display_name,
+      terminologyGlossary: app.terminology_glossary ?? [],
       replyContext: replyContext ?? null,
     });
 
     let translation: string | null = null;
     const ts = translateSettings as ReplyTranslationSettings | undefined;
     if (ts?.enabled) {
-      const result = await detectAndTranslate(reply);
+      const result = await detectAndTranslate(reply, {
+        appContext: app.context,
+        displayName: app.display_name,
+        terminologyGlossary: app.terminology_glossary ?? [],
+      });
       translation = pickReplyTranslation(result, ts);
     }
 

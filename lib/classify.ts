@@ -1,5 +1,6 @@
 import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt, buildTranslatePrompt } from "./promptKit.mjs";
 import { ASK_TOOLS, executeAskTool, type AskContext } from "./askTools";
+import type { TerminologyEntry } from "./supabase";
 
 export type ClassifiedTag = { key: string; label: string; evidence?: string };
 
@@ -51,6 +52,8 @@ export async function generateReplySuggestion(opts: {
   author: string;
   tags: ClassifiedTag[];
   appContext?: string | null;
+  displayName?: string | null;
+  terminologyGlossary?: TerminologyEntry[] | null;
   replyContext?: ReplyContext | null;
 }): Promise<string> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -61,6 +64,8 @@ export async function generateReplySuggestion(opts: {
   const systemPrompt = buildReplyPrompt({
     appContext: opts.appContext,
     replyContext: opts.replyContext,
+    displayName: opts.displayName,
+    terminologyGlossary: opts.terminologyGlossary,
   });
 
   const hasAuthorizedContact = Boolean(opts.replyContext?.contactInfo?.trim());
@@ -118,7 +123,14 @@ export type TranslateResult = {
   translated_en: string | null;
 };
 
-export async function detectAndTranslate(content: string): Promise<TranslateResult> {
+export async function detectAndTranslate(
+  content: string,
+  opts: {
+    appContext?: string | null;
+    displayName?: string | null;
+    terminologyGlossary?: TerminologyEntry[] | null;
+  } = {}
+): Promise<TranslateResult> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY 未配置");
@@ -127,7 +139,14 @@ export async function detectAndTranslate(content: string): Promise<TranslateResu
   const data = await callDeepSeek(apiKey, {
     model: "deepseek-chat",
     messages: [
-      { role: "system", content: buildTranslatePrompt() },
+      {
+        role: "system",
+        content: buildTranslatePrompt({
+          appContext: opts.appContext,
+          displayName: opts.displayName,
+          terminologyGlossary: opts.terminologyGlossary,
+        }),
+      },
       { role: "user", content },
     ],
     temperature: 0.1,
@@ -326,6 +345,8 @@ export async function* answerQuestionStream(opts: {
   question: string;
   appId: string;
   appContext?: string | null;
+  displayName?: string | null;
+  terminologyGlossary?: TerminologyEntry[] | null;
   timeRangeLabel: string;
   latestReviewDate: string | null;
   defaultSince?: string;
@@ -352,6 +373,8 @@ export async function* answerQuestionStream(opts: {
     timeRangeLabel: opts.timeRangeLabel,
     latestReviewDate: opts.latestReviewDate,
     useEmoji: opts.useEmoji,
+    displayName: opts.displayName,
+    terminologyGlossary: opts.terminologyGlossary,
   });
 
   const messages: ChatMessage[] = [{ role: "system", content: systemPrompt }];

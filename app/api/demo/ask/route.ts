@@ -43,6 +43,8 @@ export async function POST(request: NextRequest) {
           question: String(question),
           appId: app.id,
           appContext: app.context,
+          displayName: app.display_name,
+          terminologyGlossary: app.terminology_glossary ?? [],
           timeRangeLabel: timeRangeLabel || "所选时间范围",
           latestReviewDate,
           defaultSince: since || undefined,

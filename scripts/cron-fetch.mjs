@@ -171,8 +171,8 @@ async function resolveFetchLocales(app) {
   return FALLBACK_LOCALES;
 }
 
-async function detectAndTranslate(content) {
-  const systemPrompt = buildTranslatePrompt();
+async function detectAndTranslate(content, { appContext, displayName, terminologyGlossary } = {}) {
+  const systemPrompt = buildTranslatePrompt({ appContext, displayName, terminologyGlossary });
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_API_KEY}` },
@@ -401,7 +401,13 @@ async function processApp(app) {
   console.log(`待翻译 ${untranslated.length} 条`);
   await runConcurrent(untranslated, 8, async (r) => {
     try {
-      const result = await withRetry(() => detectAndTranslate(r.content));
+      const result = await withRetry(() =>
+        detectAndTranslate(r.content, {
+          appContext: app.context,
+          displayName: app.display_name,
+          terminologyGlossary: app.terminology_glossary ?? [],
+        })
+      );
       const { error } = await supabase.from("reviews").update({
         detected_lang: result.detected_lang, translated_zh: result.translated_zh,
         translated_en: result.translated_en, translated_at: new Date().toISOString(),

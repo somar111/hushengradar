@@ -10,12 +10,22 @@ export function getServiceSupabase() {
   return createClient(url, key);
 }
 
+export type TerminologyEntry = {
+  /** 评论/原文里出现的写法（canonical） */
+  source: string;
+  zh?: string | null;
+  en?: string | null;
+  note?: string | null;
+};
+
 export type AppRow = {
   id: string;
   platform: "google_play" | "app_store";
   external_id: string;
   display_name: string;
   context: string | null;
+  /** 产品专名术语表，per-App；默认 []，开发者自行维护 */
+  terminology_glossary?: TerminologyEntry[];
   last_fetched_at: string | null;
   locale_watermarks: Record<string, string>;
   // 该 App 要抓取的语言/地区批次，[lang, country] 数组；为空则 cron-fetch.mjs 用内置默认列表兜底
