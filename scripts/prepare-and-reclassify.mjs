@@ -4,6 +4,7 @@
 //   node scripts/prepare-and-reclassify.mjs com.levelinfinite.sgameGlobal --keys content_features,feature_request
 //   node scripts/prepare-and-reclassify.mjs <app> --keys ... --reset-only   # 只重置，不跑 cron
 //   node scripts/prepare-and-reclassify.mjs <app> --keys ... --skip-enrich  # 跳过 intent 补全
+//   node scripts/prepare-and-reclassify.mjs <app> --keys ... --force-enrich  # 强制刷新 intent + feature_request subs（P0.5）
 import { spawn } from "child_process";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -49,12 +50,13 @@ async function main() {
   const argv = process.argv.slice(2);
   const resetOnly = argv.includes("--reset-only");
   const skipEnrich = argv.includes("--skip-enrich");
+  const forceEnrich = argv.includes("--force-enrich");
   const keysArg = argv.find((a) => a.startsWith("--keys="))?.slice("--keys=".length)
     ?? (argv.includes("--keys") ? argv[argv.indexOf("--keys") + 1] : null);
   const appArg = argv.find((a) => !a.startsWith("--") && a !== keysArg);
 
   if (!appArg || !keysArg) {
-    console.error("用法：node scripts/prepare-and-reclassify.mjs <appId|external_id> --keys key1,key2 [--reset-only] [--skip-enrich]");
+    console.error("用法：node scripts/prepare-and-reclassify.mjs <appId|external_id> --keys key1,key2 [--reset-only] [--skip-enrich] [--force-enrich]");
     process.exit(1);
   }
 
@@ -66,8 +68,8 @@ async function main() {
   if (!skipEnrich) {
     if (!DEEPSEEK_API_KEY) throw new Error("补 intent 需要 DEEPSEEK_API_KEY");
     const callModel = createDeepSeekCaller(DEEPSEEK_API_KEY, { temperature: 0.3 });
-    app = await enrichTaxonomyIntents({ supabase, app, callModel });
-    app = await enrichFeatureRequestSubs({ supabase, app, callModel });
+    app = await enrichTaxonomyIntents({ supabase, app, callModel, force: forceEnrich });
+    app = await enrichFeatureRequestSubs({ supabase, app, callModel, force: forceEnrich });
   }
 
   const reset = await resetReviewsForReclassify({ supabase, app, scope: "incremental", affectedKeys });
