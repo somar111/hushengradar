@@ -461,8 +461,8 @@ function AskEmojiToggle({ enabled, onChange, compact = false }: { enabled: boole
         aria-pressed={enabled}
         aria-label="设置 AI 回复是否含 Emoji"
         className={`flex items-center rounded-xl border transition-colors ${
-          compact ? "gap-2 px-2 py-1.5" : "gap-2.5 px-3 py-2"
-        } text-[13px] ${
+          compact ? "gap-2 px-2 py-1.5 text-[14px]" : "gap-2.5 px-3 py-2 text-[14px]"
+        } ${
           enabled
             ? "border-[#5781d8]/45 bg-[#5781d8]/18 text-white"
             : "border-white/12 bg-white/[0.06] text-white/55 hover:border-white/20 hover:bg-white/[0.09]"
@@ -627,7 +627,7 @@ function ClearChatButton({ contextLabel, onClick }: { contextLabel: string; onCl
           type="button"
           onClick={onClick}
           aria-label={`清空「${contextLabel}」下的对话`}
-          className="flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#1a2233]/80 backdrop-blur-md px-3 py-1.5 text-[13px] text-white/65 hover:text-white/85 hover:border-white/22 hover:bg-[#1a2233] transition-colors">
+          className="flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#1a2233]/80 backdrop-blur-md px-3 py-1.5 text-[14px] text-white/65 hover:text-white/85 hover:border-white/22 hover:bg-[#1a2233] transition-colors">
           <Trash2 size={13} />
           清空此对话
         </button>
@@ -715,14 +715,14 @@ function SegmentedControl<T extends string>({
 
 function MarkdownMessage({ content }: { content: string }) {
   return (
-    <div className="ask-md text-white/88 [&_h1]:mb-4 [&_h1]:mt-1 [&_h1]:text-[22px] [&_h1]:leading-snug [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-3 [&_h2]:mt-5 [&_h2]:pb-2.5 [&_h2]:text-[19px] [&_h2]:leading-snug [&_h2]:font-bold [&_h2]:text-white [&_h2]:border-b [&_h2]:border-white/10 [&_h2:first-child]:mt-0 [&_h3]:mb-2.5 [&_h3]:mt-4 [&_h3]:text-[17px] [&_h3]:leading-snug [&_h3]:font-semibold [&_h3]:text-white [&_p]:mb-3.5 [&_p]:last:mb-0 [&_p]:text-[15px] [&_p]:leading-[1.75] [&_p]:text-white/75 [&>ol]:mb-1 [&>ol]:list-none [&>ol]:space-y-0 [&>ol]:pl-0 [&>ol>li]:border-t [&>ol>li]:border-white/10 [&>ol>li]:py-3.5 [&>ol>li]:text-[16px] [&>ol>li]:font-semibold [&>ol>li]:leading-snug [&>ol>li]:text-white [&>ol>li:first-child]:border-t-0 [&>ol>li:first-child]:pt-0 [&>ol>li_ul]:mt-2.5 [&>ol>li_ul]:list-[circle] [&>ol>li_ul]:space-y-1.5 [&>ol>li_ul]:pl-5 [&>ol>li_ul>li]:text-[14px] [&>ol>li_ul>li]:font-normal [&>ol>li_ul>li]:leading-[1.7] [&>ol>li_ul>li]:text-white/72 [&>ul:not(ol_li_ul)]:mb-3.5 [&>ul:not(ol_li_ul)]:list-disc [&>ul:not(ol_li_ul)]:space-y-1.5 [&>ul:not(ol_li_ul)]:pl-5 [&>ul:not(ol_li_ul)>li]:text-[15px] [&>ul:not(ol_li_ul)>li]:leading-[1.7] [&>ul:not(ol_li_ul)>li]:text-white/78 [&_ul_ul]:list-[circle] [&_ul_ul]:mt-1.5 [&_strong]:font-semibold [&_strong]:text-white [&_hr]:my-5 [&_hr]:border-white/12">
+    <div className="ask-md text-white/88 [&_h1]:mb-4 [&_h1]:mt-1 [&_h1]:text-[24px] [&_h1]:leading-snug [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-3 [&_h2]:mt-5 [&_h2]:pb-2.5 [&_h2]:text-[21px] [&_h2]:leading-snug [&_h2]:font-bold [&_h2]:text-white [&_h2]:border-b [&_h2]:border-white/10 [&_h2:first-child]:mt-0 [&_h3]:mb-2.5 [&_h3]:mt-4 [&_h3]:text-[19px] [&_h3]:leading-snug [&_h3]:font-semibold [&_h3]:text-white [&_p]:mb-3.5 [&_p]:last:mb-0 [&_p]:text-[17px] [&_p]:leading-[1.75] [&_p]:text-white/75 [&>ol]:mb-1 [&>ol]:list-none [&>ol]:space-y-0 [&>ol]:pl-0 [&>ol>li]:border-t [&>ol>li]:border-white/10 [&>ol>li]:py-3.5 [&>ol>li]:text-[18px] [&>ol>li]:font-semibold [&>ol>li]:leading-snug [&>ol>li]:text-white [&>ol>li:first-child]:border-t-0 [&>ol>li:first-child]:pt-0 [&>ol>li_ul]:mt-2.5 [&>ol>li_ul]:list-[circle] [&>ol>li_ul]:space-y-1.5 [&>ol>li_ul]:pl-5 [&>ol>li_ul>li]:text-[16px] [&>ol>li_ul>li]:font-normal [&>ol>li_ul>li]:leading-[1.7] [&>ol>li_ul>li]:text-white/72 [&>ul:not(ol_li_ul)]:mb-3.5 [&>ul:not(ol_li_ul)]:list-disc [&>ul:not(ol_li_ul)]:space-y-1.5 [&>ul:not(ol_li_ul)]:pl-5 [&>ul:not(ol_li_ul)>li]:text-[17px] [&>ul:not(ol_li_ul)>li]:leading-[1.7] [&>ul:not(ol_li_ul)>li]:text-white/78 [&_ul_ul]:list-[circle] [&_ul_ul]:mt-1.5 [&_strong]:font-semibold [&_strong]:text-white [&_hr]:my-5 [&_hr]:border-white/12">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => <h1>{children}</h1>,
           h2: ({ children }) => <h2>{children}</h2>,
           h3: ({ children }) => <h3>{children}</h3>,
-          h4: ({ children }) => <h4 className="mb-2 mt-3 text-[16px] leading-snug font-semibold text-white">{children}</h4>,
+          h4: ({ children }) => <h4 className="mb-2 mt-3 text-[18px] leading-snug font-semibold text-white">{children}</h4>,
           p: ({ children }) => <p>{children}</p>,
           ul: ({ children }) => <ul>{children}</ul>,
           ol: ({ children }) => <ol>{children}</ol>,
@@ -731,7 +731,7 @@ function MarkdownMessage({ content }: { content: string }) {
           hr: () => <hr />,
           table: ({ children }) => (
             <div className="overflow-x-auto mb-4 -mx-1 px-1">
-              <table className="w-full min-w-[16rem] text-[14px] border-collapse">{children}</table>
+              <table className="w-full min-w-[16rem] text-[15px] border-collapse">{children}</table>
             </div>
           ),
           thead: ({ children }) => <thead>{children}</thead>,
@@ -739,10 +739,10 @@ function MarkdownMessage({ content }: { content: string }) {
           tr: ({ children }) => <tr className="border-b border-white/8 last:border-0">{children}</tr>,
           th: ({ children }) => <th className="text-left py-2.5 pr-4 font-semibold text-white/88 align-bottom">{children}</th>,
           td: ({ children }) => <td className="py-2.5 pr-4 align-top leading-[1.65] text-white/75">{children}</td>,
-          code: ({ children }) => <code className="px-1.5 py-0.5 rounded bg-white/10 text-white/90 text-[14px]">{children}</code>,
-          pre: ({ children }) => <pre className="overflow-x-auto rounded-xl bg-black/25 p-4 mb-4 text-[14px] leading-relaxed">{children}</pre>,
+          code: ({ children }) => <code className="px-1.5 py-0.5 rounded bg-white/10 text-white/90 text-[15px]">{children}</code>,
+          pre: ({ children }) => <pre className="overflow-x-auto rounded-xl bg-black/25 p-4 mb-4 text-[15px] leading-relaxed">{children}</pre>,
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-white/28 pl-4 text-white/72 mb-3.5 text-[14px] leading-[1.7]">{children}</blockquote>
+            <blockquote className="border-l-2 border-white/28 pl-4 text-white/72 mb-3.5 text-[16px] leading-[1.7]">{children}</blockquote>
           ),
         }}>
         {content}
@@ -1410,7 +1410,7 @@ function DemoPageInner() {
   function calcChatInputHeight(el: HTMLTextAreaElement) {
     const max = Math.min(Math.floor(window.innerHeight * 0.45), 420);
     el.style.height = "auto";
-    const next = Math.max(48, Math.min(el.scrollHeight, max));
+    const next = Math.max(52, Math.min(el.scrollHeight, max));
     el.style.height = `${next}px`;
     el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
   }
@@ -1490,7 +1490,7 @@ function DemoPageInner() {
     setChatMessages((prev) => [...prev, { id: msgId, q, a: "" }]);
     setChatInput("");
     if (chatInputRef.current) {
-      chatInputRef.current.style.height = "48px";
+      chatInputRef.current.style.height = "52px";
       chatInputRef.current.style.overflowY = "hidden";
     }
     setChatLoading(true);
@@ -1932,9 +1932,9 @@ function DemoPageInner() {
         className={`absolute inset-0 overflow-y-auto px-6 pb-36 [overflow-anchor:none] ${canClearChat ? "pt-14" : "pt-6"}`}
       >
         {chatMessages.length === 0 && !chatLoading ? (
-          <div className="max-w-3xl mx-auto text-white/60 text-[17px] leading-relaxed">
+          <div className="max-w-3xl mx-auto text-white/60 text-[19px] leading-relaxed">
             <p className="font-medium text-white/80">问我关于 {appName} {timeRangeLabel} 的评论的任何问题</p>
-            <p className="text-white/40 text-[13px] mt-3 leading-relaxed">
+            <p className="text-white/40 text-[14px] mt-3 leading-relaxed">
               对话记录保存在本机浏览器，换设备或清除缓存后会丢失。
             </p>
           </div>
@@ -1943,18 +1943,18 @@ function DemoPageInner() {
             {chatMessages.map((m, i) => (
               <div key={m.id} className="space-y-4">
                 <div className="flex justify-end">
-                  <div className="max-w-[85%] rounded-2xl bg-[#4b5f9f] text-white px-4 py-3 text-[16px] leading-relaxed shadow-[0_8px_24px_rgba(87,129,216,0.25)]">
+                  <div className="max-w-[85%] rounded-2xl bg-[#4b5f9f] text-white px-4 py-3 text-[18px] leading-relaxed shadow-[0_8px_24px_rgba(87,129,216,0.25)]">
                     {m.q}
                   </div>
                 </div>
-                <div className="w-full text-[16px] text-white leading-relaxed">
+                <div className="w-full text-[18px] text-white leading-relaxed">
                   <MarkdownMessage content={m.a || (chatLoading && i === chatMessages.length - 1 ? "正在组织回答…" : "")} />
                 </div>
               </div>
             ))}
             {chatLoading && (
-              <div className="flex items-center gap-2 text-white/45 text-[14px] pl-1">
-                <Loader2 size={14} className="animate-spin" />AI 正在查阅真实评论数据…
+              <div className="flex items-center gap-2 text-white/45 text-[15px] pl-1">
+                <Loader2 size={15} className="animate-spin" />AI 正在查阅真实评论数据…
               </div>
             )}
           </div>
@@ -1993,8 +1993,8 @@ function DemoPageInner() {
                 handleSendChat();
               }
             }}
-            style={{ height: "48px" }}
-            className="flex-1 resize-none min-h-12 bg-transparent border-0 rounded-2xl px-3.5 py-3 text-[17px] leading-relaxed text-white placeholder-white/30 outline-none transition-colors overflow-y-hidden"
+            style={{ height: "52px" }}
+            className="flex-1 resize-none min-h-[52px] bg-transparent border-0 rounded-2xl px-3.5 py-3 text-[19px] leading-relaxed text-white placeholder-white/30 outline-none transition-colors overflow-y-hidden"
           />
           <AskEmojiToggle
             compact
