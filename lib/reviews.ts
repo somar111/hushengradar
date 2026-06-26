@@ -76,6 +76,19 @@ export type ReviewQueryFilters = {
   replied?: boolean;
 };
 
+/** 评论回复栏「重跑筛选结果」单次上限 */
+export const RECLASSIFY_MAX = 200;
+
+export class ReclassifyLimitError extends Error {
+  readonly total: number;
+
+  constructor(total: number) {
+    super(`当前筛选共 ${total} 条，超过单次上限 ${RECLASSIFY_MAX} 条，请缩小筛选范围`);
+    this.name = "ReclassifyLimitError";
+    this.total = total;
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyReviewFilters(query: any, opts: Omit<ReviewQueryFilters, "appId">) {
   if (opts.tag && opts.subTag) query = query.contains("ai_tags", JSON.stringify([{ key: opts.tag, subKey: opts.subTag }]));
@@ -116,6 +129,29 @@ export async function countReviewsReplyBreakdown(
     countReviewsMatching({ ...opts, replied: true }),
   ]);
   return { total, replied, unreplied: Math.max(0, total - replied) };
+}
+
+/** 拉取当前筛选下待重跑的评论（须已选 tag；总量不得超过 RECLASSIFY_MAX） */
+export async function fetchReviewsForReclassify(
+  opts: ReviewQueryFilters
+): Promise<{ reviews: Pick<ReviewRow, "id" | "content" | "rating">[]; total: number }> {
+  if (!opts.tag) throw new Error("必须选择问题类型");
+  const total = await countReviewsMatching(opts);
+  if (total > RECLASSIFY_MAX) throw new ReclassifyLimitError(total);
+  if (total === 0) return { reviews: [], total: 0 };
+
+  const supabase = getServiceSupabase();
+  const { appId, ...filters } = opts;
+  let query = supabase.from("reviews").select("id, content, rating").eq("app_id", appId);
+  query = applyReviewFilters(query, filters);
+  const { data, error } = await query.order("review_date", { ascending: false }).limit(RECLASSIFY_MAX);
+  if (error) throw error;
+  return { reviews: data ?? [], total };
+}
+
+export function invalidateStatsCache(appId?: string) {
+  if (appId) statsRowsCache.delete(appId);
+  else statsRowsCache.clear();
 }
 
 export async function queryReviews(opts: ReviewQueryFilters & {

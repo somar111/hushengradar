@@ -7,13 +7,14 @@ import remarkGfm from "remark-gfm";
 import {
   Globe,
   ListOrdered, GitCompare, Bot, Reply,
-  X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp, Trash2, Smile, Plus,
+  X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp, Trash2, Smile, Plus, RefreshCw,
 } from "lucide-react";
 import { type ReviewRow, type AppRow, type TerminologyEntry } from "@/lib/supabase";
 import { meaningfulLocaleFloor, sortSubTagRecordForDisplay } from "@/lib/analysisShared";
 import { hasSubTagBreakdown } from "@/lib/promptKit.mjs";
 import { DEFAULT_DEMO_TIME_RANGE, resolveDefaultDemoApp } from "@/lib/demoDefaults";
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
+import { RECLASSIFY_MAX } from "@/lib/reviews";
 
 // ─── 类型 ────────────────────────────────────────────────────
 
@@ -512,6 +513,61 @@ function ReplyTranslateToggle({ enabled, onChange }: { enabled: boolean; onChang
   );
 }
 
+function ReplyReclassifyButton({
+  disabled,
+  disabledReason,
+  loading,
+  count,
+  onClick,
+}: {
+  disabled: boolean;
+  disabledReason: string;
+  loading: boolean;
+  count: number;
+  onClick: () => void;
+}) {
+  const [showHint, setShowHint] = useState(false);
+  return (
+    <div className="relative flex-none">
+      <button
+        type="button"
+        disabled={disabled || loading}
+        onClick={onClick}
+        onMouseEnter={() => setShowHint(true)}
+        onMouseLeave={() => setShowHint(false)}
+        onFocus={() => setShowHint(true)}
+        onBlur={() => setShowHint(false)}
+        aria-label="重跑当前筛选结果的分类"
+        className={`${REPLY_FILTER_FIELD} flex items-center gap-2 px-3.5 py-2.5 text-[14px] transition-colors ${
+          disabled || loading
+            ? "text-white/35 cursor-not-allowed opacity-60"
+            : "text-white/85 hover:border-white/28 hover:text-white/95"
+        }`}>
+        {loading ? (
+          <Loader2 size={15} className="animate-spin text-[#8fb0ff]" />
+        ) : (
+          <RefreshCw size={15} className={disabled ? "text-white/30" : "text-white/55"} strokeWidth={2} />
+        )}
+        <span className="font-medium whitespace-nowrap">
+          {loading ? "重跑中…" : "重跑分类"}
+        </span>
+        {!loading && count > 0 && !disabled && (
+          <span className="text-[12px] font-semibold text-[#8fb0ff]">{count}</span>
+        )}
+      </button>
+      {showHint && (
+        <div
+          role="tooltip"
+          className="pointer-events-none absolute top-full right-0 mt-2 z-50 w-max max-w-[18rem] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          {disabled
+            ? disabledReason
+            : `用当前 taxonomy 重新分类筛选结果（最多 ${RECLASSIFY_MAX} 条）。完成后标签可能变化，列表与统计会刷新。`}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClearChatButton({ contextLabel, onClick }: { contextLabel: string; onClick: () => void }) {
   const [showHint, setShowHint] = useState(false);
   return (
@@ -962,6 +1018,9 @@ function DemoPageInner() {
   const [aiReplyTranslation, setAiReplyTranslation] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [reclassifyLoading, setReclassifyLoading] = useState(false);
+  const [reclassifyFeedback, setReclassifyFeedback] = useState("");
+  const [dataRefreshKey, setDataRefreshKey] = useState(0);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const [chatInput, setChatInput] = useState("");
@@ -1015,6 +1074,16 @@ function DemoPageInner() {
   const appName = selectedApp?.display_name ?? "App";
   const askDraftStorageKey = askContextStorageKey(ASK_DRAFT_STORAGE_PREFIX, selectedAppId, timeRange, locale);
   const askChatStorageKey = askContextStorageKey(ASK_CHAT_STORAGE_PREFIX, selectedAppId, timeRange, locale);
+
+  const reclassifyBlockedReason = useMemo(() => {
+    if (!tagFilter) return "请先选择问题类型";
+    if (loading || reclassifyLoading) return "请等待加载完成";
+    if (total === 0) return "当前筛选下没有评论";
+    if (total > RECLASSIFY_MAX) {
+      return `超过 ${RECLASSIFY_MAX} 条上限（当前 ${total.toLocaleString()} 条），请缩小筛选范围`;
+    }
+    return "";
+  }, [tagFilter, loading, reclassifyLoading, total]);
 
   // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目；评论回复下 ⌥T / Alt+T 开关翻译。
   // 逻辑同时认 metaKey/ctrlKey 与 altKey，Mac 与 Windows 都生效；面板用中性写法同时标注两套修饰键，
@@ -1073,7 +1142,7 @@ function DemoPageInner() {
     params.set("since", since);
     if (locale) params.set("locale", locale);
     fetch(`/api/demo/stats?${params}`).then((r) => r.json()).then(setStats);
-  }, [selectedAppId, selectedApp, locale, since]);
+  }, [selectedAppId, selectedApp, locale, since, dataRefreshKey]);
 
   // 拉评论列表（筛选/翻页变化时）
   // 筛选一变，这个 effect 会先用旧 page 发一次请求，紧接着翻页重置 effect 再用 page=1 发一次；
@@ -1105,7 +1174,7 @@ function DemoPageInner() {
       .finally(() => {
         if (reqId === reviewsReqIdRef.current) setLoading(false);
       });
-  }, [selectedAppId, selectedApp, locale, tagFilter, subTagFilter, search, repliedFilter, page, since]);
+  }, [selectedAppId, selectedApp, locale, tagFilter, subTagFilter, search, repliedFilter, page, since, dataRefreshKey]);
 
   useEffect(() => {
     if (bootReady) return;
@@ -1120,6 +1189,7 @@ function DemoPageInner() {
 
   // 切筛选条件时回到第一页（page 已经是 1 就不用再多触发一次 URL replace）
   useEffect(() => { if (page !== 1) setPage(1); }, [selectedAppId, locale, tagFilter, subTagFilter, search, repliedFilter, since]);
+  useEffect(() => { setReclassifyFeedback(""); }, [selectedAppId, locale, tagFilter, subTagFilter, search, repliedFilter, since]);
 
   function scrollChatToBottomIfNeeded() {
     if (chatUserDetachedRef.current || !chatStickToBottomRef.current) return;
@@ -1476,6 +1546,63 @@ function DemoPageInner() {
       setAiError("请求失败，请重试");
     } finally {
       setAiLoading(false);
+    }
+  }
+
+  async function handleReclassify() {
+    if (reclassifyBlockedReason || reclassifyLoading || !tagFilter) return;
+    const tagStats = stats?.tagCounts[tagFilter];
+    const parts = [`问题类型：${tagStats?.label ?? tagFilter}`];
+    if (subTagFilter && tagStats?.subTags[subTagFilter]) {
+      parts.push(`子问题：${tagStats.subTags[subTagFilter].label}`);
+    }
+    if (locale) parts.push(`地区：${localeLabel(locale)}`);
+    if (search) parts.push(`搜索：${search}`);
+    if (repliedFilter !== undefined) parts.push(repliedFilter ? "已回复" : "未回复");
+    parts.push(`共 ${total.toLocaleString()} 条（单次上限 ${RECLASSIFY_MAX}）`);
+
+    if (
+      !window.confirm(
+        `将用当前 taxonomy 重新分类以下筛选结果：\n\n${parts.join("\n")}\n\n完成后标签可能变化，列表与统计会刷新。确定继续？`
+      )
+    ) {
+      return;
+    }
+
+    setReclassifyLoading(true);
+    setReclassifyFeedback("");
+    try {
+      const res = await fetch("/api/demo/reviews/reclassify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appId: selectedAppId,
+          since,
+          locale: locale || undefined,
+          tag: tagFilter,
+          subTag: subTagFilter || undefined,
+          q: search || undefined,
+          replied: repliedFilter,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReclassifyFeedback(data.error || "重跑失败");
+        return;
+      }
+      setSelectedReview(null);
+      setAiReply("");
+      setAiReplyTranslation(null);
+      setDataRefreshKey((k) => k + 1);
+      setReclassifyFeedback(
+        data.failed > 0
+          ? `已完成：成功 ${data.succeeded} 条，失败 ${data.failed} 条`
+          : `已重跑 ${data.succeeded} 条评论的分类`
+      );
+    } catch {
+      setReclassifyFeedback("请求失败，请重试");
+    } finally {
+      setReclassifyLoading(false);
     }
   }
 
@@ -1892,12 +2019,24 @@ function DemoPageInner() {
               enabled={translateSettings.enabled}
               onChange={(enabled) => setTranslateSettings((s) => ({ ...s, enabled }))}
             />
+            <ReplyReclassifyButton
+              disabled={Boolean(reclassifyBlockedReason)}
+              disabledReason={reclassifyBlockedReason || "重跑当前筛选结果的分类"}
+              loading={reclassifyLoading}
+              count={tagFilter && !reclassifyBlockedReason ? total : 0}
+              onClick={handleReclassify}
+            />
           </div>
         </div>
         <p className="px-1 pb-2.5 text-[13px] text-white/45 leading-snug">
           {loading && replyStatusCounts === null
             ? "正在统计评论…"
             : `共 ${total.toLocaleString()} 条评论`}
+          {reclassifyFeedback && (
+            <span className={reclassifyFeedback.includes("失败") || reclassifyFeedback.includes("超过") ? " text-red-400/90" : " text-[#8fb0ff]/90"}>
+              {" · "}{reclassifyFeedback}
+            </span>
+          )}
         </p>
         {loading ? (
           <div className="flex items-center justify-center h-full text-white/30"><Loader2 className="animate-spin" size={20} /></div>
