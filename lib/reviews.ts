@@ -112,7 +112,8 @@ function applyReviewFilters(query: any, opts: Omit<ReviewQueryFilters, "appId">)
   return query;
 }
 
-async function countReviewsMatching(opts: ReviewQueryFilters): Promise<number> {
+/** 与评论查看&回复列表、`query_reviews` 同一套 applyReviewFilters 计数。 */
+export async function countReviewsMatching(opts: ReviewQueryFilters): Promise<number> {
   const supabase = getServiceSupabase();
   const { appId, ...filters } = opts;
   let query = supabase.from("reviews").select("*", { count: "exact", head: true }).eq("app_id", appId);

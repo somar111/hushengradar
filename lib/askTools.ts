@@ -1,5 +1,5 @@
 import { sortSubTagRecordForDisplay } from "./analysisShared";
-import { buildAnalysisMetrics, computeStats, queryReviews } from "./reviews";
+import { buildAnalysisMetrics, computeStats, countReviewsMatching, queryReviews } from "./reviews";
 import type { ReviewRow } from "./supabase";
 
 export type AskContext = {
@@ -51,7 +51,7 @@ export const ASK_TOOLS = [
     function: {
       name: "get_stats",
       description:
-        "获取指定时间/地区范围内的聚合统计：评论总数、日期范围、星级分布、均分、标签分布（含子问题）、版本评分、官方回复率等。",
+        "获取指定时间/地区范围内的聚合统计：评论总数、日期范围、星级分布、均分、标签分布（含子问题）、版本评分、官方回复率等。子标签 count 是标签命中次数（一条评论多 tag 会多次计数），不是评论条数——问「某标签/子标签有多少条评论」必须用 count_reviews。",
       parameters: {
         type: "object",
         properties: {
@@ -79,9 +79,29 @@ export const ASK_TOOLS = [
   {
     type: "function" as const,
     function: {
+      name: "count_reviews",
+      description:
+        "统计符合条件的评论条数（与 Demo 评论查看&回复列表完全同一套筛选）。用户问「某顶层标签/子标签有多少条评论」时必须优先调用；UI 上的「其他」对应 subTag=general。返回 total 即精确条数。",
+      parameters: {
+        type: "object",
+        properties: {
+          since: { type: "string", description: "起始时间 ISO 8601（含）" },
+          until: { type: "string", description: "截止时间 ISO 8601（含）" },
+          locale: { type: "string", description: "抓取批次 locale，如 en_us" },
+          tag: { type: "string", description: "顶层标签 key，如 content_features" },
+          subTag: { type: "string", description: "子标签 subKey；「其他」填 general" },
+          rating: { type: "number", description: "筛选星级 1-5" },
+          q: { type: "string", description: "关键词（可选）" },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "query_reviews",
       description:
-        "查询真实评论样本（含原文/中文翻译、AI 标签、评分）。用于了解用户具体在抱怨或称赞什么，也支持按关键词检索。返回 total（符合条件的总数，即使只抽样返回少量）与抽样条数——判断『有没有/是否存在某主题』时优先看 total。",
+        "查询真实评论样本（含原文/中文翻译、AI 标签、评分）。用于了解用户具体在抱怨或称赞什么，也支持按关键词检索。返回 total 与抽样条数。仅问条数时用 count_reviews；需要摘录原文时用本工具并看 returned 样本。",
       parameters: {
         type: "object",
         properties: {
@@ -143,6 +163,36 @@ export async function executeAskTool(
         reviewCount: l.count,
         avgRating: l.avgRating,
       })),
+    });
+  }
+
+  if (name === "count_reviews") {
+    const tag = typeof args.tag === "string" ? args.tag : undefined;
+    const subTag = typeof args.subTag === "string" ? args.subTag : undefined;
+    const rating = typeof args.rating === "number" ? args.rating : undefined;
+    const q = typeof args.q === "string" && args.q.trim() ? args.q.trim() : undefined;
+    const total = await countReviewsMatching({
+      appId: ctx.appId,
+      since,
+      until,
+      locale,
+      tag,
+      subTag,
+      rating,
+      q,
+    });
+    return JSON.stringify({
+      filters: {
+        since: since ?? null,
+        until: until ?? null,
+        locale: locale ?? null,
+        tag: tag ?? null,
+        subTag: subTag ?? null,
+        rating: rating ?? null,
+        q: q ?? null,
+      },
+      total,
+      note: "total 为评论条数，与 Demo 评论列表同口径；子标签「其他」= subTag general",
     });
   }
 
