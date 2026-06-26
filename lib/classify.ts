@@ -1,4 +1,5 @@
 import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt } from "./promptKit.mjs";
+import { prefetchAskTagCount } from "./askCountPrefetch";
 import { ASK_TOOLS, executeAskTool, type AskContext } from "./askTools";
 import type { TerminologyEntry } from "./supabase";
 
@@ -208,6 +209,7 @@ function buildAskUserMessage(opts: {
   timeRangeLabel: string;
   defaultSince?: string;
   defaultLocale?: string;
+  prefetchBlock?: string;
 }) {
   const lines = [
     opts.latestReviewDate
@@ -220,9 +222,11 @@ function buildAskUserMessage(opts: {
     "若问题问某标签/子标签「有多少条评论」，须用 count_reviews 的 total 作答，并写明上述时间/地区范围。",
     "回答前自检：你准备写的每一句，能否在工具结果里找到对应数字或原文？找不到就删掉或改成「数据不足」。",
     "禁止编造邮箱、网址、电话；除非评论/官方回复原文里逐字出现。",
+    opts.prefetchBlock ? "" : null,
+    opts.prefetchBlock ?? null,
     "",
     `开发者的问题：${opts.question}`,
-  ].filter((l) => l !== null);
+  ].filter((l) => l !== null && l !== "");
   return lines.join("\n");
 }
 
@@ -331,6 +335,7 @@ export async function* answerQuestionStream(opts: {
   appContext?: string | null;
   displayName?: string | null;
   terminologyGlossary?: TerminologyEntry[] | null;
+  seedCategories?: AskContext["seedCategories"];
   timeRangeLabel: string;
   latestReviewDate: string | null;
   defaultSince?: string;
@@ -351,7 +356,10 @@ export async function* answerQuestionStream(opts: {
     defaultSince: opts.defaultSince,
     defaultLocale: opts.defaultLocale,
     timeRangeLabel: opts.timeRangeLabel,
+    seedCategories: opts.seedCategories,
   };
+
+  const prefetch = await prefetchAskTagCount(ctx, opts.question);
 
   const systemPrompt = buildAskPrompt({
     appContext: opts.appContext,
@@ -375,7 +383,10 @@ export async function* answerQuestionStream(opts: {
     messages.push({ role: "assistant", content: a.slice(0, 1500) });
   }
 
-  messages.push({ role: "user", content: buildAskUserMessage(opts) });
+  messages.push({
+    role: "user",
+    content: buildAskUserMessage({ ...opts, prefetchBlock: prefetch?.block }),
+  });
 
   // 已经吐给前端的最终答案文本，用于收尾时跟净化后的版本比对，必要时整段替换
   let streamedAnswer = "";

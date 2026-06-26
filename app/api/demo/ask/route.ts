@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
           appContext: app.context,
           displayName: app.display_name,
           terminologyGlossary: app.terminology_glossary ?? [],
+          seedCategories: app.seed_categories ?? [],
           timeRangeLabel: timeRangeLabel || "所选时间范围",
           latestReviewDate,
           defaultSince: since || undefined,

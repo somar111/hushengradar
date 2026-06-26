@@ -9,6 +9,7 @@ export type AskContext = {
   defaultSince?: string;
   defaultLocale?: string;
   timeRangeLabel: string;
+  seedCategories?: { key: string; label: string; subcategories?: { key: string; label: string }[] }[] | null;
 };
 
 type DateFilters = {
@@ -134,6 +135,8 @@ export async function executeAskTool(
     return JSON.stringify({
       filters: { since: since ?? null, until: until ?? null, locale: locale ?? null },
       dateRange: stats.dateRange,
+      countDisclaimer:
+        "subTagBreakdown[].count 是标签命中次数，不是评论条数；问「某标签/子标签有多少条评论」须用 count_reviews.total。",
       ...metrics,
       tagSummaries: Object.fromEntries(
         Object.entries(stats.tagCounts).map(([key, t]) => [key, t.summary]).filter(([, s]) => s)
