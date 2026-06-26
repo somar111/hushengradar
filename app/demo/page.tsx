@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -240,10 +241,11 @@ function GlassHoverTooltip({
       onFocus={reveal}
       onBlur={() => setShow(false)}>
       {children}
-      {show && (
+      {show && typeof document !== "undefined" && createPortal(
         <div role="tooltip" className={`fixed ${GLASS_TOOLTIP_CLASS} ${className}`} style={tooltipStyle}>
           {message}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -1880,6 +1882,8 @@ function DemoPageInner() {
 
               <GlassHoverTooltip
                 message={LOCKED_UNAVAILABLE_HINT}
+                placement="top-center"
+                className="whitespace-nowrap"
                 wrapClassName={`relative block w-full ${LOCKED_SURFACE_CURSOR}`}>
                 <div className="bg-[#242c3d] rounded-3xl p-6 opacity-60">
                   <div className="flex items-start gap-3">
