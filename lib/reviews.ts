@@ -1,6 +1,8 @@
 import { getServiceSupabase, type ReviewRow, type AppRow, type TerminologyEntry } from "./supabase";
 import { meaningfulLocaleFloor } from "./analysisShared";
-import { mergeSimilarSubTags, sanitizeTerminologyGlossary } from "./promptKit.mjs";
+import { mergeSimilarSubTags, sanitizeTerminologyGlossary, hasSubTagBreakdown } from "./promptKit.mjs";
+import { hasActiveStatsScope, resolveGlobalTagDisplaySummary } from "./tagDisplaySummary.mjs";
+import { invalidateScopedSummaryCache, pushTagSample, summarizeTagsForScope } from "./tagSummaries.mjs";
 import { resolveDefaultDemoApp } from "./demoDefaults";
 
 // apps 表几乎不变（只有手动加新 App 时才变），缓存住省掉每次切筛选都白付一次 Supabase round trip
@@ -150,8 +152,13 @@ export async function fetchReviewsForReclassify(
 }
 
 export function invalidateStatsCache(appId?: string) {
-  if (appId) statsRowsCache.delete(appId);
-  else statsRowsCache.clear();
+  if (appId) {
+    statsRowsCache.delete(appId);
+    invalidateScopedSummaryCache(appId);
+  } else {
+    statsRowsCache.clear();
+    invalidateScopedSummaryCache();
+  }
 }
 
 export async function queryReviews(opts: ReviewQueryFilters & {
@@ -191,7 +198,7 @@ async function fetchAllRows<T>(query: SupabaseQuery<T>, pageSize = 1000): Promis
   return all;
 }
 
-type StatsFields = Pick<ReviewRow, "rating" | "locale" | "ai_tags" | "app_version" | "official_reply" | "review_date">;
+type StatsFields = Pick<ReviewRow, "rating" | "locale" | "ai_tags" | "app_version" | "official_reply" | "review_date" | "content">;
 
 // cron 每天才跑一次抓取，统计用的全量行短期内不会变，缓存住避免每次点筛选按钮都把全表拉一遍重新聚合
 const STATS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -204,7 +211,7 @@ async function getStatsRows(appId: string, { forceRefresh = false } = {}) {
 
   const supabase = getServiceSupabase();
   const rows = await fetchAllRows<StatsFields>(
-    supabase.from("reviews").select("rating, locale, ai_tags, app_version, official_reply, review_date").eq("app_id", appId)
+    supabase.from("reviews").select("rating, locale, ai_tags, app_version, official_reply, review_date, content").eq("app_id", appId)
   );
 
   const { data: summaryRows, error: summaryErr } = await supabase
@@ -225,7 +232,12 @@ export async function computeStats(
   locale?: string,
   since?: string,
   until?: string,
-  opts: { forceRefresh?: boolean } = {},
+  opts: {
+    forceRefresh?: boolean;
+    appContext?: string | null;
+    attachDisplaySummaries?: boolean;
+    apiKey?: string | null;
+  } = {},
 ) {
   const { rows: allRows, summaryMap } = await getStatsRows(appId, { forceRefresh: opts.forceRefresh });
 
@@ -245,12 +257,14 @@ export async function computeStats(
   }
 
   const scoped = locale ? sinceRows.filter((r) => (r.locale ?? "unknown") === locale) : sinceRows;
+  const scopeActive = hasActiveStatsScope({ locale, since, until });
   const total = scoped.length;
   const ratingDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   const tagCounts: Record<
     string,
     { label: string; count: number; summary: string | null; repliedCount: number; subTags: Record<string, { label: string; count: number }> }
   > = {};
+  const tagSamples: Record<string, string[]> = {};
   const versionMap = new Map<string, { count: number; ratingSum: number; dateSum: number }>();
   const dailyMap = new Map<string, { count: number; ratingSum: number }>();
   let withOfficialReply = 0;
@@ -264,9 +278,10 @@ export async function computeStats(
     d.ratingSum += r.rating ?? 0;
     dailyMap.set(day, d);
     for (const t of r.ai_tags ?? []) {
-      const entry = tagCounts[t.key] ?? { label: t.label, count: 0, summary: summaryMap[t.key] ?? null, repliedCount: 0, subTags: {} };
+      const entry = tagCounts[t.key] ?? { label: t.label, count: 0, summary: null, repliedCount: 0, subTags: {} };
       entry.count++;
       if (r.official_reply) entry.repliedCount++;
+      pushTagSample(tagSamples, t, r.content);
       if (t.subKey) {
         const sub = entry.subTags[t.subKey] ?? { label: t.subLabel || t.subKey, count: 0 };
         sub.count++;
@@ -283,8 +298,48 @@ export async function computeStats(
     }
   }
 
-  for (const entry of Object.values(tagCounts)) {
+  const tagsNeedingScopedSummary: {
+    key: string;
+    label: string;
+    contents: string[];
+    subTags: Record<string, { label: string; count: number }>;
+  }[] = [];
+
+  for (const [key, entry] of Object.entries(tagCounts)) {
     entry.subTags = mergeSimilarSubTags(entry.subTags);
+    if (scopeActive) {
+      if (!hasSubTagBreakdown(entry.subTags)) {
+        tagsNeedingScopedSummary.push({
+          key,
+          label: entry.label,
+          contents: tagSamples[key] ?? [],
+          subTags: entry.subTags,
+        });
+      }
+      entry.summary = null;
+    } else {
+      entry.summary = resolveGlobalTagDisplaySummary({
+        globalSummary: summaryMap[key] ?? null,
+        subTags: entry.subTags,
+      });
+    }
+  }
+
+  const attachDisplaySummaries = opts.attachDisplaySummaries !== false;
+  const apiKey = opts.apiKey ?? process.env.DEEPSEEK_API_KEY ?? null;
+  if (scopeActive && attachDisplaySummaries && tagsNeedingScopedSummary.length && apiKey) {
+    const scopedSummaries = await summarizeTagsForScope({
+      appId,
+      apiKey,
+      appContext: opts.appContext ?? undefined,
+      locale,
+      since,
+      until,
+      tags: tagsNeedingScopedSummary,
+    });
+    for (const [key, summary] of Object.entries(scopedSummaries)) {
+      if (tagCounts[key]) tagCounts[key].summary = summary;
+    }
   }
 
   // 版本号字符串本身不一定能按时间排序（不同App的版本号规则不一样，有的甚至换过编号体系），

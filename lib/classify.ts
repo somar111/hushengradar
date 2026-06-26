@@ -345,6 +345,7 @@ export async function* answerQuestionStream(opts: {
 
   const ctx: AskContext = {
     appId: opts.appId,
+    appContext: opts.appContext,
     latestReviewDate: opts.latestReviewDate,
     defaultSince: opts.defaultSince,
     defaultLocale: opts.defaultLocale,

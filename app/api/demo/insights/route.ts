@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const timeRangeLabel = params.get("timeRangeLabel") || "所选时间范围";
 
   const app = appId ? await getApp(appId) : await getDefaultApp();
-  const stats = await computeStats(app.id, locale, since);
+  const stats = await computeStats(app.id, locale, since, undefined, { attachDisplaySummaries: false });
 
   if (!stats.total) {
     return Response.json({ complaintsVsFeatureRequest: null });

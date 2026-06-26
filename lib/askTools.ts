@@ -4,6 +4,7 @@ import type { ReviewRow } from "./supabase";
 
 export type AskContext = {
   appId: string;
+  appContext?: string | null;
   latestReviewDate: string | null;
   defaultSince?: string;
   defaultLocale?: string;
@@ -106,7 +107,9 @@ export async function executeAskTool(
   const { since, until, locale } = resolveFilters(args, ctx);
 
   if (name === "get_stats") {
-    const stats = await computeStats(ctx.appId, locale, since, until);
+    const stats = await computeStats(ctx.appId, locale, since, until, {
+      appContext: ctx.appContext,
+    });
     const metrics = buildAnalysisMetrics(stats);
     return JSON.stringify({
       filters: { since: since ?? null, until: until ?? null, locale: locale ?? null },
@@ -129,7 +132,9 @@ export async function executeAskTool(
   }
 
   if (name === "list_locales") {
-    const stats = await computeStats(ctx.appId, undefined, since, until);
+    const stats = await computeStats(ctx.appId, undefined, since, until, {
+      appContext: ctx.appContext,
+    });
     return JSON.stringify({
       filters: { since: since ?? null, until: until ?? null },
       dateRange: stats.dateRange,

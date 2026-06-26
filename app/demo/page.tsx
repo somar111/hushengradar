@@ -934,7 +934,7 @@ function fmtDate(iso: string | null) {
 }
 
 // Top 反馈 / 评论查看&回复头部共用 TagBreakdown。规则见 .cursor/rules/top-feedback-tagging.mdc：
-// praise、vague_complaint 无 breakdown；其余类有效子标签 ≥2 → chip，否则 → AI 摘要（非错误态）。
+// praise、vague_complaint 无 breakdown；其余类有效子标签 ≥2 → chip，否则 → summarizeCluster 中文摘要（evidence 不作 UI 文案）。
 function TagBreakdown({ t, onJump, activeSubKey }: {
   t: { count: number; summary: string | null; subTags: Record<string, { label: string; count: number }> };
   onJump?: (subKey?: string) => void;

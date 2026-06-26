@@ -8,6 +8,9 @@ export async function GET(request: NextRequest) {
   const since = params.get("since") || undefined;
   const forceRefresh = params.get("fresh") === "1";
   const app = appId ? await getApp(appId) : await getDefaultApp();
-  const stats = await computeStats(app.id, locale, since, undefined, { forceRefresh });
+  const stats = await computeStats(app.id, locale, since, undefined, {
+    forceRefresh,
+    appContext: app.context,
+  });
   return Response.json({ ...stats, app: { id: app.id, displayName: app.display_name } });
 }
