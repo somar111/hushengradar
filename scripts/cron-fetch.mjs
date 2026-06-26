@@ -4,18 +4,16 @@ import { createClient } from "@supabase/supabase-js";
 import gplayPkg from "google-play-scraper";
 import {
   UNIVERSAL_CATEGORIES,
-  CLASSIFY_RETRY_ATTEMPTS,
-  buildClassifyPrompt,
   buildSubTagReusePool,
   buildSummaryPrompt,
   buildTagCountsFromReviews,
   buildTranslatePrompt,
-  finalizeClassifiedTags,
   findTagCountInconsistencies,
-  parseClassifyTagsFromModel,
+  hasTaxonomyIntents,
   subTagMapToPromptObject,
-  validateClassifiedTags,
 } from "../lib/promptKit.mjs";
+import { classifyReviewWithPipeline } from "../lib/classifyReview.mjs";
+import { enrichFeatureRequestSubs, enrichTaxonomyIntents, getUniversalSubcategories } from "../lib/taxonomyEnrich.mjs";
 import { runTaxonomyStage } from "../lib/taxonomy.mjs";
 import { createDeepSeekCaller } from "../lib/deepseek.mjs";
 
@@ -173,36 +171,6 @@ async function resolveFetchLocales(app) {
   return FALLBACK_LOCALES;
 }
 
-async function classifyReviewRaw(content, rating, appContext, seedCategories = [], existingCustomTags = [], existingSubTags = {}) {
-  const systemPrompt = buildClassifyPrompt({ appContext, seedCategories, existingCustomTags, existingSubTags });
-
-  const res = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_API_KEY}` },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: `评分：${rating} 星\n评论内容：${content}` }],
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-    }),
-  });
-  if (!res.ok) throw new Error(`DeepSeek分类 ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  const parsed = JSON.parse(data.choices[0].message.content);
-  return parseClassifyTagsFromModel(parsed.tags);
-}
-
-async function classifyReviewWithValidation(content, rating, appContext, seedCategories, existingCustomTags, existingSubTags, knownTopLevelKeys) {
-  const attempts = 1 + CLASSIFY_RETRY_ATTEMPTS;
-  let lastRaw = [];
-  for (let i = 0; i < attempts; i++) {
-    lastRaw = await classifyReviewRaw(content, rating, appContext, seedCategories, existingCustomTags, existingSubTags);
-    const candidate = finalizeClassifiedTags(lastRaw, { knownTopLevelKeys, rating });
-    if (validateClassifiedTags(candidate, knownTopLevelKeys).ok) return candidate;
-  }
-  return finalizeClassifiedTags(lastRaw, { knownTopLevelKeys, rating });
-}
-
 async function detectAndTranslate(content) {
   const systemPrompt = buildTranslatePrompt();
   const res = await fetch("https://api.deepseek.com/chat/completions", {
@@ -328,10 +296,19 @@ async function processApp(app) {
   }
 
   // 2. 分类所有未分类过的（包括这次新抓的 + 之前遗留的），分页拉全量 + 8 路并发
-  // 这个App的起步分类种子（加App时AI根据context提议的，不是全局共用的）+ 通用两类，
-  // 凡是不在这个集合里的，都算"这个App自己造出来的custom tag"，喂给模型优先复用，
-  // 避免每次调用互不知情、造出一堆近义的碎标签。
-  const seedCategories = app.seed_categories ?? [];
+  let seedCategories = app.seed_categories ?? [];
+  const callModel = createDeepSeekCaller(DEEPSEEK_API_KEY, { temperature: 0.3 });
+
+  // P0：旧 taxonomy 缺 intent 时自动补全（一次性写回 apps.seed_categories）
+  try {
+    const enrichedApp = await enrichTaxonomyIntents({ supabase, app: { ...app, seed_categories: seedCategories }, callModel });
+    seedCategories = enrichedApp.seed_categories ?? seedCategories;
+    app = { ...app, seed_categories: seedCategories, taxonomy_meta: enrichedApp.taxonomy_meta ?? app.taxonomy_meta };
+  } catch (e) {
+    console.error("intent 补全失败（已跳过）：", e.message);
+  }
+
+  const universalSubcategories = getUniversalSubcategories(app);
   const baselineKeys = new Set([...UNIVERSAL_KEYS, ...seedCategories.map((c) => c.key)]);
   const classifiedSample = await fetchAllRows(
     supabase.from("reviews").select("ai_tags").eq("app_id", app.id).not("ai_classified_at", "is", null)
@@ -342,9 +319,7 @@ async function processApp(app) {
       if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
     }
   }
-  // 子问题复用池：taxonomy 设计的 + 历史里已稳定出现的；本轮新造的 subKey 不立刻进池，
-  // 避免早期噪声在 8 路并发里瞬间传染。稳定后可 merge-observed-subtags 写回 taxonomy。
-  const subTagReusePool = buildSubTagReusePool(seedCategories, classifiedSample);
+  const subTagReusePool = buildSubTagReusePool(seedCategories, classifiedSample, undefined, universalSubcategories);
   const subTagReuseCount = [...subTagReusePool.values()].reduce((n, m) => n + m.size, 0);
   console.log(`已有自定义标签 ${existingCustomTagsMap.size} 个，子问题复用池 ${subTagReuseCount} 个`);
 
@@ -352,15 +327,27 @@ async function processApp(app) {
     supabase.from("reviews").select("id, content, rating").eq("app_id", app.id).is("ai_classified_at", null)
   );
   console.log(`待分类 ${unclassified.length} 条`);
-  // existingCustomTagsMap 仍在本轮持续更新（顶层自定义标签）；subTagReusePool 冻结不动。
+
+  const classifyPromptBase = {
+    appContext: app.context,
+    seedCategories,
+    universalSubcategories,
+  };
+
   await runConcurrent(unclassified, 8, async (r) => {
     try {
       const existingCustomTags = [...existingCustomTagsMap.entries()].map(([key, label]) => ({ key, label }));
       const existingSubTags = subTagMapToPromptObject(subTagReusePool);
       const knownTopLevelKeys = new Set([...baselineKeys, ...existingCustomTagsMap.keys()]);
-      const tags = await withRetry(() => classifyReviewWithValidation(
-        r.content, r.rating, app.context, seedCategories, existingCustomTags, existingSubTags, knownTopLevelKeys
-      ));
+      const { tags } = await withRetry(() => classifyReviewWithPipeline(DEEPSEEK_API_KEY, {
+        content: r.content,
+        rating: r.rating,
+        knownTopLevelKeys,
+        calibrate: true,
+        ...classifyPromptBase,
+        existingCustomTags,
+        existingSubTags,
+      }));
       for (const t of tags) {
         if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
       }
@@ -372,6 +359,13 @@ async function processApp(app) {
       console.error(`分类失败 id=${r.id}:`, e.message);
     }
   });
+
+  // P0：有 feature_request 样本后归纳 App 级子问题（写 taxonomy_meta，供下轮分类复用）
+  try {
+    app = await enrichFeatureRequestSubs({ supabase, app, callModel });
+  } catch (e) {
+    console.error("feature_request 子问题归纳失败（已跳过）：", e.message);
+  }
 
   const classifiedForAudit = await fetchAllRows(
     supabase.from("reviews").select("ai_tags, review_date").eq("app_id", app.id).not("ai_classified_at", "is", null)
@@ -389,7 +383,6 @@ async function processApp(app) {
   // 等人工确认。失败不影响抓取/翻译主流程——分类体系维护是增量优化，不是关键路径。
   let taxonomyChanged = false;
   try {
-    const callModel = createDeepSeekCaller(DEEPSEEK_API_KEY, { temperature: 0.3 });
     const report = await runTaxonomyStage({
       supabase,
       app,

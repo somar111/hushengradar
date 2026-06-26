@@ -5,6 +5,8 @@
 //   node scripts/reclassify-app.mjs <appId|external_id|名称片段>
 // 强制全量重分类（清空该 App 全部分类后重跑，忽略 pending 的增量范围）：
 //   node scripts/reclassify-app.mjs <...> --full
+// 定向重分类（只重置命中指定顶层 key 的评论）：
+//   node scripts/reclassify-app.mjs <...> --keys content_features,feature_request
 // 只重置、不跑 cron：
 //   node scripts/reclassify-app.mjs <...> --reset-only
 import { spawn } from "child_process";
@@ -51,7 +53,9 @@ async function main() {
   const argv = process.argv.slice(2);
   const resetOnly = argv.includes("--reset-only");
   const forceFull = argv.includes("--full");
-  const appArg = argv.find((a) => !a.startsWith("--"));
+  const keysArg = argv.find((a) => a.startsWith("--keys="))?.slice("--keys=".length)
+    ?? (argv.includes("--keys") ? argv[argv.indexOf("--keys") + 1] : null);
+  const appArg = argv.find((a) => !a.startsWith("--") && a !== keysArg);
   if (!appArg) {
     console.error("用法：node scripts/reclassify-app.mjs <appId|external_id|名称片段> [--full] [--reset-only]");
     process.exit(1);
@@ -61,10 +65,13 @@ async function main() {
   console.log(`App: ${app.display_name} (${app.id})`);
 
   const pending = app.pending_reclassify ?? null;
-  // 范围决策：--full 强制全量；否则跟随 pending 的 scope；没有 pending 也没 --full 时默认全量（手动语义）
   let scope = "full";
   let affectedKeys = [];
-  if (!forceFull && pending) {
+  if (keysArg) {
+    scope = "incremental";
+    affectedKeys = keysArg.split(",").map((k) => k.trim()).filter(Boolean);
+    console.log(`--keys：定向重分类 ${affectedKeys.join("、")}`);
+  } else if (!forceFull && pending) {
     scope = pending.scope ?? "incremental";
     affectedKeys = pending.affectedKeys ?? [];
     console.log(`按待确认提案执行（v${pending.fromVersion}→v${pending.toVersion}，${scope}）：${pending.reason ?? ""}`);
