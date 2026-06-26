@@ -118,7 +118,7 @@ function looksLanguageMixed(reply: string, source: string): boolean {
 }
 
 export type TranslateResult = {
-  detected_lang: string;
+  detected_lang: string | null;
   translated_zh: string | null;
   translated_en: string | null;
 };
@@ -152,6 +152,7 @@ export function pickReplyTranslation(
 ): string | null {
   if (!settings.enabled) return null;
   const lang = result.detected_lang;
+  if (!lang) return null;
   if (settings.scope === "non_zh_en" && (lang === "zh" || lang === "en")) return null;
   if (settings.targetLang === "zh") {
     if (lang === "zh" || !result.translated_zh) return null;
