@@ -1345,7 +1345,7 @@ function DemoPageInner() {
       {activePanel === "complaints" && stats && (
         <div>
           <p className="text-white/75 text-[14px] mb-4">
-            {timeRangeLabel}（{fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)}）共 {stats.total} 条公开评论，AI 按问题类型聚类（点标题看该类全部评论，点子问题直接看该子问题）：
+            {locale ? localeLabel(locale) : "全部语言/地区批次"}：{timeRangeLabel}（{fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)}）共 {stats.total.toLocaleString()} 条公开评论：
           </p>
           <div className="flex flex-col gap-3">
             {Object.entries(stats.tagCounts)
