@@ -893,8 +893,8 @@ function fmtDate(iso: string | null) {
   return iso ? iso.slice(0, 10) : "—";
 }
 
-// "Top反馈"和"评论回复"头部用同一份子问题数据、同一个组件渲染。仅当子问题真正拆成 2+ 类
-// 时才展示 breakdown；否则退回 AI 摘要（与分类侧「无子问题清单则不填 subKey」一致）。
+// Top 反馈 / 评论回复头部共用 TagBreakdown。规则见 .cursor/rules/top-feedback-tagging.mdc：
+// praise、vague_complaint 无 breakdown；其余类有效子标签 ≥2 → chip，否则 → AI 摘要（非错误态）。
 function TagBreakdown({ t, onJump, activeSubKey }: {
   t: { count: number; summary: string | null; subTags: Record<string, { label: string; count: number }> };
   onJump?: (subKey?: string) => void;

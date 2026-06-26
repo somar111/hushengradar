@@ -1,0 +1,38 @@
+---
+description: Top 反馈展示与评论标签分类的演进原则
+alwaysApply: true
+---
+
+# Top 反馈与标签分类
+
+## Top 反馈展示（`app/demo` · Top 反馈面板）
+
+除 **`praise`（好评）** 与 **`vague_complaint`（意义不明的纯抱怨）** 外，其余所有顶层类型（含 **`feature_request`（功能请求）** 与 App 专属类）均应按标签体系组织下钻：
+
+| 条件 | 展示 |
+|------|------|
+| 有效子标签 ≥ 2（不含 `general` / 「其他」） | 子标签 chip（`TagBreakdown` + `hasSubTagBreakdown`） |
+| 有效子标签 < 2 | AI 摘要（`tag_summaries.summary`）兜底——**不视为分类错误** |
+
+`praise` / `vague_complaint` 始终不展示子标签 breakdown（见 `NO_SUBTAG_KEYS`）。
+
+## 分类终态 vs 演进节奏
+
+**终态推论**（语义维度）：若某条评论长期无法归入任何有具体语义的标签（顶层或子层），应 revisiting 为 `vague_complaint`（低分）或 `praise`（高分），而非永久挂在「具体类 + 摘要」上。
+
+**过程允许**（体系维度）：不强迫冷启动或 taxonomy 未成熟时每条评论立刻有完整 subKey。首次分类优先顶层语义正确；子标签仅在 taxonomy / 复用池已有 ≥2 个有效子问题时才强制（`tagRequiresSubKey` / `buildParentKeysWithSubs`）。
+
+## 回调与重判（设计内环节，非补救）
+
+标签是演进结果，允许并依赖：
+
+- 结构校验 → 语义校准（`needsSemanticCalibration` / `calibrateReviewTags`）
+- 分类重试（`CLASSIFY_RETRY_ATTEMPTS`）
+- taxonomy 修订 → `pending_reclassify` → `reclassify-app.mjs` / Demo 重分类
+- `build-taxonomy` 信号（孤儿标签、vague 占比、过宽 sub）驱动补 taxonomy，而非用摘要长期糊住
+
+## 改代码时
+
+- 勿为凑 ≥2 个 chip 硬拆 subKey；勿在 Top 反馈用摘要替代本已有 breakdown 的子标签。
+- 展示逻辑与分类强制逻辑共用 `MIN_MEANINGFUL_SUBTAGS_FOR_BREAKDOWN`（当前为 2），改阈值须同步 UI 与 `promptKit`。
+- 摘要仍可用于分析 / Ask 等需自然语言概括的场景；Top 反馈在有 breakdown 时以 chip 为唯一下钻方式。
