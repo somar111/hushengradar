@@ -331,6 +331,7 @@ export async function* answerQuestionStream(opts: {
   defaultSince?: string;
   defaultLocale?: string;
   history?: { q: string; a: string }[];
+  useEmoji?: boolean;
   signal?: AbortSignal;
 }): AsyncGenerator<AskStreamEvent> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -350,6 +351,7 @@ export async function* answerQuestionStream(opts: {
     appContext: opts.appContext,
     timeRangeLabel: opts.timeRangeLabel,
     latestReviewDate: opts.latestReviewDate,
+    useEmoji: opts.useEmoji,
   });
 
   const messages: ChatMessage[] = [{ role: "system", content: systemPrompt }];

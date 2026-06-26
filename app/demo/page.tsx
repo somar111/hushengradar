@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import {
   Globe,
   ListOrdered, GitCompare, Bot, Reply,
-  X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp,
+  X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp, Trash2, Smile,
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
 import { meaningfulLocaleFloor } from "@/lib/analysisShared";
@@ -78,6 +78,10 @@ type TranslateSettings = {
   scope: TranslateScope;
 };
 
+type AskSettings = {
+  useEmoji: boolean;
+};
+
 type AiReplySettings = {
   tone: string;
   style: string;
@@ -103,12 +107,22 @@ const PANEL_ICONS: Record<RightPanel, React.ReactNode> = {
 
 const PAGE_SIZE = 200;
 const ASK_DRAFT_STORAGE_PREFIX = "hushengradar.askDraft.v1";
+const ASK_CHAT_STORAGE_PREFIX = "hushengradar.askChat.v1";
 const TRANSLATE_SETTINGS_KEY = "hushengradar.translateSettings.v1";
+const ASK_SETTINGS_KEY = "hushengradar.askSettings.v1";
+
+function askContextStorageKey(prefix: string, appId: string, timeRange: TimeRange, locale: string) {
+  return `${prefix}:${appId || "no-app"}:${timeRange}:${locale || "all"}`;
+}
 
 const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
   enabled: true,
   targetLang: "zh",
   scope: "non_target",
+};
+
+const DEFAULT_ASK_SETTINGS: AskSettings = {
+  useEmoji: true,
 };
 
 const DEFAULT_AI_REPLY_SETTINGS: AiReplySettings = {
@@ -237,6 +251,54 @@ function InfoTooltip({ text, size = 14 }: { text: string; size?: number }) {
   );
 }
 
+function AskEmojiToggle({ enabled, onChange, compact = false }: { enabled: boolean; onChange: (v: boolean) => void; compact?: boolean }) {
+  const [showHint, setShowHint] = useState(false);
+  return (
+    <div className="relative inline-flex flex-none">
+      <button
+        type="button"
+        onClick={() => onChange(!enabled)}
+        onMouseEnter={() => setShowHint(true)}
+        onMouseLeave={() => setShowHint(false)}
+        onFocus={() => setShowHint(true)}
+        onBlur={() => setShowHint(false)}
+        aria-pressed={enabled}
+        aria-label="设置 AI 回复是否含 Emoji"
+        className={`flex items-center rounded-xl border transition-colors ${
+          compact ? "gap-2 px-2 py-1.5" : "gap-2.5 px-3 py-2"
+        } text-[13px] ${
+          enabled
+            ? "border-[#5781d8]/45 bg-[#5781d8]/18 text-white"
+            : "border-white/12 bg-white/[0.06] text-white/55 hover:border-white/20 hover:bg-white/[0.09]"
+        }`}>
+        <Smile size={compact ? 14 : 15} className={enabled ? "text-[#8fb0ff]" : "text-white/35"} strokeWidth={enabled ? 2.2 : 1.8} />
+        {!compact && <span className="font-medium">Emoji</span>}
+        <span
+          aria-hidden
+          className={`relative inline-flex h-[18px] w-8 flex-none rounded-full transition-colors ${
+            enabled ? "bg-[#5781d8]" : "bg-white/18"
+          }`}>
+          <span
+            className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.35)] transition-transform ${
+              enabled ? "translate-x-[14px]" : "translate-x-0.5"
+            }`}
+          />
+        </span>
+        <span className={`min-w-[1.1rem] text-[12px] font-semibold ${enabled ? "text-[#8fb0ff]" : "text-white/38"}`}>
+          {enabled ? "开" : "关"}
+        </span>
+      </button>
+      {showHint && (
+        <div
+          role="tooltip"
+          className="pointer-events-none absolute bottom-full right-0 mb-2 z-50 whitespace-nowrap rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          设置AI回复里是否含emoji
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 主题强调色：跟 Claude Code 用量统计图的蓝色对齐（从截图实测取色 rgb(87,129,216)）
 const THEME_BLUE = "#5781d8";
 
@@ -330,26 +392,39 @@ function SegmentedControl<T extends string>({
 
 function MarkdownMessage({ content }: { content: string }) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        h1: ({ children }) => <h1 className="mb-4 mt-1 text-[34px] leading-[1.2] font-bold text-white">{children}</h1>,
-        h2: ({ children }) => <h2 className="mb-3 mt-1 text-[28px] leading-[1.25] font-bold text-white">{children}</h2>,
-        h3: ({ children }) => <h3 className="mb-3 mt-1 text-[23px] leading-[1.3] font-semibold text-white">{children}</h3>,
-        h4: ({ children }) => <h4 className="mb-2.5 mt-1 text-[20px] leading-[1.35] font-semibold text-white">{children}</h4>,
-        p: ({ children }) => <p className="mb-4 last:mb-0 leading-[1.95] text-[17px]">{children}</p>,
-        ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-1.5">{children}</ul>,
-        ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-1.5">{children}</ol>,
-        li: ({ children }) => <li className="leading-[1.9] text-[17px]">{children}</li>,
-        strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-        code: ({ children }) => <code className="px-1.5 py-0.5 rounded bg-white/10 text-white/90 text-[15px]">{children}</code>,
-        pre: ({ children }) => <pre className="overflow-x-auto rounded-xl bg-black/25 p-4 mb-4 text-[15px] leading-relaxed">{children}</pre>,
-        blockquote: ({ children }) => (
-          <blockquote className="border-l-2 border-white/25 pl-4 text-white/80 mb-4 leading-[1.9]">{children}</blockquote>
-        ),
-      }}>
-      {content}
-    </ReactMarkdown>
+    <div className="ask-md text-white/88 [&_h1]:mb-4 [&_h1]:mt-1 [&_h1]:text-[22px] [&_h1]:leading-snug [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-3 [&_h2]:mt-5 [&_h2]:pb-2.5 [&_h2]:text-[19px] [&_h2]:leading-snug [&_h2]:font-bold [&_h2]:text-white [&_h2]:border-b [&_h2]:border-white/10 [&_h2:first-child]:mt-0 [&_h3]:mb-2.5 [&_h3]:mt-4 [&_h3]:text-[17px] [&_h3]:leading-snug [&_h3]:font-semibold [&_h3]:text-white [&_p]:mb-3.5 [&_p]:last:mb-0 [&_p]:text-[15px] [&_p]:leading-[1.75] [&_p]:text-white/75 [&>ol]:mb-1 [&>ol]:list-none [&>ol]:space-y-0 [&>ol]:pl-0 [&>ol>li]:border-t [&>ol>li]:border-white/10 [&>ol>li]:py-3.5 [&>ol>li]:text-[16px] [&>ol>li]:font-semibold [&>ol>li]:leading-snug [&>ol>li]:text-white [&>ol>li:first-child]:border-t-0 [&>ol>li:first-child]:pt-0 [&>ol>li_ul]:mt-2.5 [&>ol>li_ul]:list-[circle] [&>ol>li_ul]:space-y-1.5 [&>ol>li_ul]:pl-5 [&>ol>li_ul>li]:text-[14px] [&>ol>li_ul>li]:font-normal [&>ol>li_ul>li]:leading-[1.7] [&>ol>li_ul>li]:text-white/72 [&>ul:not(ol_li_ul)]:mb-3.5 [&>ul:not(ol_li_ul)]:list-disc [&>ul:not(ol_li_ul)]:space-y-1.5 [&>ul:not(ol_li_ul)]:pl-5 [&>ul:not(ol_li_ul)>li]:text-[15px] [&>ul:not(ol_li_ul)>li]:leading-[1.7] [&>ul:not(ol_li_ul)>li]:text-white/78 [&_ul_ul]:list-[circle] [&_ul_ul]:mt-1.5 [&_strong]:font-semibold [&_strong]:text-white [&_hr]:my-5 [&_hr]:border-white/12">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ children }) => <h1>{children}</h1>,
+          h2: ({ children }) => <h2>{children}</h2>,
+          h3: ({ children }) => <h3>{children}</h3>,
+          h4: ({ children }) => <h4 className="mb-2 mt-3 text-[16px] leading-snug font-semibold text-white">{children}</h4>,
+          p: ({ children }) => <p>{children}</p>,
+          ul: ({ children }) => <ul>{children}</ul>,
+          ol: ({ children }) => <ol>{children}</ol>,
+          li: ({ children }) => <li>{children}</li>,
+          strong: ({ children }) => <strong>{children}</strong>,
+          hr: () => <hr />,
+          table: ({ children }) => (
+            <div className="overflow-x-auto mb-4 -mx-1 px-1">
+              <table className="w-full min-w-[16rem] text-[14px] border-collapse">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => <thead>{children}</thead>,
+          tbody: ({ children }) => <tbody>{children}</tbody>,
+          tr: ({ children }) => <tr className="border-b border-white/8 last:border-0">{children}</tr>,
+          th: ({ children }) => <th className="text-left py-2.5 pr-4 font-semibold text-white/88 align-bottom">{children}</th>,
+          td: ({ children }) => <td className="py-2.5 pr-4 align-top leading-[1.65] text-white/75">{children}</td>,
+          code: ({ children }) => <code className="px-1.5 py-0.5 rounded bg-white/10 text-white/90 text-[14px]">{children}</code>,
+          pre: ({ children }) => <pre className="overflow-x-auto rounded-xl bg-black/25 p-4 mb-4 text-[14px] leading-relaxed">{children}</pre>,
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-2 border-white/28 pl-4 text-white/72 mb-3.5 text-[14px] leading-[1.7]">{children}</blockquote>
+          ),
+        }}>
+        {content}
+      </ReactMarkdown>
+    </div>
   );
 }
 
@@ -634,6 +709,9 @@ function DemoPageInner() {
   const [translateSettings, setTranslateSettings] = useState<TranslateSettings>(() =>
     loadJsonSetting(TRANSLATE_SETTINGS_KEY, DEFAULT_TRANSLATE_SETTINGS)
   );
+  const [askSettings, setAskSettings] = useState<AskSettings>(() =>
+    loadJsonSetting(ASK_SETTINGS_KEY, DEFAULT_ASK_SETTINGS)
+  );
   const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("filter");
   const [lockedHintPos, setLockedHintPos] = useState<{ top: number; left: number } | null>(null);
   const [showAppMenu, setShowAppMenu] = useState(false);
@@ -663,6 +741,7 @@ function DemoPageInner() {
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [showClearChatConfirm, setShowClearChatConfirm] = useState(false);
   const chatViewportRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
@@ -673,6 +752,11 @@ function DemoPageInner() {
   const chatStickToBottomRef = useRef(true);
   const chatUserDetachedRef = useRef(false);
   const chatAutoScrollingRef = useRef(false);
+  const chatMessagesRef = useRef(chatMessages);
+  chatMessagesRef.current = chatMessages;
+  const prevAskChatStorageKeyRef = useRef<string | null>(null);
+  const skipNextChatPersistRef = useRef(false);
+  const pendingChatScrollRef = useRef<"top" | "bottom" | null>(null);
   const composingRef = useRef(false);
   const replyDetailRef = useRef<HTMLDivElement>(null);
 
@@ -687,7 +771,8 @@ function DemoPageInner() {
   }, [timeRange, selectedApp?.latestReviewDate]);
   const timeRangeLabel = timeRange === "week" ? "最近一周" : "最近一月";
   const appName = selectedApp?.display_name ?? "App";
-  const askDraftStorageKey = `${ASK_DRAFT_STORAGE_PREFIX}:${selectedAppId || "no-app"}:${timeRange}:${locale || "all"}`;
+  const askDraftStorageKey = askContextStorageKey(ASK_DRAFT_STORAGE_PREFIX, selectedAppId, timeRange, locale);
+  const askChatStorageKey = askContextStorageKey(ASK_CHAT_STORAGE_PREFIX, selectedAppId, timeRange, locale);
 
   // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目；评论回复下 ⌥T / Alt+T 开关翻译。
   // 逻辑同时认 metaKey/ctrlKey 与 altKey，Mac 与 Windows 都生效；面板用中性写法同时标注两套修饰键，
@@ -813,6 +898,20 @@ function DemoPageInner() {
 
   // useLayoutEffect：DOM 更新后、绘制前跟滚，比 useEffect 少一帧滞后
   useLayoutEffect(() => {
+    const pending = pendingChatScrollRef.current;
+    if (pending) {
+      pendingChatScrollRef.current = null;
+      const viewport = chatViewportRef.current;
+      if (viewport) {
+        chatAutoScrollingRef.current = true;
+        resetChatFollow();
+        viewport.scrollTop = viewport.scrollHeight;
+        requestAnimationFrame(() => {
+          chatAutoScrollingRef.current = false;
+        });
+      }
+      return;
+    }
     scrollChatToBottomIfNeeded();
   }, [chatMessages, chatLoading]);
 
@@ -867,9 +966,68 @@ function DemoPageInner() {
     }
   }, [askDraftStorageKey, chatInput]);
 
+  // 问 AI 聊天记录按 App + 时间范围 + locale 分桶；切换上下文时保存旧桶、载入新桶，并重置滚动，
+  // 避免长聊后 scrollTop 仍停在底部导致空状态提示「看不见」、或继续展示上一 App 的对话。
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const prevKey = prevAskChatStorageKeyRef.current;
+    if (prevKey === askChatStorageKey) return;
+
+    if (prevKey !== null) {
+      try {
+        window.localStorage.setItem(prevKey, JSON.stringify(chatMessagesRef.current));
+      } catch {
+        // ignore
+      }
+    }
+
+    let loaded: ChatMessage[] = [];
+    try {
+      const saved = window.localStorage.getItem(askChatStorageKey);
+      if (saved) loaded = JSON.parse(saved) as ChatMessage[];
+    } catch {
+      loaded = [];
+    }
+    setChatMessages(loaded);
+    prevAskChatStorageKeyRef.current = askChatStorageKey;
+    skipNextChatPersistRef.current = true;
+    setShowClearChatConfirm(false);
+
+    chatStopRequestedRef.current = true;
+    chatAbortRef.current?.abort();
+    chatBusyRef.current = false;
+    setChatLoading(false);
+    if (loaded.length === 0) {
+      chatUserDetachedRef.current = false;
+      chatStickToBottomRef.current = true;
+      pendingChatScrollRef.current = null;
+      // 目标桶也是空会话时 React 可能因 chatMessages 仍是 [] 而不重渲染，这里直接复位 scrollTop
+      if (chatViewportRef.current) chatViewportRef.current.scrollTop = 0;
+    } else {
+      pendingChatScrollRef.current = "bottom";
+    }
+  }, [askChatStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (skipNextChatPersistRef.current) {
+      skipNextChatPersistRef.current = false;
+      return;
+    }
+    try {
+      window.localStorage.setItem(askChatStorageKey, JSON.stringify(chatMessages));
+    } catch {
+      // ignore
+    }
+  }, [askChatStorageKey, chatMessages]);
+
   useEffect(() => {
     saveJsonSetting(TRANSLATE_SETTINGS_KEY, translateSettings);
   }, [translateSettings]);
+
+  useEffect(() => {
+    saveJsonSetting(ASK_SETTINGS_KEY, askSettings);
+  }, [askSettings]);
 
   function calcChatInputHeight(el: HTMLTextAreaElement) {
     const max = Math.min(Math.floor(window.innerHeight * 0.45), 420);
@@ -906,6 +1064,29 @@ function DemoPageInner() {
     setChatLoading(false);
   }
 
+  function handleClearChat() {
+    chatStopRequestedRef.current = true;
+    chatAbortRef.current?.abort();
+    chatBusyRef.current = false;
+    setChatLoading(false);
+    skipNextChatPersistRef.current = true;
+    try {
+      window.localStorage.removeItem(askChatStorageKey);
+    } catch {
+      // ignore
+    }
+    setChatMessages([]);
+    chatUserDetachedRef.current = false;
+    chatStickToBottomRef.current = true;
+    if (chatViewportRef.current) chatViewportRef.current.scrollTop = 0;
+    setShowClearChatConfirm(false);
+  }
+
+  const askContextLabel = locale
+    ? `${appName} · ${timeRangeLabel} · ${localeLabel(locale)}`
+    : `${appName} · ${timeRangeLabel}`;
+  const canClearChat = chatMessages.length > 0;
+
   // 真实调AI回答——把当前筛选范围内的真实统计数字喂给DeepSeek，不是预设话术匹配
   async function handleSendChat() {
     // 兼容同一帧内的二次点击：即使还没 re-render，也能立即走"停止"
@@ -940,7 +1121,7 @@ function DemoPageInner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ question: q, appId: selectedAppId, locale, since, timeRangeLabel, history }),
+        body: JSON.stringify({ question: q, appId: selectedAppId, locale, since, timeRangeLabel, history, useEmoji: askSettings.useEmoji }),
       });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => null);
@@ -1270,29 +1451,41 @@ function DemoPageInner() {
   // ── 中间区域：问 AI ──
   const AskResult = (
     <div className="relative flex-1 overflow-hidden">
+      {canClearChat && (
+        <div className="absolute top-0 inset-x-0 z-20 px-6 pt-4 flex items-center justify-end pointer-events-none">
+          <button
+            type="button"
+            onClick={() => setShowClearChatConfirm(true)}
+            className="pointer-events-auto flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#1a2233]/80 backdrop-blur-md px-3 py-1.5 text-[13px] text-white/65 hover:text-white/85 hover:border-white/22 hover:bg-[#1a2233] transition-colors">
+            <Trash2 size={13} />
+            清空此对话
+          </button>
+        </div>
+      )}
       <div
         ref={chatViewportRef}
         onWheel={handleChatViewportWheel}
         onScroll={handleChatViewportScroll}
-        className="absolute inset-0 overflow-y-auto px-6 pt-6 pb-36 [overflow-anchor:none]"
+        className={`absolute inset-0 overflow-y-auto px-6 pb-36 [overflow-anchor:none] ${canClearChat ? "pt-14" : "pt-6"}`}
       >
         {chatMessages.length === 0 && !chatLoading ? (
           <div className="max-w-3xl mx-auto text-white/60 text-[17px] leading-relaxed">
-            <p className="font-medium text-white/80">问我关于这款 App {timeRangeLabel}的评论的任何问题</p>
+            <p className="font-medium text-white/80">问我关于 {appName} {timeRangeLabel} 的评论的任何问题</p>
+            <p className="text-white/40 text-[13px] mt-3 leading-relaxed">
+              对话记录保存在本机浏览器，换设备或清除缓存后会丢失。
+            </p>
           </div>
         ) : (
-          <div className="max-w-4xl mx-auto w-full flex flex-col gap-5">
+          <div className="max-w-3xl mx-auto w-full flex flex-col gap-8">
             {chatMessages.map((m, i) => (
-              <div key={m.id} className="space-y-2.5">
+              <div key={m.id} className="space-y-4">
                 <div className="flex justify-end">
-                  <div className="max-w-[85%] rounded-2xl bg-[#4b5f9f] text-white px-4 py-3 text-[17px] leading-relaxed shadow-[0_8px_24px_rgba(87,129,216,0.25)]">
+                  <div className="max-w-[85%] rounded-2xl bg-[#4b5f9f] text-white px-4 py-3 text-[16px] leading-relaxed shadow-[0_8px_24px_rgba(87,129,216,0.25)]">
                     {m.q}
                   </div>
                 </div>
-                <div className="flex justify-start">
-                  <div className="max-w-[90%] rounded-2xl border border-white/15 bg-[#242c3d] px-4 py-3 text-[17px] text-white leading-relaxed">
-                    <MarkdownMessage content={m.a || (chatLoading && i === chatMessages.length - 1 ? "正在组织回答…" : "")} />
-                  </div>
+                <div className="w-full text-[16px] text-white leading-relaxed">
+                  <MarkdownMessage content={m.a || (chatLoading && i === chatMessages.length - 1 ? "正在组织回答…" : "")} />
                 </div>
               </div>
             ))}
@@ -1306,7 +1499,7 @@ function DemoPageInner() {
       </div>
       {/* 输入框悬浮在消息区上方：渐变遮罩 + 玻璃卡片，不再占 flex 底栏 */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-5 pt-10 bg-gradient-to-t from-[#141a27] from-35% via-[#141a27]/75 to-transparent">
-        <div className="pointer-events-auto max-w-4xl mx-auto flex gap-3 items-end rounded-3xl border border-white/18 bg-[#1a2233]/72 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)_inset] px-3.5 py-3">
+        <div className="pointer-events-auto max-w-4xl mx-auto flex gap-2.5 items-end rounded-3xl border border-white/18 bg-[#1a2233]/72 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)_inset] px-3.5 py-3">
           <textarea
             ref={chatInputRef}
             value={chatInput}
@@ -1340,6 +1533,11 @@ function DemoPageInner() {
             style={{ height: "48px" }}
             className="flex-1 resize-none min-h-12 bg-transparent border-0 rounded-2xl px-3.5 py-3 text-[17px] leading-relaxed text-white placeholder-white/30 outline-none transition-colors overflow-y-hidden"
           />
+          <AskEmojiToggle
+            compact
+            enabled={askSettings.useEmoji}
+            onChange={(useEmoji) => setAskSettings((s) => ({ ...s, useEmoji }))}
+          />
           <button
             type="button"
             onClick={chatLoading ? handleStopChat : handleSendChat}
@@ -1350,6 +1548,38 @@ function DemoPageInner() {
           </button>
         </div>
       </div>
+      {showClearChatConfirm && (
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center bg-[#141a27]/75 backdrop-blur-sm px-6"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setShowClearChatConfirm(false);
+          }}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-chat-title"
+            className="w-full max-w-md rounded-2xl border border-white/18 bg-[#242c3d] p-5 shadow-[0_20px_50px_rgba(0,0,0,0.45)]">
+            <h3 id="clear-chat-title" className="text-white/95 text-[17px] font-semibold mb-2">清空此对话？</h3>
+            <p className="text-white/65 text-[14px] leading-relaxed mb-5">
+              将删除「{askContextLabel}」下的全部问答记录，且无法恢复。输入框里未发送的内容会保留。
+            </p>
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowClearChatConfirm(false)}
+                className="rounded-xl px-3.5 py-2 text-[14px] text-white/75 hover:text-white/90 hover:bg-white/8 transition-colors">
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleClearChat}
+                className="rounded-xl px-3.5 py-2 text-[14px] text-red-200 bg-red-500/20 hover:bg-red-500/30 border border-red-400/25 transition-colors">
+                清空
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -1660,7 +1890,8 @@ function DemoPageInner() {
                 </div>
               </section>
               <section>
-                <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">AI回复context设置</p>
+                <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">AI 回复建议 context 设置</p>
+                <p className="text-white/40 text-[12px] mb-2 px-1 leading-relaxed">仅用于「评论回复」栏目的 AI 回复建议，与「问 AI」无关。</p>
                 <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-3">
                   {([
                     ["语气", DEFAULT_AI_REPLY_SETTINGS.tone, 2],
