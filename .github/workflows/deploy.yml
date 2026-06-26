@@ -19,6 +19,9 @@ jobs:
 
       - run: npm ci
 
+      - name: TypeScript
+        run: npm run typecheck
+
       - name: Build (OpenNext)
         run: npx opennextjs-cloudflare build
         env:
