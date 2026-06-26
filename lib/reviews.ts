@@ -1,6 +1,7 @@
 import { getServiceSupabase, type ReviewRow, type AppRow } from "./supabase";
 import { meaningfulLocaleFloor } from "./analysisShared";
 import { mergeSimilarSubTags } from "./promptKit.mjs";
+import { resolveDefaultDemoApp } from "./demoDefaults";
 
 // apps 表几乎不变（只有手动加新 App 时才变），缓存住省掉每次切筛选都白付一次 Supabase round trip
 const APPS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -21,8 +22,9 @@ export async function listApps(): Promise<AppRow[]> {
 
 export async function getDefaultApp(): Promise<AppRow> {
   const apps = await getCachedApps();
-  if (!apps[0]) throw new Error("没有任何 App，先在 apps 表里插入一条");
-  return apps[0];
+  const app = resolveDefaultDemoApp(apps);
+  if (!app) throw new Error("没有任何 App，先在 apps 表里插入一条");
+  return app;
 }
 
 export async function getApp(appId: string): Promise<AppRow> {

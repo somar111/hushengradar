@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { type ReviewRow, type AppRow } from "@/lib/supabase";
 import { meaningfulLocaleFloor } from "@/lib/analysisShared";
+import { DEFAULT_DEMO_TIME_RANGE, resolveDefaultDemoApp } from "@/lib/demoDefaults";
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
 
 // ─── 类型 ────────────────────────────────────────────────────
@@ -685,7 +686,7 @@ function DemoPageInner() {
   const [apps, setApps] = useState<(AppRow & { latestReviewDate: string | null })[]>([]);
   const [selectedAppId, setSelectedAppIdRaw] = useQueryState("app", "");
   const setSelectedAppId = (v: string | undefined) => setSelectedAppIdRaw(v ?? "");
-  const [timeRangeRaw, setTimeRangeRaw] = useQueryState("range", "week");
+  const [timeRangeRaw, setTimeRangeRaw] = useQueryState("range", DEFAULT_DEMO_TIME_RANGE);
   const timeRange = timeRangeRaw as TimeRange;
   const setTimeRange = setTimeRangeRaw as (v: TimeRange) => void;
   const [locale, setLocaleRaw] = useQueryState("locale", "");
@@ -807,11 +808,14 @@ function DemoPageInner() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activePanel, setActivePanel]);
 
-  // 拉 App 列表，默认选第一个
+  // 拉 App 列表，默认选 Demo 指定 App（HOK），找不到则退回列表第一项
   useEffect(() => {
     fetch("/api/demo/apps").then((r) => r.json()).then((data) => {
       setApps(data.apps);
-      if (data.apps.length && !selectedAppId) setSelectedAppId(data.apps[0].id);
+      if (data.apps.length && !selectedAppId) {
+        const defaultApp = resolveDefaultDemoApp(data.apps);
+        if (defaultApp) setSelectedAppId(defaultApp.id);
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
