@@ -211,6 +211,9 @@ const AI_REPLY_FIELD_CLASS =
 const TERMINOLOGY_INPUT_CLASS =
   "w-full min-w-0 bg-[#1d2433] border border-white/15 rounded-lg px-2 py-1.5 text-[12px] text-white/85 placeholder-white/35 outline-none focus:border-white/30";
 
+const TERMINOLOGY_INPUT_LOCKED_CLASS =
+  `${TERMINOLOGY_INPUT_CLASS} cursor-pointer hover:border-white/25 focus:border-white/30`;
+
 function emptyTerminologyRow(): TerminologyEntry {
   return { source: "", zh: "", en: "", note: "" };
 }
@@ -221,12 +224,16 @@ function TerminologyGlossaryEditor({
   rows,
   onChange,
   onSaved,
+  locked = false,
+  onLockedClick,
 }: {
   appId: string | undefined;
   appName: string;
   rows: TerminologyEntry[];
   onChange: (rows: TerminologyEntry[]) => void;
   onSaved: (glossary: TerminologyEntry[]) => void;
+  locked?: boolean;
+  onLockedClick?: (e: React.MouseEvent<HTMLElement>) => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -269,7 +276,8 @@ function TerminologyGlossaryEditor({
   };
 
   return (
-    <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-3">
+    <div className="relative bg-white/6 rounded-xl p-3 flex flex-col gap-3">
+      <div className={locked ? "pointer-events-none select-none" : undefined}>
       {rows.length === 0 ? (
         <p className="text-white/40 text-[12px] leading-relaxed px-0.5">
           暂无术语条目。添加后对本 App 的翻译、问 AI、回复建议均生效。
@@ -289,16 +297,20 @@ function TerminologyGlossaryEditor({
                 <input
                   key={field}
                   type="text"
+                  readOnly={locked}
+                  tabIndex={locked ? -1 : undefined}
                   value={row[field] ?? ""}
                   placeholder={field === "source" ? "Honor of Kings" : field === "zh" ? "王者荣耀" : field === "en" ? "Honor of Kings" : "可选"}
                   onChange={(e) => updateRow(i, { [field]: e.target.value })}
-                  className={TERMINOLOGY_INPUT_CLASS}
+                  className={locked ? TERMINOLOGY_INPUT_LOCKED_CLASS : TERMINOLOGY_INPUT_CLASS}
                 />
               ))}
               <button
                 type="button"
+                disabled={locked}
+                tabIndex={locked ? -1 : undefined}
                 onClick={() => removeRow(i)}
-                className="flex items-center justify-center h-8 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/8"
+                className="flex items-center justify-center h-8 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/8 disabled:opacity-40"
                 aria-label="删除此行">
                 <Trash2 size={13} />
               </button>
@@ -309,22 +321,34 @@ function TerminologyGlossaryEditor({
       <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
+          disabled={locked || !appId}
+          tabIndex={locked ? -1 : undefined}
           onClick={addRow}
-          disabled={!appId}
           className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 text-[12px] text-white/75 hover:bg-white/8 disabled:opacity-40">
           <Plus size={13} />
           添加条目
         </button>
         <button
           type="button"
+          disabled={locked || !appId || saving}
+          tabIndex={locked ? -1 : undefined}
           onClick={save}
-          disabled={!appId || saving}
           className="inline-flex items-center gap-1 rounded-lg bg-white/12 px-2.5 py-1.5 text-[12px] text-white/85 hover:bg-white/18 disabled:opacity-40">
           {saving ? <Loader2 size={13} className="animate-spin" /> : null}
           保存到 {appName}
         </button>
         {msg && <span className={`text-[12px] ${msg === "已保存" ? "text-emerald-400/90" : "text-red-400/90"}`}>{msg}</span>}
       </div>
+      </div>
+      {locked && onLockedClick && (
+        <button
+          type="button"
+          data-terminology-block
+          className="absolute inset-0 z-10 cursor-pointer rounded-xl bg-transparent border-0 p-0"
+          onClick={onLockedClick}
+          aria-label="暂不支持自定义"
+        />
+      )}
     </div>
   );
 }
@@ -2090,11 +2114,11 @@ function DemoPageInner() {
               </div>
             )
           ) : (
-            <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-5 text-[14px]">
-              <p className="text-white/50 text-[12px] px-1">
+            <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col divide-y divide-white/10 text-[14px]">
+              <p className="text-white/50 text-[12px] px-1 pb-4">
                 当前 App：{selectedApp?.display_name ?? "未选择"}
               </p>
-              <section>
+              <section className="py-4">
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">翻译</p>
                 <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-3">
                   <label className="flex items-center justify-between text-[13px] text-white/80">
@@ -2127,44 +2151,37 @@ function DemoPageInner() {
                   </div>
                 </div>
               </section>
-              <section>
+              <section className="py-4">
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">产品术语 / 专名</p>
                 <p className="text-white/40 text-[12px] mb-2 px-1 leading-relaxed">
                   按 App 维护专名映射，对本 App 的翻译、问 AI、回复建议均生效。术语表为空时仍遵守「未知专名保留原文、禁止意译」。
                 </p>
-                <div className="relative">
-                  <TerminologyGlossaryEditor
-                    appId={selectedAppId}
-                    appName={selectedApp?.display_name ?? "当前 App"}
-                    rows={terminologyDraft}
-                    onChange={setTerminologyDraft}
-                    onSaved={(glossary) => {
-                      setTerminologyDraft(
-                        glossary.map((e) => ({
-                          source: e.source ?? "",
-                          zh: e.zh ?? "",
-                          en: e.en ?? "",
-                          note: e.note ?? "",
-                        }))
-                      );
-                      setApps((prev) =>
-                        prev.map((a) => (a.id === selectedAppId ? { ...a, terminology_glossary: glossary } : a))
-                      );
-                    }}
-                  />
-                  <button
-                    type="button"
-                    data-terminology-block
-                    className="absolute inset-0 z-10 w-full h-full cursor-pointer rounded-xl bg-transparent border-0 p-0"
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      setLockedHintPos({ top: rect.top, left: rect.right + 8 });
-                    }}
-                    aria-label="暂不支持自定义"
-                  />
-                </div>
+                <TerminologyGlossaryEditor
+                  appId={selectedAppId}
+                  appName={selectedApp?.display_name ?? "当前 App"}
+                  rows={terminologyDraft}
+                  locked
+                  onLockedClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setLockedHintPos({ top: rect.top, left: rect.right + 8 });
+                  }}
+                  onChange={setTerminologyDraft}
+                  onSaved={(glossary) => {
+                    setTerminologyDraft(
+                      glossary.map((e) => ({
+                        source: e.source ?? "",
+                        zh: e.zh ?? "",
+                        en: e.en ?? "",
+                        note: e.note ?? "",
+                      }))
+                    );
+                    setApps((prev) =>
+                      prev.map((a) => (a.id === selectedAppId ? { ...a, terminology_glossary: glossary } : a))
+                    );
+                  }}
+                />
               </section>
-              <section>
+              <section className="py-4">
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">AI 回复建议 context 设置</p>
                 <p className="text-white/40 text-[12px] mb-2 px-1 leading-relaxed">仅用于「评论回复」栏目的 AI 回复建议，与「问 AI」无关。</p>
                 <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-3">
@@ -2191,7 +2208,7 @@ function DemoPageInner() {
                   ))}
                 </div>
               </section>
-              <section>
+              <section className="pt-4 pb-1">
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">快捷键</p>
                 <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-2">
                   <ShortcutRow keys={["⌘/Ctrl", "B"]} desc="显示 / 隐藏左侧栏" />
