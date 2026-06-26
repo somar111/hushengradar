@@ -1,4 +1,4 @@
-import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt, buildTranslatePrompt } from "./promptKit.mjs";
+import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt } from "./promptKit.mjs";
 import { ASK_TOOLS, executeAskTool, type AskContext } from "./askTools";
 import type { TerminologyEntry } from "./supabase";
 
@@ -135,26 +135,8 @@ export async function detectAndTranslate(
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY 未配置");
   }
-
-  const data = await callDeepSeek(apiKey, {
-    model: "deepseek-chat",
-    messages: [
-      {
-        role: "system",
-        content: buildTranslatePrompt({
-          appContext: opts.appContext,
-          displayName: opts.displayName,
-          terminologyGlossary: opts.terminologyGlossary,
-        }),
-      },
-      { role: "user", content },
-    ],
-    temperature: 0.1,
-    response_format: { type: "json_object" },
-  });
-
-  const raw = data.choices?.[0]?.message?.content ?? "{}";
-  return JSON.parse(raw) as TranslateResult;
+  const { translateReviewWithPipeline } = await import("./translateReview.mjs");
+  return translateReviewWithPipeline(apiKey, content, opts);
 }
 
 export type ReplyTranslationSettings = {

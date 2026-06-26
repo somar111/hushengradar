@@ -7,13 +7,17 @@ import {
   buildSubTagReusePool,
   buildSummaryPrompt,
   buildTagCountsFromReviews,
-  buildTranslatePrompt,
   buildParentKeysWithSubs,
   findTagCountInconsistencies,
   hasTaxonomyIntents,
   subTagMapToPromptObject,
 } from "../lib/promptKit.mjs";
 import { classifyReviewWithPipeline } from "../lib/classifyReview.mjs";
+import {
+  listReviewsNeedingTranslation,
+  persistTranslationResult,
+  translateReviewWithPipeline,
+} from "../lib/translateReview.mjs";
 import { enrichFeatureRequestSubs, enrichTaxonomyIntents, getUniversalSubcategories } from "../lib/taxonomyEnrich.mjs";
 import { runTaxonomyStage } from "../lib/taxonomy.mjs";
 import { createDeepSeekCaller } from "../lib/deepseek.mjs";
@@ -172,22 +176,6 @@ async function resolveFetchLocales(app) {
   return FALLBACK_LOCALES;
 }
 
-async function detectAndTranslate(content, { appContext, displayName, terminologyGlossary } = {}) {
-  const systemPrompt = buildTranslatePrompt({ appContext, displayName, terminologyGlossary });
-  const res = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_API_KEY}` },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content }],
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-    }),
-  });
-  if (!res.ok) throw new Error(`DeepSeek翻译 ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  return JSON.parse(data.choices[0].message.content);
-}
 
 async function summarizeCluster(tagLabel, sampleContents, appContext) {
   const systemPrompt = buildSummaryPrompt({ tagLabel, appContext });
@@ -239,7 +227,7 @@ async function runConcurrent(items, concurrency, fn) {
   await Promise.all(Array.from({ length: concurrency }, worker));
 }
 
-async function processApp(app) {
+async function processApp(app, { skipFetch = false } = {}) {
   console.log(`\n=== ${app.display_name} (${app.platform}/${app.external_id}) ===`);
 
   if (app.platform !== "google_play") {
@@ -253,10 +241,13 @@ async function processApp(app) {
   const watermarks = { ...(app.locale_watermarks ?? {}) };
   const newWatermarks = {};
 
+  let fetched = [];
+  if (skipFetch) {
+    console.log("--skip-fetch：跳过 Google Play 抓取，仅跑分类/翻译/摘要。");
+  } else {
   // 1. 多语言批次抓增量，每个 locale 用各自的水位线
   // 优先级：target_locales（手动）> locale_discovery（自动探测）> FALLBACK_LOCALES
   const locales = await resolveFetchLocales(app);
-  let fetched = [];
   if (!locales.length) {
     console.log("无活跃 locale，跳过抓取");
   }
@@ -294,6 +285,7 @@ async function processApp(app) {
     }).eq("id", app.id);
     if (error) throw error;
     console.log(`水位线已落盘（${Object.keys(newWatermarks).length} 个 locale）`);
+  }
   }
 
   // 2. 分类所有未分类过的（包括这次新抓的 + 之前遗留的），分页拉全量 + 8 路并发
@@ -398,29 +390,32 @@ async function processApp(app) {
     console.error("taxonomy 阶段失败（已跳过，不影响主流程）：", e.message);
   }
 
-  // 3. 翻译所有未翻译过的，同样分页拉全量 + 并发
-  const untranslated = await fetchAllRows(
-    supabase.from("reviews").select("id, content").eq("app_id", app.id).is("translated_at", null)
-  );
-  console.log(`待翻译 ${untranslated.length} 条`);
-  await runConcurrent(untranslated, 8, async (r) => {
+  // 3. 翻译：从未翻译 + 已标记但缺必需译文的（假完成）一并处理
+  const needsTranslation = await listReviewsNeedingTranslation(supabase, app.id);
+  console.log(`待翻译 ${needsTranslation.length} 条`);
+  let translatedOk = 0;
+  let translatedIncomplete = 0;
+  await runConcurrent(needsTranslation, 8, async (r) => {
     try {
       const result = await withRetry(() =>
-        detectAndTranslate(r.content, {
+        translateReviewWithPipeline(DEEPSEEK_API_KEY, r.content, {
           appContext: app.context,
           displayName: app.display_name,
           terminologyGlossary: app.terminology_glossary ?? [],
         })
       );
-      const { error } = await supabase.from("reviews").update({
-        detected_lang: result.detected_lang, translated_zh: result.translated_zh,
-        translated_en: result.translated_en, translated_at: new Date().toISOString(),
-      }).eq("id", r.id);
-      if (error) throw error;
+      const saved = await persistTranslationResult(supabase, r.id, result);
+      if (saved.ok) translatedOk++;
+      else {
+        translatedIncomplete++;
+        console.warn(`翻译不完整 id=${r.id} lang=${result.detected_lang ?? "?"}`);
+      }
     } catch (e) {
       console.error(`翻译失败 id=${r.id}:`, e.message);
     }
   });
+  if (translatedIncomplete) console.log(`翻译跳过（模型仍缺必需字段）${translatedIncomplete} 条，下轮 cron 重试`);
+  if (translatedOk) console.log(`翻译完成 ${translatedOk} 条`);
 
   // 4. 重新生成所有标签的摘要——不能只看"今天有没有抓到新评论"（fetched），重新分类老评论
   // （unclassified > 0，比如批量重置 ai_classified_at 触发的全量重分类）同样会改变标签内容，
@@ -465,9 +460,11 @@ async function processApp(app) {
 }
 
 async function main() {
+  const argv = process.argv.slice(2);
+  const skipFetch = argv.includes("--skip-fetch");
+  const appArg = argv.find((a) => !a.startsWith("--"));
   const { data: apps, error } = await supabase.from("apps").select("*");
   if (error) throw error;
-  const appArg = process.argv[2];
   let targets = apps;
   if (appArg) {
     targets = apps.filter(
@@ -480,7 +477,7 @@ async function main() {
     console.log(`共 ${apps.length} 个 App`);
   }
   for (const app of targets) {
-    await processApp(app);
+    await processApp(app, { skipFetch });
   }
   console.log("\n全部完成。");
 }

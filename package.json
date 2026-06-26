@@ -9,7 +9,8 @@
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "retranslate": "node --env-file=.env.local scripts/retranslate-incomplete.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
