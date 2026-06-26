@@ -51,7 +51,7 @@ export async function getLatestReviewDate(appId: string): Promise<string | null>
   return data?.[0]?.review_date ?? null;
 }
 
-export async function queryReviews(opts: {
+export type ReviewQueryFilters = {
   appId: string;
   tag?: string;
   subTag?: string;
@@ -61,20 +61,10 @@ export async function queryReviews(opts: {
   since?: string;
   until?: string;
   replied?: boolean;
-  page: number;
-  pageSize: number;
-}): Promise<{ items: ReviewRow[]; total: number }> {
-  const supabase = getServiceSupabase();
-  let query = supabase
-    .from("reviews")
-    .select("*", { count: "exact" })
-    .eq("app_id", opts.appId);
+};
 
-  // subTag 一定是某个 tag 下更细的子问题，没有独立的索引字段——直接用 jsonb 包含查询，
-  // 在 ai_tags 数组里找有没有某个元素同时满足 key+subKey 这两个字段（不需要为这个新加列/迁移）。
-  // 注意：jsonb 列的 .contains() 必须传 JSON 字符串，不能传原始数组/对象——supabase-js
-  // 对数组类型的列会编码成 Postgres array 字面量语法（{...}），对 jsonb 列那样编码是非法的，
-  // 实测直接传对象会报 "invalid input syntax for type json"，必须自己先 JSON.stringify。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyReviewFilters(query: any, opts: Omit<ReviewQueryFilters, "appId">) {
   if (opts.tag && opts.subTag) query = query.contains("ai_tags", JSON.stringify([{ key: opts.tag, subKey: opts.subTag }]));
   else if (opts.tag) query = query.contains("ai_tag_keys", [opts.tag]);
   if (opts.locale) query = query.eq("locale", opts.locale);
@@ -82,7 +72,6 @@ export async function queryReviews(opts: {
   if (opts.replied === true) query = query.not("official_reply", "is", null);
   if (opts.replied === false) query = query.is("official_reply", null);
   if (opts.q) {
-    // 去掉逗号/括号：PostgREST 的 .or() 语法里这两个字符是分隔符/分组符，搜索词里混进来会被当成额外筛选条件解析
     const safeQ = opts.q.replace(/[,()]/g, "");
     if (safeQ) {
       query = query.or(
@@ -92,11 +81,46 @@ export async function queryReviews(opts: {
   }
   if (opts.since) query = query.gte("review_date", opts.since);
   if (opts.until) query = query.lte("review_date", opts.until);
+  return query;
+}
 
-  const from = (opts.page - 1) * opts.pageSize;
+async function countReviewsMatching(opts: ReviewQueryFilters): Promise<number> {
+  const supabase = getServiceSupabase();
+  const { appId, ...filters } = opts;
+  let query = supabase.from("reviews").select("*", { count: "exact", head: true }).eq("app_id", appId);
+  query = applyReviewFilters(query, filters);
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/** 在当前筛选条件下（不含 replied 筛选）统计全部/已回复/未回复数量，供评论回复栏下拉与计数展示。 */
+export async function countReviewsReplyBreakdown(
+  opts: Omit<ReviewQueryFilters, "replied">
+): Promise<{ total: number; replied: number; unreplied: number }> {
+  const [total, replied] = await Promise.all([
+    countReviewsMatching(opts),
+    countReviewsMatching({ ...opts, replied: true }),
+  ]);
+  return { total, replied, unreplied: Math.max(0, total - replied) };
+}
+
+export async function queryReviews(opts: ReviewQueryFilters & {
+  page: number;
+  pageSize: number;
+}): Promise<{ items: ReviewRow[]; total: number }> {
+  const supabase = getServiceSupabase();
+  const { appId, page, pageSize, ...filters } = opts;
+  let query = supabase
+    .from("reviews")
+    .select("*", { count: "exact" })
+    .eq("app_id", appId);
+  query = applyReviewFilters(query, filters);
+
+  const from = (page - 1) * pageSize;
   const { data, error, count } = await query
     .order("review_date", { ascending: false })
-    .range(from, from + opts.pageSize - 1);
+    .range(from, from + pageSize - 1);
 
   if (error) throw error;
   return { items: data ?? [], total: count ?? 0 };

@@ -73,6 +73,12 @@ type ChatMessage = {
   a: string;
 };
 
+type ReplyStatusCounts = {
+  total: number;
+  replied: number;
+  unreplied: number;
+};
+
 type TranslateSettings = {
   enabled: boolean;
   targetLang: TargetLang;
@@ -313,6 +319,79 @@ const SEG_PILL_OFF = "text-white/60 hover:text-white/85";
 // 评论回复：顶部筛选各控件独立毛玻璃（无外层包裹条）
 const REPLY_FILTER_FIELD =
   "rounded-xl border border-white/18 bg-white/[0.14] backdrop-blur-xl shadow-[0_8px_24px_rgba(0,0,0,0.35)] outline-none focus:border-white/28 transition-colors text-[15px]";
+
+function ReplyTranslateToggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
+  const [showHint, setShowHint] = useState(false);
+  return (
+    <div className="relative flex-none">
+      <button
+        type="button"
+        onClick={() => onChange(!enabled)}
+        onMouseEnter={() => setShowHint(true)}
+        onMouseLeave={() => setShowHint(false)}
+        onFocus={() => setShowHint(true)}
+        onBlur={() => setShowHint(false)}
+        aria-pressed={enabled}
+        aria-label="开关评论翻译"
+        className={`${REPLY_FILTER_FIELD} flex items-center gap-2 px-3.5 py-2.5 text-[14px] ${
+          enabled
+            ? "text-white/95 ring-1 ring-[#5781d8]/35 border-[#5781d8]/30"
+            : "text-white/65 hover:border-white/28"
+        }`}>
+        <Globe size={15} className={enabled ? "text-[#8fb0ff]" : "text-white/45"} strokeWidth={enabled ? 2.2 : 1.8} />
+        <span className="font-medium">翻译</span>
+        <span
+          aria-hidden
+          className={`relative inline-flex h-[18px] w-8 flex-none rounded-full transition-colors ${
+            enabled ? "bg-[#5781d8]" : "bg-white/18"
+          }`}>
+          <span
+            className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.35)] transition-transform ${
+              enabled ? "translate-x-[14px]" : "translate-x-0.5"
+            }`}
+          />
+        </span>
+        <span className={`min-w-[1.1rem] text-[12px] font-semibold ${enabled ? "text-[#8fb0ff]" : "text-white/38"}`}>
+          {enabled ? "开" : "关"}
+        </span>
+      </button>
+      {showHint && (
+        <div
+          role="tooltip"
+          className="pointer-events-none absolute top-full right-0 mt-2 z-50 whitespace-nowrap rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          显示评论翻译（快捷键 ⌥T / Alt+T）
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClearChatButton({ contextLabel, onClick }: { contextLabel: string; onClick: () => void }) {
+  const [showHint, setShowHint] = useState(false);
+  return (
+    <div className="relative pointer-events-auto">
+      <button
+        type="button"
+        onClick={onClick}
+        onMouseEnter={() => setShowHint(true)}
+        onMouseLeave={() => setShowHint(false)}
+        onFocus={() => setShowHint(true)}
+        onBlur={() => setShowHint(false)}
+        aria-label={`清空「${contextLabel}」下的对话`}
+        className="flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#1a2233]/80 backdrop-blur-md px-3 py-1.5 text-[13px] text-white/65 hover:text-white/85 hover:border-white/22 hover:bg-[#1a2233] transition-colors">
+        <Trash2 size={13} />
+        清空此对话
+      </button>
+      {showHint && (
+        <div
+          role="tooltip"
+          className="pointer-events-none absolute top-full right-0 mt-2 z-50 max-w-[20rem] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          清空「{contextLabel}」下的对话
+        </div>
+      )}
+    </div>
+  );
+}
 
 // 通用分段切换器：选中态做成一块"会滑动的磨砂玻璃胶囊"。胶囊用一个绝对定位的独立元素承载，
 // 实时测量当前选项按钮的位置/尺寸，再用 transform 平滑滑过去——切换时胶囊在两个选项间丝滑滑动，
@@ -730,6 +809,7 @@ function DemoPageInner() {
 
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [replyStatusCounts, setReplyStatusCounts] = useState<ReplyStatusCounts | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [selectedReview, setSelectedReview] = useState<ReviewRow | null>(null);
@@ -859,6 +939,7 @@ function DemoPageInner() {
         if (reqId !== reviewsReqIdRef.current) return;
         setReviews(data.items ?? []);
         setTotal(data.total ?? 0);
+        setReplyStatusCounts(data.replyCounts ?? null);
       })
       .finally(() => {
         if (reqId === reviewsReqIdRef.current) setLoading(false);
@@ -1457,13 +1538,10 @@ function DemoPageInner() {
     <div className="relative flex-1 overflow-hidden">
       {canClearChat && (
         <div className="absolute top-0 inset-x-0 z-20 px-6 pt-4 flex items-center justify-end pointer-events-none">
-          <button
-            type="button"
+          <ClearChatButton
+            contextLabel={askContextLabel}
             onClick={() => setShowClearChatConfirm(true)}
-            className="pointer-events-auto flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#1a2233]/80 backdrop-blur-md px-3 py-1.5 text-[13px] text-white/65 hover:text-white/85 hover:border-white/22 hover:bg-[#1a2233] transition-colors">
-            <Trash2 size={13} />
-            清空此对话
-          </button>
+          />
         </div>
       )}
       <div
@@ -1602,7 +1680,8 @@ function DemoPageInner() {
       )}
       <div className={`flex-1 overflow-y-auto px-4 ${selectedReview ? "pb-56" : "pb-4"}`}>
         <div className="sticky top-0 z-10 -mx-1 px-1 pt-3 pb-3 bg-gradient-to-b from-[#141a27] from-55% to-transparent">
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5 w-full">
+            <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
             <div className="relative flex-1 min-w-[12rem]">
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
               <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
@@ -1612,7 +1691,9 @@ function DemoPageInner() {
             </div>
             <select value={tagFilter || ""} onChange={(e) => setTagFilter(e.target.value || undefined)}
               className={`${REPLY_FILTER_FIELD} px-3.5 py-2.5 text-white/90 min-w-[10rem]`}>
-              <option value="">全部问题类型</option>
+              <option value="">
+                全部问题类型{stats ? `（${stats.total.toLocaleString()}）` : ""}
+              </option>
               {stats && Object.entries(stats.tagCounts).sort((a, b) => b[1].count - a[1].count).map(([key, t]) => (
                 <option key={key} value={key}>{t.label}（{t.count}）</option>
               ))}
@@ -1629,9 +1710,15 @@ function DemoPageInner() {
             <select value={repliedFilter === undefined ? "" : String(repliedFilter)}
               onChange={(e) => setRepliedFilter(e.target.value === "" ? undefined : e.target.value === "true")}
               className={`${REPLY_FILTER_FIELD} px-3.5 py-2.5 text-white/90 min-w-[9rem]`}>
-              <option value="">全部回复状态</option>
-              <option value="true">已回复</option>
-              <option value="false">未回复</option>
+              <option value="">
+                全部回复状态{replyStatusCounts ? `（${replyStatusCounts.total}）` : ""}
+              </option>
+              <option value="true">
+                已回复{replyStatusCounts ? `（${replyStatusCounts.replied}）` : ""}
+              </option>
+              <option value="false">
+                未回复{replyStatusCounts ? `（${replyStatusCounts.unreplied}）` : ""}
+              </option>
             </select>
             {search && (
               <button onClick={() => { setSearch(""); setSearchInput(""); }}
@@ -1639,8 +1726,18 @@ function DemoPageInner() {
                 "{search}" <X size={13} />
               </button>
             )}
+            </div>
+            <ReplyTranslateToggle
+              enabled={translateSettings.enabled}
+              onChange={(enabled) => setTranslateSettings((s) => ({ ...s, enabled }))}
+            />
           </div>
         </div>
+        <p className="px-1 pb-2.5 text-[13px] text-white/45 leading-snug">
+          {loading && replyStatusCounts === null
+            ? "正在统计评论…"
+            : `共 ${total.toLocaleString()} 条评论`}
+        </p>
         {loading ? (
           <div className="flex items-center justify-center h-full text-white/30"><Loader2 className="animate-spin" size={20} /></div>
         ) : (

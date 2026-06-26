@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getApp, getDefaultApp, queryReviews } from "@/lib/reviews";
+import { getApp, getDefaultApp, queryReviews, countReviewsReplyBreakdown } from "@/lib/reviews";
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -17,7 +17,11 @@ export async function GET(request: NextRequest) {
   const pageSize = Math.min(200, Math.max(1, Number(params.get("pageSize") || "20")));
 
   const app = appId ? await getApp(appId) : await getDefaultApp();
-  const { items, total } = await queryReviews({ appId: app.id, tag, subTag, locale, rating, q, since, replied, page, pageSize });
+  const filterOpts = { appId: app.id, tag, subTag, locale, rating, q, since };
+  const [replyCounts, { items, total }] = await Promise.all([
+    countReviewsReplyBreakdown(filterOpts),
+    queryReviews({ ...filterOpts, replied, page, pageSize }),
+  ]);
 
-  return Response.json({ items, total, page, pageSize });
+  return Response.json({ items, total, page, pageSize, replyCounts });
 }
