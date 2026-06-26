@@ -10,7 +10,7 @@ import {
   X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp, Trash2, Smile, Plus,
 } from "lucide-react";
 import { type ReviewRow, type AppRow, type TerminologyEntry } from "@/lib/supabase";
-import { meaningfulLocaleFloor } from "@/lib/analysisShared";
+import { meaningfulLocaleFloor, sortSubTagRecordForDisplay } from "@/lib/analysisShared";
 import { hasSubTagBreakdown } from "@/lib/promptKit.mjs";
 import { DEFAULT_DEMO_TIME_RANGE, resolveDefaultDemoApp } from "@/lib/demoDefaults";
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
@@ -820,7 +820,7 @@ function TagBreakdown({ t, onJump, activeSubKey }: {
   onJump?: (subKey?: string) => void;
   activeSubKey?: string;
 }) {
-  const subEntries = Object.entries(t.subTags).sort((a, b) => b[1].count - a[1].count);
+  const subEntries = sortSubTagRecordForDisplay(t.subTags);
   if (!hasSubTagBreakdown(t.subTags)) {
     const text = t.summary || "点击查看全部真实评论 →";
     return onJump
@@ -1839,7 +1839,7 @@ function DemoPageInner() {
               <select value={subTagFilter || ""} onChange={(e) => setSubTagFilter(e.target.value || undefined)}
                 className={`${REPLY_FILTER_FIELD} px-3.5 py-2.5 text-white/90 min-w-[9rem]`}>
                 <option value="">全部子问题</option>
-                {Object.entries(stats.tagCounts[tagFilter].subTags).sort((a, b) => b[1].count - a[1].count).map(([key, s]) => (
+                {sortSubTagRecordForDisplay(stats.tagCounts[tagFilter].subTags).map(([key, s]) => (
                   <option key={key} value={key}>{s.label}（{s.count}）</option>
                 ))}
               </select>

@@ -7,3 +7,26 @@
 export function meaningfulLocaleFloor(total: number): number {
   return Math.max(20, Math.round(total * 0.02));
 }
+
+/** 兜底子问题：分类侧统一用 general(其他)，展示时永远沉底 */
+export function isCatchAllSubTag(subKey: string, label?: string | null): boolean {
+  return subKey === "general" || label === "其他";
+}
+
+/** 子问题展示排序：非「其他」按 count 降序，「其他」不论多少条都排最后 */
+export function sortSubTagsForDisplay<T extends { count: number; label?: string | null }>(
+  entries: [string, T][],
+): [string, T][] {
+  return [...entries].sort((a, b) => {
+    const aCatchAll = isCatchAllSubTag(a[0], a[1].label);
+    const bCatchAll = isCatchAllSubTag(b[0], b[1].label);
+    if (aCatchAll !== bCatchAll) return aCatchAll ? 1 : -1;
+    return b[1].count - a[1].count;
+  });
+}
+
+export function sortSubTagRecordForDisplay<T extends { count: number; label?: string | null }>(
+  subTags: Record<string, T>,
+): [string, T][] {
+  return sortSubTagsForDisplay(Object.entries(subTags));
+}

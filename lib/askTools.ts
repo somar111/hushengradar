@@ -1,3 +1,4 @@
+import { sortSubTagRecordForDisplay } from "./analysisShared";
 import { buildAnalysisMetrics, computeStats, queryReviews } from "./reviews";
 import type { ReviewRow } from "./supabase";
 
@@ -117,7 +118,7 @@ export async function executeAskTool(
       subTagBreakdown: Object.fromEntries(
         Object.entries(stats.tagCounts).map(([key, t]) => [
           key,
-          Object.entries(t.subTags).map(([subKey, s]) => ({
+          sortSubTagRecordForDisplay(t.subTags).map(([subKey, s]) => ({
             subKey,
             label: s.label,
             count: s.count,
