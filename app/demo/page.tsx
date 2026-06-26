@@ -385,7 +385,7 @@ function ClearChatButton({ contextLabel, onClick }: { contextLabel: string; onCl
       {showHint && (
         <div
           role="tooltip"
-          className="pointer-events-none absolute top-full right-0 mt-2 z-50 max-w-[20rem] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          className="pointer-events-none absolute top-full right-0 mt-2 z-50 w-max max-w-none whitespace-nowrap rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           清空「{contextLabel}」下的对话
         </div>
       )}
