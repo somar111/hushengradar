@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import {
   Globe,
   ListOrdered, GitCompare, Bot, Reply,
-  X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp, Trash2, Smile, Plus, RefreshCw,
+  X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp, Trash2, Smile, Plus, RefreshCw, ListChecks, Mail,
 } from "lucide-react";
 import { type ReviewRow, type AppRow, type TerminologyEntry } from "@/lib/supabase";
 import { meaningfulLocaleFloor, sortSubTagRecordForDisplay } from "@/lib/analysisShared";
@@ -104,7 +104,7 @@ const RIGHT_PANEL_NAV: { key: RightPanel; label: string }[] = [
   { key: "complaints", label: "Top 反馈" },
   { key: "analysis", label: "综合分析" },
   { key: "ask", label: "问 AI" },
-  { key: "reply", label: "评论回复" },
+  { key: "reply", label: "评论查看&回复" },
 ];
 
 const PANEL_ICONS: Record<RightPanel, React.ReactNode> = {
@@ -183,33 +183,68 @@ function ShortcutRow({ keys, desc }: { keys: string[]; desc: string }) {
   );
 }
 
-function LockedFeatureHint({
-  pos,
-  onClose,
-  message = "暂时不可自定义哦，敬请期待",
-}: {
-  pos: { top: number; left: number } | null;
-  onClose: () => void;
-  message?: string;
-}) {
-  useEffect(() => {
-    if (!pos) return;
-    const onPointerDown = (e: MouseEvent) => {
-      const el = e.target as Element;
-      if (el.closest("[data-locked-hint]") || el.closest("[data-ai-reply-field]") || el.closest("[data-terminology-block]")) return;
-      onClose();
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [pos, onClose]);
+const GLASS_TOOLTIP_CLASS =
+  "pointer-events-none z-[100] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl";
 
-  if (!pos) return null;
+const LOCKED_FEATURE_HINT = "暂时不可自定义哦，敬请期待";
+const LOCKED_UNAVAILABLE_HINT = "暂时不可用，敬请期待";
+const LOCKED_SURFACE_CURSOR = "cursor-not-allowed";
+
+type GlassTooltipPlacement = "bottom-end" | "bottom-start" | "bottom-center" | "top-center" | "right";
+
+function glassTooltipStyle(placement: GlassTooltipPlacement, rect: DOMRect): React.CSSProperties {
+  const gap = 8;
+  switch (placement) {
+    case "bottom-end":
+      return { top: rect.bottom + gap, left: rect.right, transform: "translateX(-100%)" };
+    case "bottom-start":
+      return { top: rect.bottom + gap, left: rect.left };
+    case "bottom-center":
+      return { top: rect.bottom + gap, left: rect.left + rect.width / 2, transform: "translateX(-50%)" };
+    case "top-center":
+      return { top: rect.top - gap, left: rect.left + rect.width / 2, transform: "translate(-50%, -100%)" };
+    case "right":
+      return { top: rect.top, left: rect.right + gap, maxWidth: "11.5rem" };
+  }
+}
+
+function GlassHoverTooltip({
+  message,
+  children,
+  className = "",
+  placement = "bottom-end",
+  wrapClassName = "relative flex-none",
+}: {
+  message: string;
+  children: React.ReactNode;
+  className?: string;
+  placement?: GlassTooltipPlacement;
+  wrapClassName?: string;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [show, setShow] = useState(false);
+  const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
+
+  const reveal = () => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (rect) setTooltipStyle(glassTooltipStyle(placement, rect));
+    setShow(true);
+  };
+
   return (
     <div
-      data-locked-hint
-      className="fixed z-[100] max-w-[11.5rem] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl"
-      style={{ top: pos.top, left: pos.left }}>
-      {message}
+      ref={wrapRef}
+      className={wrapClassName}
+      onMouseEnter={reveal}
+      onMouseLeave={() => setShow(false)}
+      onFocus={reveal}
+      onBlur={() => setShow(false)}>
+      {children}
+      {show && (
+        <div role="tooltip" className={`fixed ${GLASS_TOOLTIP_CLASS} ${className}`} style={tooltipStyle}>
+          {message}
+        </div>
+      )}
     </div>
   );
 }
@@ -217,11 +252,14 @@ function LockedFeatureHint({
 const AI_REPLY_FIELD_CLASS =
   "w-full bg-[#1d2433] border border-white/15 rounded-lg px-2.5 py-2 text-[13px] text-white/85 placeholder-white/35 outline-none resize-none cursor-pointer hover:border-white/25 focus:border-white/30";
 
+const AI_REPLY_FIELD_LOCKED_CLASS =
+  `${AI_REPLY_FIELD_CLASS} cursor-not-allowed`;
+
 const TERMINOLOGY_INPUT_CLASS =
   "w-full min-w-0 bg-[#1d2433] border border-white/15 rounded-lg px-2 py-1.5 text-[12px] text-white/85 placeholder-white/35 outline-none focus:border-white/30";
 
 const TERMINOLOGY_INPUT_LOCKED_CLASS =
-  `${TERMINOLOGY_INPUT_CLASS} cursor-pointer hover:border-white/25 focus:border-white/30`;
+  `${TERMINOLOGY_INPUT_CLASS} cursor-not-allowed hover:border-white/25 focus:border-white/30`;
 
 function emptyTerminologyRow(): TerminologyEntry {
   return { source: "", zh: "", en: "", note: "" };
@@ -234,7 +272,6 @@ function TerminologyGlossaryEditor({
   onChange,
   onSaved,
   locked = false,
-  onLockedClick,
 }: {
   appId: string | undefined;
   appName: string;
@@ -242,7 +279,6 @@ function TerminologyGlossaryEditor({
   onChange: (rows: TerminologyEntry[]) => void;
   onSaved: (glossary: TerminologyEntry[]) => void;
   locked?: boolean;
-  onLockedClick?: (e: React.MouseEvent<HTMLElement>) => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -349,13 +385,10 @@ function TerminologyGlossaryEditor({
         {msg && <span className={`text-[12px] ${msg === "已保存" ? "text-emerald-400/90" : "text-red-400/90"}`}>{msg}</span>}
       </div>
       </div>
-      {locked && onLockedClick && (
-        <button
-          type="button"
-          data-terminology-block
-          className="absolute inset-0 z-10 cursor-pointer rounded-xl bg-transparent border-0 p-0"
-          onClick={onLockedClick}
-          aria-label="暂不支持自定义"
+      {locked && (
+        <div
+          className={`absolute inset-0 z-10 ${LOCKED_SURFACE_CURSOR} rounded-xl bg-transparent`}
+          aria-hidden
         />
       )}
     </div>
@@ -414,16 +447,15 @@ function InfoTooltip({ text, size = 14 }: { text: string; size?: number }) {
 }
 
 function AskEmojiToggle({ enabled, onChange, compact = false }: { enabled: boolean; onChange: (v: boolean) => void; compact?: boolean }) {
-  const [showHint, setShowHint] = useState(false);
   return (
-    <div className="relative inline-flex flex-none">
+    <GlassHoverTooltip
+      message="设置AI回复里是否含emoji"
+      placement="top-center"
+      wrapClassName="inline-flex flex-none"
+      className="whitespace-nowrap">
       <button
         type="button"
         onClick={() => onChange(!enabled)}
-        onMouseEnter={() => setShowHint(true)}
-        onMouseLeave={() => setShowHint(false)}
-        onFocus={() => setShowHint(true)}
-        onBlur={() => setShowHint(false)}
         aria-pressed={enabled}
         aria-label="设置 AI 回复是否含 Emoji"
         className={`flex items-center rounded-xl border transition-colors ${
@@ -450,14 +482,7 @@ function AskEmojiToggle({ enabled, onChange, compact = false }: { enabled: boole
           {enabled ? "开" : "关"}
         </span>
       </button>
-      {showHint && (
-        <div
-          role="tooltip"
-          className="pointer-events-none absolute bottom-full right-0 mb-2 z-50 whitespace-nowrap rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-          设置AI回复里是否含emoji
-        </div>
-      )}
-    </div>
+    </GlassHoverTooltip>
   );
 }
 
@@ -471,21 +496,18 @@ const SEG_TRACK = "flex items-center gap-1 bg-white/6 rounded-full p-1";
 const SEG_PILL_ON = "bg-white/15 text-white ring-1 ring-white/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.28),0_1px_2px_0_rgba(0,0,0,0.35)] backdrop-blur-sm";
 const SEG_PILL_OFF = "text-white/60 hover:text-white/85";
 
-// 评论回复：顶部筛选各控件独立毛玻璃（无外层包裹条）
+// 评论查看&回复：顶部筛选各控件独立毛玻璃（无外层包裹条）
 const REPLY_FILTER_FIELD =
   "rounded-xl border border-white/18 bg-white/[0.14] backdrop-blur-xl shadow-[0_8px_24px_rgba(0,0,0,0.35)] outline-none focus:border-white/28 transition-colors text-[15px]";
 
 function ReplyTranslateToggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
-  const [showHint, setShowHint] = useState(false);
   return (
-    <div className="relative flex-none">
+    <GlassHoverTooltip
+      message="显示评论翻译（快捷键 ⌥T / Alt+T）"
+      className="whitespace-nowrap">
       <button
         type="button"
         onClick={() => onChange(!enabled)}
-        onMouseEnter={() => setShowHint(true)}
-        onMouseLeave={() => setShowHint(false)}
-        onFocus={() => setShowHint(true)}
-        onBlur={() => setShowHint(false)}
         aria-pressed={enabled}
         aria-label="开关评论翻译"
         className={`${REPLY_FILTER_FIELD} flex items-center gap-2 px-3.5 py-2.5 text-[14px] ${
@@ -510,14 +532,31 @@ function ReplyTranslateToggle({ enabled, onChange }: { enabled: boolean; onChang
           {enabled ? "开" : "关"}
         </span>
       </button>
-      {showHint && (
-        <div
-          role="tooltip"
-          className="pointer-events-none absolute top-full right-0 mt-2 z-50 whitespace-nowrap rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-          显示评论翻译（快捷键 ⌥T / Alt+T）
-        </div>
-      )}
-    </div>
+    </GlassHoverTooltip>
+  );
+}
+
+function ReplyLockedToolbarButton({
+  label,
+  icon: Icon,
+  hint = LOCKED_UNAVAILABLE_HINT,
+}: {
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
+  hint?: string;
+}) {
+  return (
+    <GlassHoverTooltip message={hint} wrapClassName={`relative flex-none ${LOCKED_SURFACE_CURSOR}`}>
+      <button
+        type="button"
+        disabled
+        tabIndex={-1}
+        aria-label={label}
+        className={`${REPLY_FILTER_FIELD} flex items-center gap-2 px-3.5 py-2.5 text-[14px] text-white/35 opacity-60 pointer-events-none ${LOCKED_SURFACE_CURSOR}`}>
+        <Icon size={15} className="text-white/30" strokeWidth={2} />
+        <span className="font-medium whitespace-nowrap">{label}</span>
+      </button>
+    </GlassHoverTooltip>
   );
 }
 
@@ -536,100 +575,61 @@ function ReplyReclassifyButton({
   count: number;
   onClick: () => void;
 }) {
-  const [showHint, setShowHint] = useState(false);
-  const [showLockedHint, setShowLockedHint] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
   const visuallyDisabled = locked || disabled || loading;
+  const hint = locked
+    ? "暂无权限"
+    : disabled
+      ? disabledReason
+      : `用当前 taxonomy 重新分类筛选结果（最多 ${RECLASSIFY_MAX} 条）。完成后标签可能变化，列表与统计会刷新。`;
 
-  useEffect(() => {
-    if (!showLockedHint) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (rootRef.current?.contains(e.target as Node)) return;
-      setShowLockedHint(false);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [showLockedHint]);
+  const button = (
+    <button
+      type="button"
+      disabled={!locked && (disabled || loading)}
+      onClick={locked ? undefined : onClick}
+      aria-label="重跑当前筛选结果的分类"
+      className={`${REPLY_FILTER_FIELD} flex items-center gap-2 px-3.5 py-2.5 text-[14px] transition-colors ${
+        visuallyDisabled
+          ? `text-white/35 opacity-60 ${locked ? LOCKED_SURFACE_CURSOR : "cursor-not-allowed"}`
+          : "text-white/85 hover:border-white/28 hover:text-white/95"
+      }`}>
+      {loading ? (
+        <Loader2 size={15} className="animate-spin text-[#8fb0ff]" />
+      ) : (
+        <RefreshCw size={15} className={visuallyDisabled ? "text-white/30" : "text-white/55"} strokeWidth={2} />
+      )}
+      <span className="font-medium whitespace-nowrap">
+        {loading ? "重跑中…" : "重跑分类"}
+      </span>
+      {!loading && count > 0 && !visuallyDisabled && (
+        <span className="text-[12px] font-semibold text-[#8fb0ff]">{count}</span>
+      )}
+    </button>
+  );
 
   return (
-    <div ref={rootRef} className="relative flex-none">
-      <button
-        type="button"
-        disabled={!locked && (disabled || loading)}
-        onClick={locked ? undefined : onClick}
-        onMouseEnter={() => !locked && setShowHint(true)}
-        onMouseLeave={() => setShowHint(false)}
-        onFocus={() => !locked && setShowHint(true)}
-        onBlur={() => setShowHint(false)}
-        aria-label="重跑当前筛选结果的分类"
-        className={`${REPLY_FILTER_FIELD} flex items-center gap-2 px-3.5 py-2.5 text-[14px] transition-colors ${
-          visuallyDisabled
-            ? "text-white/35 cursor-not-allowed opacity-60"
-            : "text-white/85 hover:border-white/28 hover:text-white/95"
-        }`}>
-        {loading ? (
-          <Loader2 size={15} className="animate-spin text-[#8fb0ff]" />
-        ) : (
-          <RefreshCw size={15} className={visuallyDisabled ? "text-white/30" : "text-white/55"} strokeWidth={2} />
-        )}
-        <span className="font-medium whitespace-nowrap">
-          {loading ? "重跑中…" : "重跑分类"}
-        </span>
-        {!loading && count > 0 && !visuallyDisabled && (
-          <span className="text-[12px] font-semibold text-[#8fb0ff]">{count}</span>
-        )}
-      </button>
-      {locked && (
-        <button
-          type="button"
-          className="absolute inset-0 z-10 cursor-pointer rounded-xl bg-transparent border-0 p-0"
-          onClick={() => setShowLockedHint(true)}
-          aria-label="暂无权限"
-        />
-      )}
-      {locked && showLockedHint && (
-        <div
-          role="tooltip"
-          className="pointer-events-none absolute top-full right-0 mt-2 z-50 whitespace-nowrap rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-          暂无权限
-        </div>
-      )}
-      {showHint && !locked && (
-        <div
-          role="tooltip"
-          className="pointer-events-none absolute top-full right-0 mt-2 z-50 w-max max-w-[18rem] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-          {disabled
-            ? disabledReason
-            : `用当前 taxonomy 重新分类筛选结果（最多 ${RECLASSIFY_MAX} 条）。完成后标签可能变化，列表与统计会刷新。`}
-        </div>
-      )}
-    </div>
+    <GlassHoverTooltip message={hint} className={locked ? "whitespace-nowrap" : "w-max max-w-[18rem]"}>
+      {button}
+    </GlassHoverTooltip>
   );
 }
 
 function ClearChatButton({ contextLabel, onClick }: { contextLabel: string; onClick: () => void }) {
-  const [showHint, setShowHint] = useState(false);
   return (
     <div className="relative pointer-events-auto">
-      <button
-        type="button"
-        onClick={onClick}
-        onMouseEnter={() => setShowHint(true)}
-        onMouseLeave={() => setShowHint(false)}
-        onFocus={() => setShowHint(true)}
-        onBlur={() => setShowHint(false)}
-        aria-label={`清空「${contextLabel}」下的对话`}
-        className="flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#1a2233]/80 backdrop-blur-md px-3 py-1.5 text-[13px] text-white/65 hover:text-white/85 hover:border-white/22 hover:bg-[#1a2233] transition-colors">
-        <Trash2 size={13} />
-        清空此对话
-      </button>
-      {showHint && (
-        <div
-          role="tooltip"
-          className="pointer-events-none absolute top-full right-0 mt-2 z-50 w-max max-w-none whitespace-nowrap rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-          清空「{contextLabel}」下的对话
-        </div>
-      )}
+      <GlassHoverTooltip
+        message={`清空「${contextLabel}」下的对话`}
+        className="whitespace-nowrap"
+        wrapClassName="relative">
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={`清空「${contextLabel}」下的对话`}
+          className="flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#1a2233]/80 backdrop-blur-md px-3 py-1.5 text-[13px] text-white/65 hover:text-white/85 hover:border-white/22 hover:bg-[#1a2233] transition-colors">
+          <Trash2 size={13} />
+          清空此对话
+        </button>
+      </GlassHoverTooltip>
     </div>
   );
 }
@@ -931,7 +931,7 @@ function fmtDate(iso: string | null) {
   return iso ? iso.slice(0, 10) : "—";
 }
 
-// Top 反馈 / 评论回复头部共用 TagBreakdown。规则见 .cursor/rules/top-feedback-tagging.mdc：
+// Top 反馈 / 评论查看&回复头部共用 TagBreakdown。规则见 .cursor/rules/top-feedback-tagging.mdc：
 // praise、vague_complaint 无 breakdown；其余类有效子标签 ≥2 → chip，否则 → AI 摘要（非错误态）。
 function TagBreakdown({ t, onJump, activeSubKey }: {
   t: { count: number; summary: string | null; subTags: Record<string, { label: string; count: number }> };
@@ -1032,8 +1032,6 @@ function DemoPageInner() {
   );
   const [terminologyDraft, setTerminologyDraft] = useState<TerminologyEntry[]>([]);
   const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("filter");
-  const [lockedHintPos, setLockedHintPos] = useState<{ top: number; left: number } | null>(null);
-  const [lockedHintMessage, setLockedHintMessage] = useState("暂时不可自定义哦，敬请期待");
   const [canReclassify, setCanReclassify] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [hoveredTag, setHoveredTag] = useState<string | null>(null);
@@ -1046,7 +1044,6 @@ function DemoPageInner() {
   const [ratingView, setRatingView] = useState<RatingView>("trend");
   useEffect(() => { if (locale && ratingView === "locale") setRatingView("trend"); }, [locale, ratingView]);
   useEffect(() => { if (leftSidebarView === "settings") setShowAppMenu(false); }, [leftSidebarView]);
-  useEffect(() => { setLockedHintPos(null); }, [leftSidebarView]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1060,12 +1057,6 @@ function DemoPageInner() {
       });
     return () => { cancelled = true; };
   }, []);
-
-  const showLockedHint = (e: React.MouseEvent<HTMLElement>, message: string) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setLockedHintMessage(message);
-    setLockedHintPos({ top: rect.top, left: rect.right + 8 });
-  };
 
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -1147,7 +1138,7 @@ function DemoPageInner() {
     return "";
   }, [tagFilter, loading, reclassifyLoading, total]);
 
-  // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目；评论回复下 ⌥T / Alt+T 开关翻译。
+  // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目；评论查看&回复下 ⌥T / Alt+T 开关翻译。
   // 逻辑同时认 metaKey/ctrlKey 与 altKey，Mac 与 Windows 都生效；面板用中性写法同时标注两套修饰键，
   // 不依赖平台检测。输入框聚焦时不拦截，避免组合键打出特殊字符或触发浏览器菜单。
   useEffect(() => {
@@ -1858,7 +1849,7 @@ function DemoPageInner() {
               </div>
             </div>
 
-            <div className="md:col-start-2">
+            <div className="md:col-start-2 flex flex-col gap-5">
               <div className="bg-[#242c3d] rounded-3xl p-6">
                 <p className="text-white/95 text-[18px] font-bold mb-4">诉求占比</p>
                 <p className="text-white/75 text-[14px] mb-4">
@@ -1886,6 +1877,31 @@ function DemoPageInner() {
                   </div>
                 </div>
               </div>
+
+              <GlassHoverTooltip
+                message={LOCKED_UNAVAILABLE_HINT}
+                wrapClassName={`relative block w-full ${LOCKED_SURFACE_CURSOR}`}>
+                <div className="bg-[#242c3d] rounded-3xl p-6 opacity-60">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-none w-9 h-9 rounded-xl bg-white/8 flex items-center justify-center">
+                      <Mail size={16} className="text-white/45" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white/90 text-[18px] font-bold mb-1">自定义周报订阅</p>
+                      <p className="text-white/50 text-[13px] leading-relaxed">
+                        按你关心的标签与地区，定时接收 AI 汇总的周报摘要。
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled
+                    tabIndex={-1}
+                    className={`mt-4 w-full rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2 text-[13px] text-white/40 pointer-events-none ${LOCKED_SURFACE_CURSOR}`}>
+                    敬请期待
+                  </button>
+                </div>
+              </GlassHoverTooltip>
             </div>
 
           </div>
@@ -2092,6 +2108,7 @@ function DemoPageInner() {
               enabled={translateSettings.enabled}
               onChange={(enabled) => setTranslateSettings((s) => ({ ...s, enabled }))}
             />
+            <ReplyLockedToolbarButton label="审阅/批量回复" icon={ListChecks} />
             <ReplyReclassifyButton
               locked={!canReclassify}
               disabled={Boolean(reclassifyBlockedReason)}
@@ -2369,12 +2386,12 @@ function DemoPageInner() {
                 <p className="text-white/40 text-[12px] mb-2 px-1 leading-relaxed">
                   按 App 维护专名映射，对本 App 的翻译、问 AI、回复建议均生效。术语表为空时仍遵守「未知专名保留原文、禁止意译」。
                 </p>
+                <GlassHoverTooltip message={LOCKED_FEATURE_HINT} wrapClassName={`relative block ${LOCKED_SURFACE_CURSOR}`}>
                 <TerminologyGlossaryEditor
                   appId={selectedAppId}
                   appName={selectedApp?.display_name ?? "当前 App"}
                   rows={terminologyDraft}
                   locked
-                  onLockedClick={(e) => showLockedHint(e, "暂时不可自定义哦，敬请期待")}
                   onChange={setTerminologyDraft}
                   onSaved={(glossary) => {
                     setTerminologyDraft(
@@ -2390,11 +2407,14 @@ function DemoPageInner() {
                     );
                   }}
                 />
+                </GlassHoverTooltip>
               </section>
               <section className="py-4">
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">AI 回复建议 context 设置</p>
-                <p className="text-white/40 text-[12px] mb-2 px-1 leading-relaxed">仅用于「评论回复」栏目的 AI 回复建议，与「问 AI」无关。</p>
-                <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-3">
+                <p className="text-white/40 text-[12px] mb-2 px-1 leading-relaxed">仅用于「评论查看&回复」栏目的 AI 回复建议，与「问 AI」无关。</p>
+                <GlassHoverTooltip message={LOCKED_FEATURE_HINT} wrapClassName={`relative block ${LOCKED_SURFACE_CURSOR}`}>
+                <div className="relative bg-white/6 rounded-xl p-3 flex flex-col gap-3">
+                  <div className="pointer-events-none select-none flex flex-col gap-3">
                   {([
                     ["语气", DEFAULT_AI_REPLY_SETTINGS.tone, 2],
                     ["句式", DEFAULT_AI_REPLY_SETTINGS.style, 2],
@@ -2404,16 +2424,18 @@ function DemoPageInner() {
                       <span className="text-white/55 text-[12px]">{label}</span>
                       <textarea
                         readOnly
-                        data-ai-reply-field
+                        tabIndex={-1}
                         value=""
                         placeholder={placeholder}
                         rows={rows}
-                        onClick={(e) => showLockedHint(e, "暂时不可自定义哦，敬请期待")}
-                        className={AI_REPLY_FIELD_CLASS}
+                        className={AI_REPLY_FIELD_LOCKED_CLASS}
                       />
                     </div>
                   ))}
+                  </div>
+                  <div className={`absolute inset-0 z-10 ${LOCKED_SURFACE_CURSOR} rounded-xl bg-transparent`} aria-hidden />
                 </div>
+                </GlassHoverTooltip>
               </section>
               <section className="pt-4 pb-1">
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">快捷键</p>
@@ -2422,7 +2444,7 @@ function DemoPageInner() {
                   {RIGHT_PANEL_NAV.map((item, i) => (
                     <ShortcutRow key={item.key} keys={["⌥/Alt", String(i + 1)]} desc={item.label} />
                   ))}
-                  <ShortcutRow keys={["⌥/Alt", "T"]} desc="开关翻译（评论回复栏目）" />
+                  <ShortcutRow keys={["⌥/Alt", "T"]} desc="开关翻译（评论查看&回复栏目）" />
                 </div>
                 <p className="text-white/40 text-[12px] mt-2 px-1 leading-relaxed">
                   在输入框内打字时不触发，避免误操作。
@@ -2492,8 +2514,6 @@ function DemoPageInner() {
           </p>
         </div>
       </div>
-
-      <LockedFeatureHint pos={lockedHintPos} message={lockedHintMessage} onClose={() => setLockedHintPos(null)} />
     </div>
   );
 }
