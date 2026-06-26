@@ -41,7 +41,7 @@ alwaysApply: true
 
 - 结构校验 → 语义校准（`needsSemanticCalibration` / `calibrateReviewTags`）
 - 分类重试（`CLASSIFY_RETRY_ATTEMPTS`）
-- taxonomy 修订 → `pending_reclassify` → `reclassify-app.mjs` / Demo 重分类
+- taxonomy 修订 → `ensureTaxonomyMinSubs`（母类 sub < 2 自动补足）→ `expandReclassifyAffectedKeys`（新固化孤儿 / sub 达标须重读）→ `pending_reclassify` → `reclassify-app.mjs` / Demo 重分类
 - `build-taxonomy` 信号（孤儿标签、vague 占比、过宽 sub）驱动补 taxonomy，而非用摘要长期糊住
 
 ## 改代码时
