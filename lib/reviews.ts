@@ -2,7 +2,7 @@ import { getServiceSupabase, type ReviewRow, type AppRow, type TerminologyEntry 
 import { meaningfulLocaleFloor } from "./analysisShared";
 import { mergeSimilarSubTags, sanitizeTerminologyGlossary, hasSubTagBreakdown } from "./promptKit.mjs";
 import { hasActiveStatsScope, resolveGlobalTagDisplaySummary } from "./tagDisplaySummary.mjs";
-import { invalidateScopedSummaryCache, pushTagSample, summarizeTagsForScope } from "./tagSummaries.mjs";
+import { invalidateScopedSummaryCache, invalidateScopedReviewSummaryCache, pushTagSample, summarizeTagsForScope } from "./tagSummaries.mjs";
 import { resolveDefaultDemoApp } from "./demoDefaults";
 
 // apps 表几乎不变（只有手动加新 App 时才变），缓存住省掉每次切筛选都白付一次 Supabase round trip
@@ -156,10 +156,70 @@ export function invalidateStatsCache(appId?: string) {
   if (appId) {
     statsRowsCache.delete(appId);
     invalidateScopedSummaryCache(appId);
+    invalidateScopedReviewSummaryCache(appId);
   } else {
     statsRowsCache.clear();
     invalidateScopedSummaryCache();
+    invalidateScopedReviewSummaryCache();
   }
+}
+
+export type ReviewEvidenceItem = {
+  id: string;
+  rating: number | null;
+  review_date: string;
+  locale: string | null;
+  evidence: string;
+};
+
+/** Ask summarize_reviews：与列表同筛选，拉取每条评论在 tag/subTag 下的 evidence（非全文）。 */
+export const ASK_SUMMARIZE_MAX = 500;
+
+function evidenceForTag(
+  row: Pick<ReviewRow, "id" | "content" | "rating" | "review_date" | "locale" | "ai_tags">,
+  tag?: string,
+  subTag?: string
+): string | null {
+  const tags = row.ai_tags ?? [];
+  let matched: (typeof tags)[number] | undefined;
+  if (tag && subTag) matched = tags.find((t) => t.key === tag && t.subKey === subTag);
+  else if (tag) matched = tags.find((t) => t.key === tag);
+  const text = String(matched?.evidence ?? "").trim() || String(row.content ?? "").trim();
+  return text || null;
+}
+
+export async function fetchReviewEvidenceForScope(
+  opts: ReviewQueryFilters
+): Promise<{ items: ReviewEvidenceItem[]; total: number; truncated: boolean }> {
+  const total = await countReviewsMatching(opts);
+  if (total === 0) return { items: [], total: 0, truncated: false };
+
+  const supabase = getServiceSupabase();
+  const { appId, tag, subTag, ...filters } = opts;
+  let query = supabase
+    .from("reviews")
+    .select("id, rating, review_date, locale, content, ai_tags")
+    .eq("app_id", appId);
+  query = applyReviewFilters(query, { tag, subTag, ...filters });
+
+  const cap = Math.min(total, ASK_SUMMARIZE_MAX);
+  const { data, error } = await query.order("review_date", { ascending: false }).limit(cap);
+  if (error) throw error;
+
+  const items: ReviewEvidenceItem[] = [];
+  for (const row of data ?? []) {
+    const evidence = evidenceForTag(row, tag, subTag);
+    if (!evidence) continue;
+    items.push({
+      id: row.id,
+      rating: row.rating,
+      review_date: row.review_date,
+      locale: row.locale,
+      evidence,
+    });
+  }
+
+  return { items, total, truncated: total > ASK_SUMMARIZE_MAX };
 }
 
 export async function queryReviews(opts: ReviewQueryFilters & {
