@@ -19,7 +19,7 @@ import {
   translateReviewWithPipeline,
 } from "../lib/translateReview.mjs";
 import { enrichFeatureRequestSubs, enrichTaxonomyIntents, getUniversalSubcategories } from "../lib/taxonomyEnrich.mjs";
-import { runTaxonomyStage } from "../lib/taxonomy.mjs";
+import { runTaxonomyStage, resetLowHitSubsForReclassify } from "../lib/taxonomy.mjs";
 import { createDeepSeekCaller } from "../lib/deepseek.mjs";
 
 const UNIVERSAL_KEYS = new Set(UNIVERSAL_CATEGORIES.map((c) => c.key));
@@ -227,6 +227,56 @@ async function runConcurrent(items, concurrency, fn) {
   await Promise.all(Array.from({ length: concurrency }, worker));
 }
 
+async function classifyPendingReviews(app, {
+  seedCategories,
+  universalSubcategories,
+  existingCustomTagsMap,
+  baselineKeys,
+}) {
+  const classifiedSample = await fetchAllRows(
+    supabase.from("reviews").select("ai_tags").eq("app_id", app.id).not("ai_classified_at", "is", null),
+  );
+  const subTagReusePool = buildSubTagReusePool(seedCategories, classifiedSample, undefined, universalSubcategories);
+  const pending = await fetchAllRows(
+    supabase.from("reviews").select("id, content, rating").eq("app_id", app.id).is("ai_classified_at", null),
+  );
+  if (!pending.length) return 0;
+
+  console.log(`待分类 ${pending.length} 条`);
+  const classifyPromptBase = {
+    appContext: app.context,
+    seedCategories,
+    universalSubcategories,
+  };
+
+  await runConcurrent(pending, 8, async (r) => {
+    try {
+      const existingCustomTags = [...existingCustomTagsMap.entries()].map(([key, label]) => ({ key, label }));
+      const existingSubTags = subTagMapToPromptObject(subTagReusePool);
+      const knownTopLevelKeys = new Set([...baselineKeys, ...existingCustomTagsMap.keys()]);
+      const { tags } = await withRetry(() => classifyReviewWithPipeline(DEEPSEEK_API_KEY, {
+        content: r.content,
+        rating: r.rating,
+        knownTopLevelKeys,
+        calibrate: true,
+        ...classifyPromptBase,
+        existingCustomTags,
+        existingSubTags,
+      }));
+      for (const t of tags) {
+        if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
+      }
+      const { error } = await supabase.from("reviews").update({
+        ai_tags: tags, ai_tag_keys: tags.map((t) => t.key), ai_classified_at: new Date().toISOString(),
+      }).eq("id", r.id);
+      if (error) throw error;
+    } catch (e) {
+      console.error(`分类失败 id=${r.id}:`, e.message);
+    }
+  });
+  return pending.length;
+}
+
 async function processApp(app, { skipFetch = false } = {}) {
   console.log(`\n=== ${app.display_name} (${app.platform}/${app.external_id}) ===`);
 
@@ -316,41 +366,11 @@ async function processApp(app, { skipFetch = false } = {}) {
   const subTagReuseCount = [...subTagReusePool.values()].reduce((n, m) => n + m.size, 0);
   console.log(`已有自定义标签 ${existingCustomTagsMap.size} 个，子问题复用池 ${subTagReuseCount} 个`);
 
-  const unclassified = await fetchAllRows(
-    supabase.from("reviews").select("id, content, rating").eq("app_id", app.id).is("ai_classified_at", null)
-  );
-  console.log(`待分类 ${unclassified.length} 条`);
-
-  const classifyPromptBase = {
-    appContext: app.context,
+  const classifiedCount = await classifyPendingReviews(app, {
     seedCategories,
     universalSubcategories,
-  };
-
-  await runConcurrent(unclassified, 8, async (r) => {
-    try {
-      const existingCustomTags = [...existingCustomTagsMap.entries()].map(([key, label]) => ({ key, label }));
-      const existingSubTags = subTagMapToPromptObject(subTagReusePool);
-      const knownTopLevelKeys = new Set([...baselineKeys, ...existingCustomTagsMap.keys()]);
-      const { tags } = await withRetry(() => classifyReviewWithPipeline(DEEPSEEK_API_KEY, {
-        content: r.content,
-        rating: r.rating,
-        knownTopLevelKeys,
-        calibrate: true,
-        ...classifyPromptBase,
-        existingCustomTags,
-        existingSubTags,
-      }));
-      for (const t of tags) {
-        if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
-      }
-      const { error } = await supabase.from("reviews").update({
-        ai_tags: tags, ai_tag_keys: tags.map((t) => t.key), ai_classified_at: new Date().toISOString(),
-      }).eq("id", r.id);
-      if (error) throw error;
-    } catch (e) {
-      console.error(`分类失败 id=${r.id}:`, e.message);
-    }
+    existingCustomTagsMap,
+    baselineKeys,
   });
 
   // P0：有 feature_request 样本后归纳 App 级子问题（写 taxonomy_meta，供下轮分类复用）
@@ -390,6 +410,35 @@ async function processApp(app, { skipFetch = false } = {}) {
     console.error("taxonomy 阶段失败（已跳过，不影响主流程）：", e.message);
   }
 
+  // 2.6 低命中 ephemeral sub 重置并重分类（taxonomy 设计清单外的 sub，命中 ≤4 条）
+  let lowSubsReclassified = 0;
+  try {
+    const { data: freshApp, error: freshErr } = await supabase.from("apps").select("*").eq("id", app.id).single();
+    if (freshErr) throw freshErr;
+    if (freshApp) {
+      app = freshApp;
+      seedCategories = app.seed_categories ?? seedCategories;
+    }
+    const uniAfterTaxonomy = getUniversalSubcategories(app);
+    const lowSubsReset = await resetLowHitSubsForReclassify({
+      supabase,
+      app,
+      seedCategories,
+      universalSubcategories: uniAfterTaxonomy,
+      logger: console,
+    });
+    if (lowSubsReset > 0) {
+      lowSubsReclassified = await classifyPendingReviews(app, {
+        seedCategories,
+        universalSubcategories: uniAfterTaxonomy,
+        existingCustomTagsMap,
+        baselineKeys,
+      });
+    }
+  } catch (e) {
+    console.error("低命中子问题重分类失败（已跳过）：", e.message);
+  }
+
   // 3. 翻译：从未翻译 + 已标记但缺必需译文的（假完成）一并处理
   const needsTranslation = await listReviewsNeedingTranslation(supabase, app.id);
   console.log(`待翻译 ${needsTranslation.length} 条`);
@@ -420,7 +469,7 @@ async function processApp(app, { skipFetch = false } = {}) {
   // 4. 重新生成所有标签的摘要——不能只看"今天有没有抓到新评论"（fetched），重新分类老评论
   // （unclassified > 0，比如批量重置 ai_classified_at 触发的全量重分类）同样会改变标签内容，
   // 必须一起触发刷新，否则摘要会带着旧的（污染过的）样本继续放着，重分类等于白做
-  if (fetched.length > 0 || unclassified.length > 0 || taxonomyChanged) {
+  if (fetched.length > 0 || classifiedCount > 0 || taxonomyChanged || lowSubsReclassified > 0) {
     const allReviews = await fetchAllRows(
       supabase.from("reviews").select("content, ai_tags").eq("app_id", app.id)
     );
