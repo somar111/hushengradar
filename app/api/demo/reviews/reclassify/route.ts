@@ -1,10 +1,15 @@
 import { NextRequest } from "next/server";
+import { canUseDemoReclassify } from "@/lib/demoPermissions";
 import { reclassifyReviewsMatching } from "@/lib/reclassifyReviews";
 import { getApp, getDefaultApp, ReclassifyLimitError } from "@/lib/reviews";
 
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  if (!canUseDemoReclassify()) {
+    return Response.json({ error: "暂无权限" }, { status: 403 });
+  }
+
   if (!process.env.DEEPSEEK_API_KEY) {
     return Response.json({ error: "DEEPSEEK_API_KEY 未配置，无法重跑分类" }, { status: 503 });
   }

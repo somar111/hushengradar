@@ -183,7 +183,15 @@ function ShortcutRow({ keys, desc }: { keys: string[]; desc: string }) {
   );
 }
 
-function LockedFeatureHint({ pos, onClose }: { pos: { top: number; left: number } | null; onClose: () => void }) {
+function LockedFeatureHint({
+  pos,
+  onClose,
+  message = "暂时不可自定义哦，敬请期待",
+}: {
+  pos: { top: number; left: number } | null;
+  onClose: () => void;
+  message?: string;
+}) {
   useEffect(() => {
     if (!pos) return;
     const onPointerDown = (e: MouseEvent) => {
@@ -201,7 +209,7 @@ function LockedFeatureHint({ pos, onClose }: { pos: { top: number; left: number 
       data-locked-hint
       className="fixed z-[100] max-w-[11.5rem] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl"
       style={{ top: pos.top, left: pos.left }}>
-      暂时不可自定义哦，敬请期待
+      {message}
     </div>
   );
 }
@@ -514,12 +522,16 @@ function ReplyTranslateToggle({ enabled, onChange }: { enabled: boolean; onChang
 }
 
 function ReplyReclassifyButton({
+  locked = false,
+  onLockedClick,
   disabled,
   disabledReason,
   loading,
   count,
   onClick,
 }: {
+  locked?: boolean;
+  onLockedClick?: (e: React.MouseEvent<HTMLElement>) => void;
   disabled: boolean;
   disabledReason: string;
   loading: boolean;
@@ -527,35 +539,44 @@ function ReplyReclassifyButton({
   onClick: () => void;
 }) {
   const [showHint, setShowHint] = useState(false);
+  const visuallyDisabled = locked || disabled || loading;
   return (
     <div className="relative flex-none">
       <button
         type="button"
-        disabled={disabled || loading}
-        onClick={onClick}
-        onMouseEnter={() => setShowHint(true)}
+        disabled={!locked && (disabled || loading)}
+        onClick={locked ? undefined : onClick}
+        onMouseEnter={() => !locked && setShowHint(true)}
         onMouseLeave={() => setShowHint(false)}
-        onFocus={() => setShowHint(true)}
+        onFocus={() => !locked && setShowHint(true)}
         onBlur={() => setShowHint(false)}
         aria-label="重跑当前筛选结果的分类"
         className={`${REPLY_FILTER_FIELD} flex items-center gap-2 px-3.5 py-2.5 text-[14px] transition-colors ${
-          disabled || loading
+          visuallyDisabled
             ? "text-white/35 cursor-not-allowed opacity-60"
             : "text-white/85 hover:border-white/28 hover:text-white/95"
         }`}>
         {loading ? (
           <Loader2 size={15} className="animate-spin text-[#8fb0ff]" />
         ) : (
-          <RefreshCw size={15} className={disabled ? "text-white/30" : "text-white/55"} strokeWidth={2} />
+          <RefreshCw size={15} className={visuallyDisabled ? "text-white/30" : "text-white/55"} strokeWidth={2} />
         )}
         <span className="font-medium whitespace-nowrap">
           {loading ? "重跑中…" : "重跑分类"}
         </span>
-        {!loading && count > 0 && !disabled && (
+        {!loading && count > 0 && !visuallyDisabled && (
           <span className="text-[12px] font-semibold text-[#8fb0ff]">{count}</span>
         )}
       </button>
-      {showHint && (
+      {locked && onLockedClick && (
+        <button
+          type="button"
+          className="absolute inset-0 z-10 cursor-pointer rounded-xl bg-transparent border-0 p-0"
+          onClick={onLockedClick}
+          aria-label="暂无权限"
+        />
+      )}
+      {showHint && !locked && (
         <div
           role="tooltip"
           className="pointer-events-none absolute top-full right-0 mt-2 z-50 w-max max-w-[18rem] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl">
@@ -994,6 +1015,8 @@ function DemoPageInner() {
   const [terminologyDraft, setTerminologyDraft] = useState<TerminologyEntry[]>([]);
   const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("filter");
   const [lockedHintPos, setLockedHintPos] = useState<{ top: number; left: number } | null>(null);
+  const [lockedHintMessage, setLockedHintMessage] = useState("暂时不可自定义哦，敬请期待");
+  const [canReclassify, setCanReclassify] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [hoveredTag, setHoveredTag] = useState<string | null>(null);
   const [bootReady, setBootReady] = useState(false);
@@ -1006,6 +1029,25 @@ function DemoPageInner() {
   useEffect(() => { if (locale && ratingView === "locale") setRatingView("trend"); }, [locale, ratingView]);
   useEffect(() => { if (leftSidebarView === "settings") setShowAppMenu(false); }, [leftSidebarView]);
   useEffect(() => { setLockedHintPos(null); }, [leftSidebarView]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/demo/permissions")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) setCanReclassify(Boolean(data.reclassify));
+      })
+      .catch(() => {
+        if (!cancelled) setCanReclassify(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const showLockedHint = (e: React.MouseEvent<HTMLElement>, message: string) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setLockedHintMessage(message);
+    setLockedHintPos({ top: rect.top, left: rect.right + 8 });
+  };
 
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -1559,7 +1601,7 @@ function DemoPageInner() {
   }
 
   async function handleReclassify() {
-    if (reclassifyBlockedReason || reclassifyLoading || !tagFilter) return;
+    if (!canReclassify || reclassifyBlockedReason || reclassifyLoading || !tagFilter) return;
     const tagStats = stats?.tagCounts[tagFilter];
     const parts = [`问题类型：${tagStats?.label ?? tagFilter}`];
     if (subTagFilter && tagStats?.subTags[subTagFilter]) {
@@ -2033,10 +2075,12 @@ function DemoPageInner() {
               onChange={(enabled) => setTranslateSettings((s) => ({ ...s, enabled }))}
             />
             <ReplyReclassifyButton
+              locked={!canReclassify}
+              onLockedClick={(e) => showLockedHint(e, "暂无权限")}
               disabled={Boolean(reclassifyBlockedReason)}
               disabledReason={reclassifyBlockedReason || "重跑当前筛选结果的分类"}
               loading={reclassifyLoading}
-              count={tagFilter && !reclassifyBlockedReason ? total : 0}
+              count={canReclassify && tagFilter && !reclassifyBlockedReason ? total : 0}
               onClick={handleReclassify}
             />
           </div>
@@ -2313,10 +2357,7 @@ function DemoPageInner() {
                   appName={selectedApp?.display_name ?? "当前 App"}
                   rows={terminologyDraft}
                   locked
-                  onLockedClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setLockedHintPos({ top: rect.top, left: rect.right + 8 });
-                  }}
+                  onLockedClick={(e) => showLockedHint(e, "暂时不可自定义哦，敬请期待")}
                   onChange={setTerminologyDraft}
                   onSaved={(glossary) => {
                     setTerminologyDraft(
@@ -2350,10 +2391,7 @@ function DemoPageInner() {
                         value=""
                         placeholder={placeholder}
                         rows={rows}
-                        onClick={(e) => {
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          setLockedHintPos({ top: rect.top, left: rect.right + 8 });
-                        }}
+                        onClick={(e) => showLockedHint(e, "暂时不可自定义哦，敬请期待")}
                         className={AI_REPLY_FIELD_CLASS}
                       />
                     </div>
@@ -2438,7 +2476,7 @@ function DemoPageInner() {
         </div>
       </div>
 
-      <LockedFeatureHint pos={lockedHintPos} onClose={() => setLockedHintPos(null)} />
+      <LockedFeatureHint pos={lockedHintPos} message={lockedHintMessage} onClose={() => setLockedHintPos(null)} />
     </div>
   );
 }
