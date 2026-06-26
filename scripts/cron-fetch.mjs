@@ -5,7 +5,6 @@ import gplayPkg from "google-play-scraper";
 import {
   UNIVERSAL_CATEGORIES,
   buildSubTagReusePool,
-  buildSummaryPrompt,
   buildTagCountsFromReviews,
   buildParentKeysWithSubs,
   findTagCountInconsistencies,
@@ -13,6 +12,7 @@ import {
   subTagMapToPromptObject,
 } from "../lib/promptKit.mjs";
 import { classifyReviewWithPipeline } from "../lib/classifyReview.mjs";
+import { refreshTagSummaries } from "../lib/tagSummaries.mjs";
 import {
   listReviewsNeedingTranslation,
   persistTranslationResult,
@@ -174,28 +174,6 @@ async function resolveFetchLocales(app) {
   }
   console.log(`兜底 FALLBACK_LOCALES：${FALLBACK_LOCALES.length} 个`);
   return FALLBACK_LOCALES;
-}
-
-
-async function summarizeCluster(tagLabel, sampleContents, appContext) {
-  const systemPrompt = buildSummaryPrompt({ tagLabel, appContext });
-  const userPrompt = sampleContents.map((c, i) => `${i + 1}. ${c}`).join("\n");
-  const res = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_API_KEY}` },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      temperature: 0.3,
-    }),
-  });
-  if (!res.ok) throw new Error(`DeepSeek摘要 ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  return data.choices[0].message.content.trim();
-}
-
-function sampleDiverse(items, n) {
-  return [...items].sort(() => Math.random() - 0.5).slice(0, n);
 }
 
 // Supabase/PostgREST 默认单次最多返回 1000 行，不分页会悄悄截断，必须循环拉完
@@ -470,32 +448,14 @@ async function processApp(app, { skipFetch = false } = {}) {
   // （unclassified > 0，比如批量重置 ai_classified_at 触发的全量重分类）同样会改变标签内容，
   // 必须一起触发刷新，否则摘要会带着旧的（污染过的）样本继续放着，重分类等于白做
   if (fetched.length > 0 || classifiedCount > 0 || taxonomyChanged || lowSubsReclassified > 0) {
-    const allReviews = await fetchAllRows(
-      supabase.from("reviews").select("content, ai_tags").eq("app_id", app.id)
-    );
-    // 一条评论常常同时命中好几个标签（比如又抱怨广告、又抱怨文件丢失），用整条评论去喂每个标签的摘要
-    // 会互相污染——优先用 evidence（分类时就已经摘出来的"这条评论里跟这个标签相关的部分"），
-    // 没有 evidence 的老数据（还没被新版分类prompt处理过）才退回整条评论
-    const byTag = {};
-    for (const r of allReviews) {
-      for (const t of r.ai_tags ?? []) {
-        (byTag[t.key] ??= { label: t.label, contents: [] }).contents.push(t.evidence || r.content);
-      }
-    }
-    console.log(`刷新 ${Object.keys(byTag).length} 个标签的摘要`);
-    for (const [key, { label, contents }] of Object.entries(byTag)) {
-      try {
-        const sample = sampleDiverse(contents, 40);
-        const summary = await withRetry(() => summarizeCluster(label, sample, app.context));
-        const { error } = await supabase.from("tag_summaries").upsert({
-          app_id: app.id, tag_key: key, summary, sample_size: sample.length,
-          generated_at: new Date().toISOString(),
-        }, { onConflict: "app_id,tag_key" });
-        if (error) throw error;
-      } catch (e) {
-        console.error(`摘要刷新失败 tag=${key}:`, e.message);
-      }
-    }
+    const { refreshed } = await refreshTagSummaries({
+      supabase,
+      appId: app.id,
+      apiKey: DEEPSEEK_API_KEY,
+      appContext: app.context,
+      logger: console,
+    });
+    console.log(`刷新 ${refreshed} 个标签的摘要`);
   } else {
     console.log("没有新数据、也无 taxonomy 变更，跳过摘要刷新");
   }

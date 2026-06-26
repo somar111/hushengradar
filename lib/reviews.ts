@@ -134,7 +134,7 @@ export async function countReviewsReplyBreakdown(
 /** 拉取当前筛选下待重跑的评论（须已选 tag；总量不得超过 RECLASSIFY_MAX） */
 export async function fetchReviewsForReclassify(
   opts: ReviewQueryFilters
-): Promise<{ reviews: Pick<ReviewRow, "id" | "content" | "rating">[]; total: number }> {
+): Promise<{ reviews: Pick<ReviewRow, "id" | "content" | "rating" | "ai_tags">[]; total: number }> {
   if (!opts.tag) throw new Error("必须选择问题类型");
   const total = await countReviewsMatching(opts);
   if (total > RECLASSIFY_MAX) throw new ReclassifyLimitError(total);
@@ -142,7 +142,7 @@ export async function fetchReviewsForReclassify(
 
   const supabase = getServiceSupabase();
   const { appId, ...filters } = opts;
-  let query = supabase.from("reviews").select("id, content, rating").eq("app_id", appId);
+  let query = supabase.from("reviews").select("id, content, rating, ai_tags").eq("app_id", appId);
   query = applyReviewFilters(query, filters);
   const { data, error } = await query.order("review_date", { ascending: false }).limit(RECLASSIFY_MAX);
   if (error) throw error;
@@ -197,7 +197,8 @@ type StatsFields = Pick<ReviewRow, "rating" | "locale" | "ai_tags" | "app_versio
 const STATS_CACHE_TTL_MS = 5 * 60 * 1000;
 const statsRowsCache = new Map<string, { rows: StatsFields[]; summaryMap: Record<string, string>; fetchedAt: number }>();
 
-async function getStatsRows(appId: string) {
+async function getStatsRows(appId: string, { forceRefresh = false } = {}) {
+  if (forceRefresh) statsRowsCache.delete(appId);
   const cached = statsRowsCache.get(appId);
   if (cached && Date.now() - cached.fetchedAt < STATS_CACHE_TTL_MS) return cached;
 
@@ -219,8 +220,14 @@ async function getStatsRows(appId: string) {
   return entry;
 }
 
-export async function computeStats(appId: string, locale?: string, since?: string, until?: string) {
-  const { rows: allRows, summaryMap } = await getStatsRows(appId);
+export async function computeStats(
+  appId: string,
+  locale?: string,
+  since?: string,
+  until?: string,
+  opts: { forceRefresh?: boolean } = {},
+) {
+  const { rows: allRows, summaryMap } = await getStatsRows(appId, { forceRefresh: opts.forceRefresh });
 
   // localeCounts/localeRatings 都跟 total 用同一份 since 过滤、但不受当前 locale 筛选影响——
   // 这俩是给"对比各地区"用的，如果跟着当前选中的单一 locale 一起过滤就没法对比了

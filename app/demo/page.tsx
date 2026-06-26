@@ -1020,6 +1020,7 @@ function DemoPageInner() {
   const [aiError, setAiError] = useState("");
   const [reclassifyLoading, setReclassifyLoading] = useState(false);
   const [reclassifyFeedback, setReclassifyFeedback] = useState("");
+  const [statsFresh, setStatsFresh] = useState(false);
   const [dataRefreshKey, setDataRefreshKey] = useState(0);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -1141,8 +1142,14 @@ function DemoPageInner() {
     params.set("appId", selectedAppId);
     params.set("since", since);
     if (locale) params.set("locale", locale);
-    fetch(`/api/demo/stats?${params}`).then((r) => r.json()).then(setStats);
-  }, [selectedAppId, selectedApp, locale, since, dataRefreshKey]);
+    if (statsFresh) params.set("fresh", "1");
+    fetch(`/api/demo/stats?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setStats(data);
+        if (statsFresh) setStatsFresh(false);
+      });
+  }, [selectedAppId, selectedApp, locale, since, dataRefreshKey, statsFresh]);
 
   // 拉评论列表（筛选/翻页变化时）
   // 筛选一变，这个 effect 会先用旧 page 发一次请求，紧接着翻页重置 effect 再用 page=1 发一次；
@@ -1593,11 +1600,14 @@ function DemoPageInner() {
       setSelectedReview(null);
       setAiReply("");
       setAiReplyTranslation(null);
+      setStatsFresh(true);
       setDataRefreshKey((k) => k + 1);
+      const summaryNote =
+        data.summariesRefreshed > 0 ? `，已刷新 ${data.summariesRefreshed} 个标签摘要` : "";
       setReclassifyFeedback(
         data.failed > 0
-          ? `已完成：成功 ${data.succeeded} 条，失败 ${data.failed} 条`
-          : `已重跑 ${data.succeeded} 条评论的分类`
+          ? `已完成：成功 ${data.succeeded} 条，失败 ${data.failed} 条${summaryNote}`
+          : `已重跑 ${data.succeeded} 条评论的分类${summaryNote}`
       );
     } catch {
       setReclassifyFeedback("请求失败，请重试");

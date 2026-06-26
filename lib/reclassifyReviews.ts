@@ -5,6 +5,7 @@ import {
 } from "./promptKit.mjs";
 import { classifyReviewWithPipeline } from "./classifyReview.mjs";
 import { getUniversalSubcategories } from "./taxonomyEnrich.mjs";
+import { refreshTagSummaries } from "./tagSummaries.mjs";
 import { getServiceSupabase, type AppRow } from "./supabase";
 import {
   fetchReviewsForReclassify,
@@ -39,7 +40,7 @@ async function runConcurrent<T>(items: T[], concurrency: number, fn: (item: T) =
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length || 1) }, worker));
 }
 
-type ClassifyRow = { id: string; content: string; rating: number };
+type ClassifyRow = { id: string; content: string; rating: number; ai_tags?: { key: string; label?: string }[] | null };
 
 async function buildClassifyContext(app: AppRow) {
   const supabase = getServiceSupabase();
@@ -92,6 +93,13 @@ export async function reclassifyReviewsMatching(app: AppRow, filters: ReviewQuer
 
   const supabase = getServiceSupabase();
   const ctx = await buildClassifyContext(app);
+  const affectedTagKeys = new Set<string>();
+  if (filters.tag) affectedTagKeys.add(filters.tag);
+  for (const r of reviews) {
+    for (const t of r.ai_tags ?? []) {
+      if (t?.key) affectedTagKeys.add(t.key);
+    }
+  }
   let succeeded = 0;
   let failed = 0;
   const errors: string[] = [];
@@ -114,6 +122,7 @@ export async function reclassifyReviewsMatching(app: AppRow, filters: ReviewQuer
       );
       for (const t of tags) {
         if (!ctx.baselineKeys.has(t.key)) ctx.existingCustomTagsMap.set(t.key, t.label);
+        affectedTagKeys.add(t.key);
       }
       const { error } = await supabase
         .from("reviews")
@@ -133,11 +142,26 @@ export async function reclassifyReviewsMatching(app: AppRow, filters: ReviewQuer
 
   invalidateStatsCache(app.id);
 
+  let summariesRefreshed = 0;
+  if (succeeded > 0 && affectedTagKeys.size > 0) {
+    const { refreshed } = await refreshTagSummaries({
+      supabase,
+      appId: app.id,
+      apiKey,
+      appContext: app.context ?? undefined,
+      tagKeys: affectedTagKeys,
+    });
+    summariesRefreshed = refreshed;
+    invalidateStatsCache(app.id);
+  }
+
   return {
     total,
     processed: reviews.length,
     succeeded,
     failed,
     errors,
+    summariesRefreshed,
+    affectedTagKeys: [...affectedTagKeys],
   };
 }
