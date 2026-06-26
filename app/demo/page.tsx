@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { type ReviewRow, type AppRow, type TerminologyEntry } from "@/lib/supabase";
 import { meaningfulLocaleFloor } from "@/lib/analysisShared";
+import { hasSubTagBreakdown } from "@/lib/promptKit.mjs";
 import { DEFAULT_DEMO_TIME_RANGE, resolveDefaultDemoApp } from "@/lib/demoDefaults";
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
 
@@ -812,17 +813,15 @@ function fmtDate(iso: string | null) {
   return iso ? iso.slice(0, 10) : "—";
 }
 
-// "Top反馈"和"评论回复"头部用同一份子问题数据、同一个组件渲染，保证两处展示的子问题永远
-// 一一对应——子问题各自带真实数字、可点击；没有子问题时退回AI摘要（比如"意义不明的纯抱怨"
-// 这种本就没有子问题的类别，或还没重分类过的老数据）。onJump 给了就可点：传子问题 key 跳到
-// 该子问题，传 undefined 跳到整个标签；没给 onJump 就是纯展示。activeSubKey 高亮当前选中的子问题。
+// "Top反馈"和"评论回复"头部用同一份子问题数据、同一个组件渲染。仅当子问题真正拆成 2+ 类
+// 时才展示 breakdown；否则退回 AI 摘要（与分类侧「无子问题清单则不填 subKey」一致）。
 function TagBreakdown({ t, onJump, activeSubKey }: {
   t: { count: number; summary: string | null; subTags: Record<string, { label: string; count: number }> };
   onJump?: (subKey?: string) => void;
   activeSubKey?: string;
 }) {
   const subEntries = Object.entries(t.subTags).sort((a, b) => b[1].count - a[1].count);
-  if (subEntries.length === 0) {
+  if (!hasSubTagBreakdown(t.subTags)) {
     const text = t.summary || "点击查看全部真实评论 →";
     return onJump
       ? <button onClick={(e) => { e.stopPropagation(); onJump(); }}
@@ -1836,7 +1835,7 @@ function DemoPageInner() {
                 <option key={key} value={key}>{t.label}（{t.count}）</option>
               ))}
             </select>
-            {tagFilter && stats?.tagCounts[tagFilter] && Object.keys(stats.tagCounts[tagFilter].subTags).length > 0 && (
+            {tagFilter && stats?.tagCounts[tagFilter] && hasSubTagBreakdown(stats.tagCounts[tagFilter].subTags) && (
               <select value={subTagFilter || ""} onChange={(e) => setSubTagFilter(e.target.value || undefined)}
                 className={`${REPLY_FILTER_FIELD} px-3.5 py-2.5 text-white/90 min-w-[9rem]`}>
                 <option value="">全部子问题</option>

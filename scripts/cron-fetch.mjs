@@ -8,6 +8,7 @@ import {
   buildSummaryPrompt,
   buildTagCountsFromReviews,
   buildTranslatePrompt,
+  buildParentKeysWithSubs,
   findTagCountInconsistencies,
   hasTaxonomyIntents,
   subTagMapToPromptObject,
@@ -370,7 +371,10 @@ async function processApp(app) {
   const classifiedForAudit = await fetchAllRows(
     supabase.from("reviews").select("ai_tags, review_date").eq("app_id", app.id).not("ai_classified_at", "is", null)
   );
-  const countIssues = findTagCountInconsistencies(buildTagCountsFromReviews(classifiedForAudit));
+  const countIssues = findTagCountInconsistencies(
+    buildTagCountsFromReviews(classifiedForAudit),
+    buildParentKeysWithSubs(seedCategories, universalSubcategories, subTagMapToPromptObject(subTagReusePool)),
+  );
   if (countIssues.length) {
     console.warn(
       `标签计数恒等式异常 ${countIssues.length} 个顶层（子问题之和 ≠ 母问题，多为历史数据）：`,
