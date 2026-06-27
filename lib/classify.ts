@@ -1,5 +1,5 @@
 import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt } from "./promptKit.mjs";
-import { prefetchAskTagScope } from "./askCountPrefetch";
+import { prefetchAskExistenceHint, prefetchAskTagScope } from "./askCountPrefetch";
 import { ASK_TOOLS, executeAskTool, type AskContext } from "./askTools";
 import { localeLabel } from "./localeLabels";
 import type { TerminologyEntry } from "./supabase";
@@ -22,21 +22,24 @@ type ToolCall = {
 };
 
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
-const ASK_MAX_ROUNDS = 6;
+const ASK_MAX_ROUNDS = 10;
 const ASK_CHAT_MODEL = "deepseek-chat";
 const ASK_THINKING_MODEL = "deepseek-reasoner";
 
 function buildAskCompletionBody(opts: {
   useThinking: boolean;
   messages: ChatMessage[];
+  withTools?: boolean;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: opts.useThinking ? ASK_THINKING_MODEL : ASK_CHAT_MODEL,
     messages: opts.messages,
-    tools: ASK_TOOLS,
-    tool_choice: "auto",
     stream: true,
   };
+  if (opts.withTools !== false) {
+    body.tools = ASK_TOOLS;
+    body.tool_choice = "auto";
+  }
   if (!opts.useThinking) body.temperature = 0.1;
   return body;
 }
@@ -387,7 +390,9 @@ export async function* answerQuestionStream(opts: {
     seedCategories: opts.seedCategories,
   };
 
-  const prefetch = await prefetchAskTagScope(ctx, opts.question);
+  const tagPrefetch = await prefetchAskTagScope(ctx, opts.question);
+  const existencePrefetch = prefetchAskExistenceHint(opts.question);
+  const prefetchBlock = [tagPrefetch?.block, existencePrefetch?.block].filter(Boolean).join("\n\n") || undefined;
 
   const systemPrompt = buildAskPrompt({
     appContext: opts.appContext,
@@ -413,7 +418,7 @@ export async function* answerQuestionStream(opts: {
 
   messages.push({
     role: "user",
-    content: buildAskUserMessage({ ...opts, prefetchBlock: prefetch?.block }),
+    content: buildAskUserMessage({ ...opts, prefetchBlock }),
   });
 
   // 已经吐给前端的最终答案文本，用于收尾时跟净化后的版本比对，必要时整段替换
@@ -495,5 +500,42 @@ export async function* answerQuestionStream(opts: {
     return;
   }
 
-  throw new Error("工具调用轮次超限，请简化问题后重试");
+  messages.push({
+    role: "user",
+    content:
+      "已达到工具调用上限。请仅根据上文已返回的工具结果直接作答，不要再调用工具；若数据仍不足请明确说明。",
+  });
+  streamedAnswer = "";
+  const finalRes = await fetch(DEEPSEEK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(
+      buildAskCompletionBody({
+        useThinking: opts.useThinking === true,
+        messages,
+        withTools: false,
+      })
+    ),
+    signal: opts.signal,
+  });
+  if (!finalRes.ok) {
+    throw new Error(`DeepSeek API 出错：${await finalRes.text()}`);
+  }
+
+  let finalContent = "";
+  for await (const chunk of parseDeepSeekStream(finalRes)) {
+    if (chunk.contentDelta) {
+      finalContent += chunk.contentDelta;
+      streamedAnswer += chunk.contentDelta;
+      yield { type: "delta", text: chunk.contentDelta };
+    }
+  }
+
+  const answer = finalContent.trim();
+  if (!answer) throw new Error("DeepSeek 未返回有效回答");
+  const cleaned = sanitizeAskAnswer(answer, messages);
+  if (cleaned !== streamedAnswer) {
+    yield { type: "replace", text: cleaned };
+  }
+  yield { type: "done" };
 }
