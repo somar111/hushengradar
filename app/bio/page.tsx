@@ -8,7 +8,7 @@ export default function BioPage() {
       <p>你好：</p>
 
       <p>
-        我是<span className="bio-name">阮好</span>。对贵司的产品经理岗位非常感兴趣，尤其关注
+        我是<span className="bio-name">阮好</span>。对你们团队的产品经理岗位非常感兴趣，尤其关注
         AI 与工具类产品方向。
       </p>
 

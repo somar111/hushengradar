@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 export default function BioLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <style>{`body { background: #ececef !important; }`}</style>
+      <style>{`body { background: #dedee3 !important; }`}</style>
       <div className="bio-root">{children}</div>
     </>
   );
