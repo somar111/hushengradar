@@ -22,6 +22,23 @@ type ToolCall = {
 
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 const ASK_MAX_ROUNDS = 6;
+const ASK_CHAT_MODEL = "deepseek-chat";
+const ASK_THINKING_MODEL = "deepseek-reasoner";
+
+function buildAskCompletionBody(opts: {
+  useThinking: boolean;
+  messages: ChatMessage[];
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model: opts.useThinking ? ASK_THINKING_MODEL : ASK_CHAT_MODEL,
+    messages: opts.messages,
+    tools: ASK_TOOLS,
+    tool_choice: "auto",
+    stream: true,
+  };
+  if (!opts.useThinking) body.temperature = 0.1;
+  return body;
+}
 
 async function callDeepSeek(apiKey: string, body: Record<string, unknown>) {
   const res = await fetch(DEEPSEEK_URL, {
@@ -300,7 +317,15 @@ async function* parseDeepSeekStream(res: Response): AsyncGenerator<{
       if (!trimmed.startsWith("data:")) continue;
       const payload = trimmed.slice(5).trim();
       if (!payload || payload === "[DONE]") continue;
-      let json: { choices?: { delta?: { content?: string; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[] };
+      let json: {
+        choices?: {
+          delta?: {
+            content?: string;
+            reasoning_content?: string;
+            tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[];
+          };
+        }[];
+      };
       try {
         json = JSON.parse(payload);
       } catch {
@@ -308,6 +333,7 @@ async function* parseDeepSeekStream(res: Response): AsyncGenerator<{
       }
       const delta = json.choices?.[0]?.delta;
       if (!delta) continue;
+      // reasoning_content 是思考链，不展示给用户；只下发最终 content。
       if (typeof delta.content === "string" && delta.content) {
         yield { contentDelta: delta.content };
       }
@@ -342,6 +368,7 @@ export async function* answerQuestionStream(opts: {
   defaultLocale?: string;
   history?: { q: string; a: string }[];
   useEmoji?: boolean;
+  useThinking?: boolean;
   signal?: AbortSignal;
 }): AsyncGenerator<AskStreamEvent> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -395,14 +422,12 @@ export async function* answerQuestionStream(opts: {
     const res = await fetch(DEEPSEEK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages,
-        tools: ASK_TOOLS,
-        tool_choice: "auto",
-        temperature: 0.1,
-        stream: true,
-      }),
+      body: JSON.stringify(
+        buildAskCompletionBody({
+          useThinking: opts.useThinking === true,
+          messages,
+        })
+      ),
       signal: opts.signal,
     });
     if (!res.ok) {

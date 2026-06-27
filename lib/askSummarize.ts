@@ -11,8 +11,14 @@ export type SummarizeReviewsTheme = { label: string; description: string };
 export type SummarizeReviewsResult = {
   filters: Record<string, string | number | null>;
   scopeLabel: string;
+  /** 与 count_reviews / Demo 列表同口径的评论条数 */
   total: number;
+  /** 实际纳入主题归纳的条数（≤ total） */
   evidenceUsed: number;
+  /** total - evidenceUsed；无正文/evidence 未纳入归纳 */
+  excludedNoText: number;
+  /** 给 Ask 模型的条数口径说明，须原意传达给用户 */
+  countDisclaimer: string;
   coveredAll: boolean;
   truncated: boolean;
   fromCache: boolean;
@@ -92,6 +98,8 @@ export async function summarizeReviewsForAsk(opts: {
       scopeLabel,
       total,
       evidenceUsed: 0,
+      excludedNoText: total,
+      countDisclaimer: buildCountDisclaimer(total, 0, truncated),
       coveredAll: total === 0,
       truncated,
       fromCache: false,
@@ -111,20 +119,24 @@ export async function summarizeReviewsForAsk(opts: {
     appContext: appContext ?? undefined,
   });
 
-  const coveredAll = !truncated && evidenceUsedEqualsTotal(evidences.length, total);
+  const evidenceUsed = evidences.length;
+  const excludedNoText = Math.max(0, total - evidenceUsed);
+  const coveredAll = !truncated && evidenceUsedEqualsTotal(evidenceUsed, total);
 
   const result: SummarizeReviewsResult = {
     filters: filterRecord,
     scopeLabel,
     total,
-    evidenceUsed: evidences.length,
+    evidenceUsed,
+    excludedNoText,
+    countDisclaimer: buildCountDisclaimer(total, evidenceUsed, truncated),
     coveredAll,
     truncated,
     fromCache: false,
     llmCalls,
     themes,
     representativeQuotes: quotes,
-    note: buildSummarizeNote({ total, evidenceUsed: evidences.length, truncated, coveredAll, llmCalls }),
+    note: buildSummarizeNote({ total, evidenceUsed, excludedNoText, truncated, coveredAll, llmCalls }),
   };
 
   setCachedScopedReviewSummary(cached.key, result);
@@ -135,21 +147,35 @@ function evidenceUsedEqualsTotal(evidenceUsed: number, total: number): boolean {
   return evidenceUsed >= total;
 }
 
+function buildCountDisclaimer(total: number, evidenceUsed: number, truncated: boolean): string {
+  if (truncated) {
+    return `列表共 ${total} 条（与 Demo 评论查看&回复同口径，这是唯一条数答案）。本次主题归纳仅纳入前 ${evidenceUsed} 条（超过单次上限 ${ASK_SUMMARIZE_MAX}）。作答时必须先说「共 ${total} 条」，不要只说 ${evidenceUsed}。`;
+  }
+  const excluded = Math.max(0, total - evidenceUsed);
+  if (excluded > 0) {
+    return `列表共 ${total} 条（与 Demo 评论查看&回复同口径，这是唯一条数答案）。其中 ${evidenceUsed} 条有正文/evidence 并参与主题归纳，${excluded} 条因无正文未纳入归纳。作答时必须以 ${total} 为评论条数，禁止写「这 ${evidenceUsed} 条评论」代替总数。`;
+  }
+  return `列表共 ${total} 条，全部参与主题归纳（与 Demo 评论查看&回复同口径）。`;
+}
+
 function buildSummarizeNote(opts: {
   total: number;
   evidenceUsed: number;
+  excludedNoText: number;
   truncated: boolean;
   coveredAll: boolean;
   llmCalls: number;
 }): string {
   const parts = [
-    `基于 ${opts.evidenceUsed}/${opts.total} 条评论的 evidence 做主题归纳（非原文抽样）`,
+    `主题归纳基于 ${opts.evidenceUsed}/${opts.total} 条有内容的 evidence（非原文抽样）`,
     opts.coveredAll
       ? "已覆盖该筛选下全部评论"
       : opts.truncated
-        ? `超过单次上限 ${ASK_SUMMARIZE_MAX} 条，仅前 ${opts.evidenceUsed} 条纳入归纳`
-        : `evidence 可用 ${opts.evidenceUsed} 条，与 total ${opts.total} 不一致时可能有个别评论缺 evidence`,
+        ? `超过单次上限 ${ASK_SUMMARIZE_MAX} 条，仅前 ${opts.evidenceUsed} 条纳入归纳；总条数仍为 ${opts.total}`
+        : opts.excludedNoText > 0
+          ? `${opts.excludedNoText} 条无正文/evidence 未纳入归纳；总条数仍为 ${opts.total}`
+          : null,
     `LLM 调用 ${opts.llmCalls} 次`,
-  ];
+  ].filter(Boolean);
   return parts.join("；");
 }

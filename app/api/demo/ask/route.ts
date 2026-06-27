@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "DEEPSEEK_API_KEY 未配置，无法回答" }, { status: 503 });
   }
 
-  const { question, appId, locale, since, timeRangeLabel, history, useEmoji } = await request.json();
+  const { question, appId, locale, since, timeRangeLabel, history, useEmoji, useThinking } = await request.json();
   if (!question || !String(question).trim()) {
     return Response.json({ error: "问题不能为空" }, { status: 400 });
   }
@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
           defaultLocale: locale || undefined,
           history: safeHistory,
           useEmoji: useEmoji === true,
+          useThinking: useThinking === true,
           signal: request.signal,
         })) {
           send(event);

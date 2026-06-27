@@ -90,6 +90,7 @@ type TranslateSettings = {
 
 type AskSettings = {
   useEmoji: boolean;
+  useThinking: boolean;
 };
 
 type AiReplySettings = {
@@ -133,6 +134,7 @@ const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
 
 const DEFAULT_ASK_SETTINGS: AskSettings = {
   useEmoji: true,
+  useThinking: false,
 };
 
 const DEFAULT_AI_REPLY_SETTINGS: AiReplySettings = {
@@ -445,6 +447,23 @@ function InfoTooltip({ text, size = 14 }: { text: string; size?: number }) {
         </span>
       )}
     </span>
+  );
+}
+
+function AskThinkingToggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!enabled)}
+      aria-pressed={enabled}
+      aria-label="切换 thinking 模式"
+      className={`flex-none h-[52px] rounded-2xl px-4 text-[16px] font-bold tracking-[0.02em] transition-colors select-none flex items-center justify-center ${
+        enabled
+          ? "border border-[#5781d8]/50 bg-[#5781d8]/22 text-[#a8c4ff] shadow-[0_0_20px_rgba(87,129,216,0.18)]"
+          : "border border-white/10 bg-white/[0.04] text-white/30 hover:text-white/45 hover:border-white/16 hover:bg-white/[0.07]"
+      }`}>
+      thinking
+    </button>
   );
 }
 
@@ -1499,7 +1518,16 @@ function DemoPageInner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ question: q, appId: selectedAppId, locale, since, timeRangeLabel, history, useEmoji: askSettings.useEmoji }),
+        body: JSON.stringify({
+          question: q,
+          appId: selectedAppId,
+          locale,
+          since,
+          timeRangeLabel,
+          history,
+          useEmoji: askSettings.useEmoji,
+          useThinking: askSettings.useThinking,
+        }),
       });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => null);
@@ -1954,7 +1982,8 @@ function DemoPageInner() {
             ))}
             {chatLoading && (
               <div className="flex items-center gap-2 text-white/45 text-[15px] pl-1">
-                <Loader2 size={15} className="animate-spin" />AI 正在查阅真实评论数据…
+                <Loader2 size={15} className="animate-spin" />
+                {askSettings.useThinking ? "AI 正在深度推理并查阅数据…" : "AI 正在查阅真实评论数据…"}
               </div>
             )}
           </div>
@@ -1962,53 +1991,61 @@ function DemoPageInner() {
       </div>
       {/* 输入框悬浮在消息区上方：渐变遮罩 + 玻璃卡片，不再占 flex 底栏 */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-5 pt-10 bg-gradient-to-t from-[#141a27] from-35% via-[#141a27]/75 to-transparent">
-        <div className="pointer-events-auto max-w-4xl mx-auto flex gap-2.5 items-end rounded-3xl border border-white/18 bg-[#1a2233]/72 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)_inset] px-3.5 py-3">
-          <textarea
-            ref={chatInputRef}
-            value={chatInput}
-            rows={1}
-            placeholder=""
-            onChange={(e) => {
-              setChatInput(e.target.value);
-            }}
-            onInput={(e) => autoGrowInput(e.currentTarget)}
-            onCompositionStart={() => {
-              composingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              composingRef.current = false;
-            }}
-            onKeyDown={(e) => {
-              if (chatBusyRef.current) {
-                return;
-              }
-              if (e.key === "Enter" && (e.nativeEvent as KeyboardEvent).isComposing) {
-                return;
-              }
-              if (e.key === "Enter" && composingRef.current) {
-                return;
-              }
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSendChat();
-              }
-            }}
-            style={{ height: "52px" }}
-            className="flex-1 resize-none min-h-[52px] bg-transparent border-0 rounded-2xl px-3.5 py-3 text-[19px] leading-relaxed text-white placeholder-white/30 outline-none transition-colors overflow-y-hidden"
-          />
+        <div className="pointer-events-auto max-w-4xl mx-auto flex gap-2.5 items-end">
+          <div className="flex-1 min-w-0 flex gap-2.5 items-end rounded-3xl border border-white/18 bg-[#1a2233]/72 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)_inset] px-3.5 py-3">
+            <textarea
+              ref={chatInputRef}
+              value={chatInput}
+              rows={1}
+              placeholder=""
+              onChange={(e) => {
+                setChatInput(e.target.value);
+              }}
+              onInput={(e) => autoGrowInput(e.currentTarget)}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false;
+              }}
+              onKeyDown={(e) => {
+                if (chatBusyRef.current) {
+                  return;
+                }
+                if (e.key === "Enter" && (e.nativeEvent as KeyboardEvent).isComposing) {
+                  return;
+                }
+                if (e.key === "Enter" && composingRef.current) {
+                  return;
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendChat();
+                }
+              }}
+              style={{ height: "52px" }}
+              className="flex-1 resize-none min-h-[52px] bg-transparent border-0 rounded-2xl px-3.5 py-3 text-[19px] leading-relaxed text-white placeholder-white/30 outline-none transition-colors overflow-y-hidden"
+            />
+            <div className="flex flex-none items-center gap-2.5">
+              <AskThinkingToggle
+                enabled={askSettings.useThinking}
+                onChange={(useThinking) => setAskSettings((s) => ({ ...s, useThinking }))}
+              />
+              <button
+                type="button"
+                onClick={chatLoading ? handleStopChat : handleSendChat}
+                disabled={!chatLoading && !chatInput.trim()}
+                aria-label={chatLoading ? "停止" : "发送"}
+                className="flex-none h-[52px] min-w-[52px] rounded-2xl px-3 flex items-center justify-center transition-colors disabled:cursor-not-allowed bg-[#e6ecff] text-[#20325f] hover:bg-[#f0f4ff] disabled:bg-[#e6ecff]/30 disabled:text-white/35">
+                {chatLoading ? <X size={16} /> : <ArrowUp size={19} strokeWidth={2.4} />}
+              </button>
+            </div>
+          </div>
           <AskEmojiToggle
             compact
             enabled={askSettings.useEmoji}
             onChange={(useEmoji) => setAskSettings((s) => ({ ...s, useEmoji }))}
           />
-          <button
-            type="button"
-            onClick={chatLoading ? handleStopChat : handleSendChat}
-            disabled={!chatLoading && !chatInput.trim()}
-            aria-label={chatLoading ? "停止" : "发送"}
-            className="flex-none h-11 min-w-11 rounded-2xl px-3 flex items-center justify-center transition-colors disabled:cursor-not-allowed bg-[#e6ecff] text-[#20325f] hover:bg-[#f0f4ff] disabled:bg-[#e6ecff]/30 disabled:text-white/35">
-            {chatLoading ? <X size={16} /> : <ArrowUp size={19} strokeWidth={2.4} />}
-          </button>
         </div>
       </div>
       {showClearChatConfirm && (

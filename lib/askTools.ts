@@ -139,7 +139,7 @@ export const ASK_TOOLS = [
     function: {
       name: "summarize_reviews",
       description:
-        "对筛选条件下全部评论做主题归纳（读取分类时已写入的 evidence 语义片段，非原文抽样）。用户问「这些评论在抱怨/称赞什么」「内容是什么」「查看全部再回答」时必须优先调用；与 count_reviews 同套 tag/subTag/locale/时间筛选。返回 total、themes、代表引用；evidenceUsed 为纳入归纳的条数。",
+        "对筛选条件下评论做主题归纳（读取 evidence 语义片段）。用户问「这些评论在抱怨/称赞什么」「内容是什么」时必须优先调用。返回 total（列表条数，与 count_reviews 同口径，作答条数时只用 total）、evidenceUsed（纳入归纳条数，禁止当作总条数）、excludedNoText、countDisclaimer、themes、代表引用。",
       parameters: {
         type: "object",
         properties: {
