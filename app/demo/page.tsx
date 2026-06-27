@@ -15,7 +15,7 @@ import { meaningfulLocaleFloor, sortSubTagRecordForDisplay } from "@/lib/analysi
 import { hasSubTagBreakdown } from "@/lib/promptKit.mjs";
 import { DEFAULT_DEMO_TIME_RANGE, resolveDefaultDemoApp } from "@/lib/demoDefaults";
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
-import { RECLASSIFY_MAX } from "@/lib/reviews";
+import { RECLASSIFY_MAX, ASK_SUMMARIZE_MAX } from "@/lib/reviews";
 
 // ─── 类型 ────────────────────────────────────────────────────
 
@@ -1963,6 +1963,9 @@ function DemoPageInner() {
           <div className="max-w-3xl mx-auto text-white/60 text-[19px] leading-relaxed">
             <p className="font-medium text-white/80">问我关于 {appName} {timeRangeLabel} 的评论的任何问题</p>
             <p className="text-white/40 text-[14px] mt-3 leading-relaxed">
+              单次询问context上限：{ASK_SUMMARIZE_MAX}条评论
+            </p>
+            <p className="text-white/40 text-[14px] mt-2 leading-relaxed">
               对话记录保存在本机浏览器，换设备或清除缓存后会丢失。
             </p>
           </div>

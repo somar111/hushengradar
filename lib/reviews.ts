@@ -219,8 +219,8 @@ export type ReviewEvidenceItem = {
   evidence: string;
 };
 
-/** Ask summarize_reviews：与列表同筛选，拉取每条评论在 tag/subTag 下的 evidence（非全文）。 */
-export const ASK_SUMMARIZE_MAX = 500;
+/** Ask summarize_reviews：单次主题归纳最多读取的评论条数（超出均匀抽样，计数仍用 count_reviews）。 */
+export const ASK_SUMMARIZE_MAX = 1600;
 
 function evidenceForTag(
   row: Pick<ReviewRow, "id" | "content" | "rating" | "review_date" | "locale" | "ai_tags">,
@@ -235,33 +235,24 @@ function evidenceForTag(
   return text || null;
 }
 
-export async function fetchReviewEvidenceForScope(
-  opts: ReviewQueryFilters
-): Promise<{
-  items: ReviewEvidenceItem[];
-  total: number;
-  truncated: boolean;
-  /** 实际拉取到的行数（≤ ASK_SUMMARIZE_MAX） */
-  scanned: number;
-  /** 已拉取行中无正文/evidence 的条数 */
-  noTextInBatch: number;
-}> {
-  const total = await countReviewsMatching(opts);
-  if (total === 0) return { items: [], total: 0, truncated: false, scanned: 0, noTextInBatch: 0 };
+/** 在按时间排序的全量索引上均匀取 cap 个下标（超出上限时抽样，覆盖整段时间）。 */
+function stratifiedSampleIndices(total: number, cap: number): number[] {
+  if (total <= cap) return Array.from({ length: total }, (_, i) => i);
+  if (cap <= 1) return [0];
+  const indices: number[] = [];
+  for (let i = 0; i < cap; i++) {
+    indices.push(Math.round((i * (total - 1)) / (cap - 1)));
+  }
+  return indices;
+}
 
-  const supabase = getServiceSupabase();
-  const { appId, tag, subTag, ...filters } = opts;
-  let query = supabase
-    .from("reviews")
-    .select("id, rating, review_date, locale, content, ai_tags")
-    .eq("app_id", appId);
-  query = applyReviewFilters(query, { tag, subTag, ...filters });
+type EvidenceRow = Pick<ReviewRow, "id" | "rating" | "review_date" | "locale" | "content" | "ai_tags">;
 
-  const cap = Math.min(total, ASK_SUMMARIZE_MAX);
-  const { data, error } = await query.order("review_date", { ascending: false }).limit(cap);
-  if (error) throw error;
-
-  const rows = data ?? [];
+function rowsToEvidenceItems(
+  rows: EvidenceRow[],
+  tag?: string,
+  subTag?: string
+): { items: ReviewEvidenceItem[]; noTextInBatch: number } {
   const items: ReviewEvidenceItem[] = [];
   for (const row of rows) {
     const evidence = evidenceForTag(row, tag, subTag);
@@ -274,13 +265,53 @@ export async function fetchReviewEvidenceForScope(
       evidence,
     });
   }
+  return { items, noTextInBatch: rows.length - items.length };
+}
+
+export async function fetchReviewEvidenceForScope(
+  opts: ReviewQueryFilters
+): Promise<{
+  items: ReviewEvidenceItem[];
+  total: number;
+  truncated: boolean;
+  /** 实际拉取到的行数（≤ ASK_SUMMARIZE_MAX，或全量） */
+  scanned: number;
+  /** 已拉取行中无正文/evidence 的条数 */
+  noTextInBatch: number;
+}> {
+  const total = await countReviewsMatching(opts);
+  if (total === 0) return { items: [], total: 0, truncated: false, scanned: 0, noTextInBatch: 0 };
+
+  const { appId, tag, subTag, ...filters } = opts;
+  const truncated = total > ASK_SUMMARIZE_MAX;
+  const supabase = getServiceSupabase();
+  let query = supabase
+    .from("reviews")
+    .select("id, rating, review_date, locale, content, ai_tags")
+    .eq("app_id", appId);
+  query = applyReviewFilters(query, { tag, subTag, ...filters });
+
+  let rows: EvidenceRow[];
+  if (!truncated) {
+    const { data, error } = await query.order("review_date", { ascending: false }).limit(total);
+    if (error) throw error;
+    rows = data ?? [];
+  } else {
+    const allRows = await fetchAllRows<EvidenceRow>(
+      query.order("review_date", { ascending: false }) as SupabaseQuery<EvidenceRow>
+    );
+    const picked = stratifiedSampleIndices(allRows.length, ASK_SUMMARIZE_MAX).map((i) => allRows[i]!);
+    rows = picked;
+  }
+
+  const { items, noTextInBatch } = rowsToEvidenceItems(rows, tag, subTag);
 
   return {
     items,
     total,
-    truncated: total > ASK_SUMMARIZE_MAX,
+    truncated,
     scanned: rows.length,
-    noTextInBatch: rows.length - items.length,
+    noTextInBatch,
   };
 }
 
