@@ -1,6 +1,7 @@
 import { summarizeReviewsForAsk } from "./askSummarize";
 import { sortSubTagRecordForDisplay } from "./analysisShared";
 import { buildAnalysisMetrics, computeStats, countReviewsMatching, queryReviews } from "./reviews";
+import { fetchLocaleStats } from "./reviewStatsRpc";
 import type { AiTag, ReviewRow } from "./supabase";
 
 export type AskContext = {
@@ -194,6 +195,7 @@ export async function executeAskTool(
   if (name === "get_stats") {
     const stats = await computeStats(ctx.appId, locale, since, until, {
       appContext: ctx.appContext,
+      attachDisplaySummaries: false,
     });
     const metrics = buildAnalysisMetrics(stats);
     return JSON.stringify({
@@ -219,15 +221,13 @@ export async function executeAskTool(
   }
 
   if (name === "list_locales") {
-    const stats = await computeStats(ctx.appId, undefined, since, until, {
-      appContext: ctx.appContext,
-    });
+    const { locales, dateRange } = await fetchLocaleStats(ctx.appId, since, until);
     return JSON.stringify({
       filters: { since: since ?? null, until: until ?? null },
-      dateRange: stats.dateRange,
-      locales: stats.localeRatings.map((l) => ({
+      dateRange,
+      locales: locales.map((l) => ({
         locale: l.locale,
-        reviewCount: l.count,
+        reviewCount: l.reviewCount,
         avgRating: l.avgRating,
       })),
     });
