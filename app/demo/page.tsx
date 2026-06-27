@@ -81,6 +81,10 @@ const RIGHT_PANEL_NAV: { key: RightPanel; label: string }[] = [
   { key: "reply", label: "评论查看&回复" },
 ];
 
+/** Demo 快捷键展示文案（Mac / Windows），与 Gemini / ChatGPT web 对齐 */
+const SHORTCUT_CLEAR_CHAT_LABEL = "⌘⇧O / Ctrl+Shift+O";
+const SHORTCUT_TRANSLATE_LABEL = "⌥T / Alt+T";
+
 const PANEL_ICONS: Record<RightPanel, React.ReactNode> = {
   complaints: <ListOrdered size={15} />,
   analysis: <GitCompare size={14} />,
@@ -496,7 +500,7 @@ const REPLY_FILTER_FIELD =
 function ReplyTranslateToggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
   return (
     <GlassHoverTooltip
-      message="显示评论翻译（快捷键 ⌥T / Alt+T）"
+      message={`快捷键 ${SHORTCUT_TRANSLATE_LABEL}`}
       className="whitespace-nowrap">
       <button
         type="button"
@@ -611,7 +615,7 @@ function ClearChatButton({ contextLabel, onClick }: { contextLabel: string; onCl
   return (
     <div className="relative pointer-events-auto">
       <GlassHoverTooltip
-        message={`清空「${contextLabel}」下的对话`}
+        message={`快捷键 ${SHORTCUT_CLEAR_CHAT_LABEL}`}
         className="whitespace-nowrap"
         wrapClassName="relative">
         <button
@@ -1145,14 +1149,24 @@ function DemoPageInner() {
     return "";
   }, [tagFilter, loading, reclassifyLoading, total]);
 
-  // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目；评论查看&回复下 ⌥T / Alt+T 开关翻译。
-  // 逻辑同时认 metaKey/ctrlKey 与 altKey，Mac 与 Windows 都生效；面板用中性写法同时标注两套修饰键，
-  // 不依赖平台检测。输入框聚焦时不拦截，避免组合键打出特殊字符或触发浏览器菜单。
+  // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目；问 AI 下 ⌘⇧O / Ctrl+Shift+O 清空对话；
+  // 评论查看&回复下 ⌥T / Alt+T 开关翻译。逻辑同时认 metaKey/ctrlKey 与 altKey，Mac 与 Windows 都生效；
+  // 面板用中性写法同时标注两套修饰键，不依赖平台检测。Alt 系列在输入框聚焦时不拦截；
+  // ⌘⇧O 在问 AI 输入框内仍生效，并 preventDefault 避免浏览器打开书签管理器。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
         setLeftOpen((v) => !v);
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyO") {
+        if (activePanel === "ask" && chatMessagesRef.current.length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowClearChatConfirm(true);
+        }
         return;
       }
 
@@ -2520,10 +2534,11 @@ function DemoPageInner() {
                   {RIGHT_PANEL_NAV.map((item, i) => (
                     <ShortcutRow key={item.key} keys={["⌥/Alt", String(i + 1)]} desc={item.label} />
                   ))}
+                  <ShortcutRow keys={["⌘/Ctrl", "Shift", "O"]} desc="清空此对话（问 AI）" />
                   <ShortcutRow keys={["⌥/Alt", "T"]} desc="开关翻译（评论查看&回复栏目）" />
                 </div>
                 <p className="text-white/40 text-[12px] mt-2 px-1 leading-relaxed">
-                  在输入框内打字时不触发，避免误操作。
+                  Alt 系列在输入框内打字时不触发；问 AI 输入框内仍可用 ⌘⇧O / Ctrl+Shift+O 清空对话。
                 </p>
               </section>
             </div>
