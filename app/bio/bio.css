@@ -37,7 +37,7 @@
 .bio-header {
   margin: calc(var(--bio-unit) * -10) calc(var(--bio-unit) * -6) calc(var(--bio-unit) * 7);
   padding: calc(var(--bio-unit) * 4) calc(var(--bio-unit) * 6);
-  background: #d6d6dc;
+  background: #c8c8d0;
 }
 
 .bio-title {
