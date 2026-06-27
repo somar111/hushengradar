@@ -1,6 +1,7 @@
 .bio-root {
-  min-height: 100%;
-  background: #f5f5f7;
+  min-height: 100vh;
+  width: 100%;
+  background: #ececef;
   color: #3a3a3c;
   font-family: "PingFang SC", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   font-size: 15px;
@@ -25,6 +26,12 @@
   padding: calc(var(--bio-unit) * 10) calc(var(--bio-unit) * 6) calc(var(--bio-unit) * 12);
   background: #fff;
   min-height: 100vh;
+}
+
+@media (min-width: 641px) {
+  .bio-page {
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 12px 40px rgba(0, 0, 0, 0.06);
+  }
 }
 
 .bio-header {
