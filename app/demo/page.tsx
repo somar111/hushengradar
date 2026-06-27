@@ -52,6 +52,8 @@ try {
 
 type Stats = {
   total: number;
+  /** 当前时间窗口内评论条数（不含 locale 筛选；与「全部」侧栏同口径） */
+  windowReviewTotal: number;
   dateRange: { from: string | null; to: string | null };
   ratingDist: Record<string, number>;
   tagCounts: Record<
@@ -1711,9 +1713,7 @@ function DemoPageInner() {
     icon: PANEL_ICONS[item.key],
   }));
 
-  const totalTagCount = stats ? Object.values(stats.tagCounts).reduce((a, b) => a + b.count, 0) : 0;
-  // "全部"要跟当前选的 locale 无关，不能直接用 stats.total（那是按 locale 筛过的），用 localeCounts 求和才是真正的全量
-  const allLocalesTotal = stats ? Object.values(stats.localeCounts).reduce((a, b) => a + b, 0) : 0;
+  const allLocalesTotal = stats?.windowReviewTotal ?? 0;
   const avgRating = stats
     ? Math.round(
         (Object.entries(stats.ratingDist).reduce((sum, [k, v]) => sum + Number(k) * v, 0) / stats.total) * 100
@@ -1755,7 +1755,7 @@ function DemoPageInner() {
               })}
           </div>
           <p className="text-white/35 text-[12px] mt-4 leading-relaxed">
-            数据来源：Google Play 公开评论抓取（非 {appName} 官方授权接入），AI 按真实评论内容分类，共 {totalTagCount} 次标签命中（一条评论可能命中多个类型）。
+            一条评论可能命中多个 Tag，评论计数可能小于命中 Tag 总数之和。
           </p>
         </div>
       )}

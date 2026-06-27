@@ -88,7 +88,7 @@ export const ASK_TOOLS = [
     function: {
       name: "get_stats",
       description:
-        "获取指定时间/地区范围内的聚合统计：评论总数、日期范围、星级分布、均分、标签分布（含子问题）、版本评分、官方回复率等。子标签 count 是标签命中次数（一条评论多 tag 会多次计数），不是评论条数——问「某标签/子标签有多少条评论」必须用 count_reviews。",
+        "获取指定时间/地区范围内的聚合统计：评论总数、日期范围、星级分布、均分、标签分布（含子问题）、版本评分、官方回复率等。tagBreakdown/subTagBreakdown 计数与 count_reviews 同口径。",
       parameters: {
         type: "object",
         properties: {
@@ -139,7 +139,7 @@ export const ASK_TOOLS = [
     function: {
       name: "summarize_reviews",
       description:
-        "对筛选条件下评论做主题归纳（读取 evidence 语义片段）。用户问「这些评论在抱怨/称赞什么」「内容是什么」时必须优先调用。返回 total（列表条数，与 count_reviews 同口径，作答条数时只用 total）、evidenceUsed（纳入归纳条数，禁止当作总条数）、excludedNoText、countDisclaimer、themes、代表引用。",
+        "对筛选条件下评论做主题归纳（读取 evidence 语义片段）。用户问「这些评论在抱怨/称赞什么」「内容是什么」时必须优先调用。返回 total（列表条数，权威）、evidenceUsed（纳入归纳条数）、excludedNoText（无正文）、notSummarized（因上限未扫描）、countDisclaimer、themes、代表引用。",
       parameters: {
         type: "object",
         properties: {
@@ -200,7 +200,7 @@ export async function executeAskTool(
       filters: { since: since ?? null, until: until ?? null, locale: locale ?? null },
       dateRange: stats.dateRange,
       countDisclaimer:
-        "subTagBreakdown[].count 是标签命中次数，不是评论条数；问「某标签/子标签有多少条评论」须用 count_reviews.total。",
+        "tagBreakdown[].count 与 subTagBreakdown[].count 均为评论条数（与 count_reviews / 列表筛选同口径）。问条数以 count_reviews.total 为准。",
       ...metrics,
       tagSummaries: Object.fromEntries(
         Object.entries(stats.tagCounts).map(([key, t]) => [key, t.summary]).filter(([, s]) => s)

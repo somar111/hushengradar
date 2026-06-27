@@ -1,8 +1,8 @@
 import { getServiceSupabase, type ReviewRow, type AppRow, type TerminologyEntry } from "./supabase";
 import { meaningfulLocaleFloor } from "./analysisShared";
-import { mergeSimilarSubTags, sanitizeTerminologyGlossary, hasSubTagBreakdown } from "./promptKit.mjs";
+import { mergeSimilarSubTags, sanitizeTerminologyGlossary, hasSubTagBreakdown, accumulateTagCountsFromReview } from "./promptKit.mjs";
 import { hasActiveStatsScope, resolveGlobalTagDisplaySummary } from "./tagDisplaySummary.mjs";
-import { invalidateScopedSummaryCache, invalidateScopedReviewSummaryCache, pushTagSample, summarizeTagsForScope } from "./tagSummaries.mjs";
+import { invalidateScopedSummaryCache, invalidateScopedReviewSummaryCache, summarizeTagsForScope } from "./tagSummaries.mjs";
 import { resolveDefaultDemoApp } from "./demoDefaults";
 
 // apps 表几乎不变（只有手动加新 App 时才变），缓存住省掉每次切筛选都白付一次 Supabase round trip
@@ -123,6 +123,53 @@ export async function countReviewsMatching(opts: ReviewQueryFilters): Promise<nu
   return count ?? 0;
 }
 
+type ListCountScope = Pick<ReviewQueryFilters, "appId" | "since" | "until" | "locale">;
+
+/** 用与评论列表相同的 SQL 口径覆盖 tag 计数（真实评论条数，非内存 tag 命中累加）。 */
+async function reconcileTagCountsFromListFilters(
+  scope: ListCountScope,
+  tagCounts: Record<
+    string,
+    { label: string; count: number; summary: string | null; repliedCount: number; subTags: Record<string, { label: string; count: number }> }
+  >,
+) {
+  const { appId, since, until, locale } = scope;
+  const base: ReviewQueryFilters = { appId, since, until, locale: locale || undefined };
+  await Promise.all(
+    Object.entries(tagCounts).map(async ([key, entry]) => {
+      const [parentCount, repliedCount, subPairs] = await Promise.all([
+        countReviewsMatching({ ...base, tag: key }),
+        countReviewsMatching({ ...base, tag: key, replied: true }),
+        Promise.all(
+          Object.keys(entry.subTags).map(
+            async (subKey) => [subKey, await countReviewsMatching({ ...base, tag: key, subTag: subKey })] as const,
+          ),
+        ),
+      ]);
+      entry.count = parentCount;
+      entry.repliedCount = repliedCount;
+      for (const [subKey, n] of subPairs) {
+        if (entry.subTags[subKey]) entry.subTags[subKey].count = n;
+      }
+    }),
+  );
+}
+
+/** 时间窗内各 locale / 全部 / 当前筛选下的评论条数，与列表 count 一致。 */
+async function reconcileWindowAndLocaleCounts(
+  scope: ListCountScope,
+  localeKeys: string[],
+): Promise<{ total: number; windowReviewTotal: number; localeCounts: Record<string, number> }> {
+  const { appId, since, until, locale } = scope;
+  const windowScope: ReviewQueryFilters = { appId, since, until };
+  const [windowReviewTotal, total, localePairs] = await Promise.all([
+    countReviewsMatching(windowScope),
+    countReviewsMatching({ ...windowScope, locale: locale || undefined }),
+    Promise.all(localeKeys.map(async (l) => [l, await countReviewsMatching({ ...windowScope, locale: l })] as const)),
+  ]);
+  return { total, windowReviewTotal, localeCounts: Object.fromEntries(localePairs) };
+}
+
 /** 在当前筛选条件下（不含 replied 筛选）统计全部/已回复/未回复数量，供评论回复栏下拉与计数展示。 */
 export async function countReviewsReplyBreakdown(
   opts: Omit<ReviewQueryFilters, "replied">
@@ -190,9 +237,17 @@ function evidenceForTag(
 
 export async function fetchReviewEvidenceForScope(
   opts: ReviewQueryFilters
-): Promise<{ items: ReviewEvidenceItem[]; total: number; truncated: boolean }> {
+): Promise<{
+  items: ReviewEvidenceItem[];
+  total: number;
+  truncated: boolean;
+  /** 实际拉取到的行数（≤ ASK_SUMMARIZE_MAX） */
+  scanned: number;
+  /** 已拉取行中无正文/evidence 的条数 */
+  noTextInBatch: number;
+}> {
   const total = await countReviewsMatching(opts);
-  if (total === 0) return { items: [], total: 0, truncated: false };
+  if (total === 0) return { items: [], total: 0, truncated: false, scanned: 0, noTextInBatch: 0 };
 
   const supabase = getServiceSupabase();
   const { appId, tag, subTag, ...filters } = opts;
@@ -206,8 +261,9 @@ export async function fetchReviewEvidenceForScope(
   const { data, error } = await query.order("review_date", { ascending: false }).limit(cap);
   if (error) throw error;
 
+  const rows = data ?? [];
   const items: ReviewEvidenceItem[] = [];
-  for (const row of data ?? []) {
+  for (const row of rows) {
     const evidence = evidenceForTag(row, tag, subTag);
     if (!evidence) continue;
     items.push({
@@ -219,7 +275,13 @@ export async function fetchReviewEvidenceForScope(
     });
   }
 
-  return { items, total, truncated: total > ASK_SUMMARIZE_MAX };
+  return {
+    items,
+    total,
+    truncated: total > ASK_SUMMARIZE_MAX,
+    scanned: rows.length,
+    noTextInBatch: rows.length - items.length,
+  };
 }
 
 export async function queryReviews(opts: ReviewQueryFilters & {
@@ -259,7 +321,10 @@ async function fetchAllRows<T>(query: SupabaseQuery<T>, pageSize = 1000): Promis
   return all;
 }
 
-type StatsFields = Pick<ReviewRow, "rating" | "locale" | "ai_tags" | "app_version" | "official_reply" | "review_date" | "content">;
+type StatsFields = Pick<
+  ReviewRow,
+  "rating" | "locale" | "ai_tags" | "ai_tag_keys" | "app_version" | "official_reply" | "review_date" | "content"
+>;
 
 // cron 每天才跑一次抓取，统计用的全量行短期内不会变，缓存住避免每次点筛选按钮都把全表拉一遍重新聚合
 const STATS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -272,7 +337,7 @@ async function getStatsRows(appId: string, { forceRefresh = false } = {}) {
 
   const supabase = getServiceSupabase();
   const rows = await fetchAllRows<StatsFields>(
-    supabase.from("reviews").select("rating, locale, ai_tags, app_version, official_reply, review_date, content").eq("app_id", appId)
+    supabase.from("reviews").select("rating, locale, ai_tags, ai_tag_keys, app_version, official_reply, review_date, content").eq("app_id", appId)
   );
 
   const { data: summaryRows, error: summaryErr } = await supabase
@@ -306,11 +371,12 @@ export async function computeStats(
   // 这俩是给"对比各地区"用的，如果跟着当前选中的单一 locale 一起过滤就没法对比了
   let sinceRows = since ? allRows.filter((r) => r.review_date >= since) : allRows;
   if (until) sinceRows = sinceRows.filter((r) => r.review_date <= until);
-  const localeCounts: Record<string, number> = {};
   const localeRatingMap = new Map<string, { count: number; ratingSum: number }>();
+  const localeKeys = new Set<string>();
   for (const r of sinceRows) {
-    const l = r.locale ?? "unknown";
-    localeCounts[l] = (localeCounts[l] || 0) + 1;
+    const l = r.locale;
+    if (l) localeKeys.add(l);
+    if (!l) continue;
     const lr = localeRatingMap.get(l) ?? { count: 0, ratingSum: 0 };
     lr.count++;
     lr.ratingSum += r.rating ?? 0;
@@ -319,7 +385,7 @@ export async function computeStats(
 
   const scoped = locale ? sinceRows.filter((r) => (r.locale ?? "unknown") === locale) : sinceRows;
   const scopeActive = hasActiveStatsScope({ locale, since, until });
-  const total = scoped.length;
+  const listScope: ListCountScope = { appId, since, until, locale };
   const ratingDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   const tagCounts: Record<
     string,
@@ -338,18 +404,7 @@ export async function computeStats(
     d.count++;
     d.ratingSum += r.rating ?? 0;
     dailyMap.set(day, d);
-    for (const t of r.ai_tags ?? []) {
-      const entry = tagCounts[t.key] ?? { label: t.label, count: 0, summary: null, repliedCount: 0, subTags: {} };
-      entry.count++;
-      if (r.official_reply) entry.repliedCount++;
-      pushTagSample(tagSamples, t, r.content);
-      if (t.subKey) {
-        const sub = entry.subTags[t.subKey] ?? { label: t.subLabel || t.subKey, count: 0 };
-        sub.count++;
-        entry.subTags[t.subKey] = sub;
-      }
-      tagCounts[t.key] = entry;
-    }
+    accumulateTagCountsFromReview(r, tagCounts, { tagSamples, skipCounts: true });
     if (r.app_version) {
       const v = versionMap.get(r.app_version) ?? { count: 0, ratingSum: 0, dateSum: 0 };
       v.count++;
@@ -358,6 +413,11 @@ export async function computeStats(
       versionMap.set(r.app_version, v);
     }
   }
+
+  const [{ total, windowReviewTotal, localeCounts }] = await Promise.all([
+    reconcileWindowAndLocaleCounts(listScope, [...localeKeys]),
+    reconcileTagCountsFromListFilters(listScope, tagCounts),
+  ]);
 
   const tagsNeedingScopedSummary: {
     key: string;
@@ -424,11 +484,16 @@ export async function computeStats(
 
   // 评分最低的地区排前面，方便一眼看出最不满意的市场在哪
   const localeRatings = [...localeRatingMap.entries()]
-    .map(([locale, { count, ratingSum }]) => ({ locale, count, avgRating: Math.round((ratingSum / count) * 100) / 100 }))
+    .map(([loc, { count: memCount, ratingSum }]) => ({
+      locale: loc,
+      count: localeCounts[loc] ?? memCount,
+      avgRating: memCount ? Math.round((ratingSum / memCount) * 100) / 100 : 0,
+    }))
     .sort((a, b) => a.avgRating - b.avgRating);
 
   return {
     total,
+    windowReviewTotal,
     dateRange: { from: dates[0] ?? null, to: dates[dates.length - 1] ?? null },
     ratingDist,
     tagCounts,

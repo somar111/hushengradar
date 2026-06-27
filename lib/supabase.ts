@@ -67,6 +67,8 @@ export type ReviewRow = {
   official_reply: string | null;
   official_reply_date: string | null;
   ai_tags: AiTag[];
+  /** 与列表/count_reviews 筛选同口径；由 ai_tags 派生，老数据可能未同步 */
+  ai_tag_keys?: string[] | null;
   ai_classified_at: string | null;
   fetched_at: string;
   detected_lang: string | null;
