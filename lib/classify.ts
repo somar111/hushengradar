@@ -1,6 +1,7 @@
 import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt } from "./promptKit.mjs";
 import { prefetchAskTagScope } from "./askCountPrefetch";
 import { ASK_TOOLS, executeAskTool, type AskContext } from "./askTools";
+import { localeLabel } from "./localeLabels";
 import type { TerminologyEntry } from "./supabase";
 
 export type ClassifiedTag = { key: string; label: string; evidence?: string };
@@ -234,7 +235,7 @@ function buildAskUserMessage(opts: {
       : null,
     `界面当前默认：${opts.timeRangeLabel}${
       opts.defaultSince ? `（since=${opts.defaultSince.slice(0, 10)}）` : ""
-    }${opts.defaultLocale ? `，地区=${opts.defaultLocale}` : "，全部地区"}`,
+    }${opts.defaultLocale ? `，地区=${localeLabel(opts.defaultLocale)}（${opts.defaultLocale}）` : "，全部地区"}`,
     "若问题指定了更细的时间或地区，优先按问题查；未指定时工具可不传 since/locale，将使用上述默认值。",
     "若问题涉及某标签/子标签的评论条数或「在抱怨/说什么」，须用 count_reviews 的 total 作答，并写明上述时间/地区范围。",
     "回答前自检：你准备写的每一句，能否在工具结果里找到对应数字或原文？找不到就删掉或改成「数据不足」。",

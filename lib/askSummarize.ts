@@ -10,6 +10,7 @@ import {
   fetchReviewEvidenceForScope,
   type ReviewQueryFilters,
 } from "./reviews";
+import { localeLabel } from "./localeLabels";
 
 export type SummarizeReviewsTheme = { label: string; description: string };
 
@@ -194,6 +195,7 @@ export async function summarizeReviewsForAsk(opts: {
     since: since ?? null,
     until: until ?? null,
     locale: locale ?? null,
+    localeLabel: localeLabel(locale),
     tag: tag ?? null,
     subTag: subTag ?? null,
     rating: rating ?? null,
@@ -227,6 +229,7 @@ export async function summarizeReviewsForAsk(opts: {
     date: i.review_date.slice(0, 10),
     rating: i.rating,
     locale: i.locale,
+    localeLabel: localeLabel(i.locale),
     evidence: i.evidence,
   }));
 

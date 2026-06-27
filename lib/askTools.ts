@@ -1,5 +1,6 @@
 import { summarizeReviewsForAsk } from "./askSummarize";
 import { sortSubTagRecordForDisplay } from "./analysisShared";
+import { localeLabel } from "./localeLabels";
 import { buildAnalysisMetrics, computeStats, countReviewsMatching, queryReviews } from "./reviews";
 import { fetchLocaleStats } from "./reviewStatsRpc";
 import type { AiTag, ReviewRow } from "./supabase";
@@ -62,6 +63,7 @@ function compactReviewQuote(r: ReviewRow, tag?: string, subTag?: string) {
     date: r.review_date.slice(0, 10),
     rating: r.rating,
     locale: r.locale,
+    localeLabel: localeLabel(r.locale),
     evidence: evidenceForRow(r, tag, subTag),
   };
 }
@@ -71,6 +73,7 @@ function compactReviewFull(r: ReviewRow) {
     date: r.review_date.slice(0, 10),
     rating: r.rating,
     locale: r.locale,
+    localeLabel: localeLabel(r.locale),
     version: r.app_version,
     tags: (r.ai_tags ?? []).map((t) => ({
       label: t.label,
@@ -199,7 +202,7 @@ export async function executeAskTool(
     });
     const metrics = buildAnalysisMetrics(stats);
     return JSON.stringify({
-      filters: { since: since ?? null, until: until ?? null, locale: locale ?? null },
+      filters: { since: since ?? null, until: until ?? null, locale: locale ?? null, localeLabel: localeLabel(locale) },
       dateRange: stats.dateRange,
       countDisclaimer:
         "tagBreakdown[].count 与 subTagBreakdown[].count 均为评论条数（与 count_reviews / 列表筛选同口径）。问条数以 count_reviews.total 为准。",
@@ -227,6 +230,7 @@ export async function executeAskTool(
       dateRange,
       locales: locales.map((l) => ({
         locale: l.locale,
+        label: localeLabel(l.locale),
         reviewCount: l.reviewCount,
         avgRating: l.avgRating,
       })),
@@ -246,6 +250,7 @@ export async function executeAskTool(
         since: since ?? null,
         until: until ?? null,
         locale: locale ?? null,
+        localeLabel: localeLabel(locale),
         tag: reviewFilters.tag ?? null,
         subTag: reviewFilters.subTag ?? null,
         rating: reviewFilters.rating ?? null,
@@ -297,6 +302,7 @@ export async function executeAskTool(
         since: since ?? null,
         until: until ?? null,
         locale: locale ?? null,
+        localeLabel: localeLabel(locale),
         tag: tag ?? null,
         subTag: subTag ?? null,
         rating: rating ?? null,

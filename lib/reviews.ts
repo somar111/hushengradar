@@ -1,5 +1,6 @@
 import { getServiceSupabase, type ReviewRow, type AppRow, type TerminologyEntry } from "./supabase";
 import { meaningfulLocaleFloor } from "./analysisShared";
+import { localeLabel } from "./localeLabels";
 import { mergeSimilarSubTags, sanitizeTerminologyGlossary, hasSubTagBreakdown } from "./promptKit.mjs";
 import { hasActiveStatsScope, resolveGlobalTagDisplaySummary } from "./tagDisplaySummary.mjs";
 import { invalidateScopedSummaryCache, invalidateScopedReviewSummaryCache, summarizeTagsForScope } from "./tagSummaries.mjs";
@@ -504,6 +505,11 @@ export function buildAnalysisMetrics(stats: ComputedStats) {
     // 只把样本量够大的地区喂给AI，跟前端地区列表用同一个门槛，避免AI对被隐藏的小样本地区下结论
     localeRatings: stats.localeRatings
       .filter((l) => l.count >= localeFloor)
-      .map((l) => ({ locale: l.locale, reviewCount: l.count, avgRating: l.avgRating })),
+      .map((l) => ({
+        locale: l.locale,
+        label: localeLabel(l.locale),
+        reviewCount: l.count,
+        avgRating: l.avgRating,
+      })),
   };
 }
