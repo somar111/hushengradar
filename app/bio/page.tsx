@@ -2,14 +2,14 @@ export default function BioPage() {
   return (
     <div className="bio-page">
       <header className="bio-header">
-        <h1 className="bio-title">AI产品经理自荐 ｜附独立产品 Demo</h1>
+        <h1 className="bio-title">产品经理自荐 ｜附独立产品 Demo</h1>
       </header>
 
       <p>你好：</p>
 
       <p>
-        我是<span className="bio-name">阮好</span>。对你们团队的 AI 产品经理
-        职位非常感兴趣。
+        我是<span className="bio-name">阮好</span>。对贵司的产品经理岗位非常感兴趣，尤其关注
+        AI 与工具类产品方向。
       </p>
 
       <ul className="bio-list">
@@ -28,7 +28,7 @@ export default function BioPage() {
       </ul>
 
       <p>
-        除此之外，我还有许多令人激动的产品 Idea，非常渴望能和你们团队在实际业务中去碰撞和落地。
+        除此之外，我还有许多令人激动的 product ideas，非常渴望能和你们团队在实际业务中去碰撞和落地。
       </p>
 
       <p className="bio-tags-row">
