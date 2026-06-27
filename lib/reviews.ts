@@ -123,51 +123,17 @@ export async function countReviewsMatching(opts: ReviewQueryFilters): Promise<nu
   return count ?? 0;
 }
 
-type ListCountScope = Pick<ReviewQueryFilters, "appId" | "since" | "until" | "locale">;
-
-/** 用与评论列表相同的 SQL 口径覆盖 tag 计数（真实评论条数，非内存 tag 命中累加）。 */
-async function reconcileTagCountsFromListFilters(
-  scope: ListCountScope,
-  tagCounts: Record<
-    string,
-    { label: string; count: number; summary: string | null; repliedCount: number; subTags: Record<string, { label: string; count: number }> }
-  >,
-) {
-  const { appId, since, until, locale } = scope;
-  const base: ReviewQueryFilters = { appId, since, until, locale: locale || undefined };
-  await Promise.all(
-    Object.entries(tagCounts).map(async ([key, entry]) => {
-      const [parentCount, repliedCount, subPairs] = await Promise.all([
-        countReviewsMatching({ ...base, tag: key }),
-        countReviewsMatching({ ...base, tag: key, replied: true }),
-        Promise.all(
-          Object.keys(entry.subTags).map(
-            async (subKey) => [subKey, await countReviewsMatching({ ...base, tag: key, subTag: subKey })] as const,
-          ),
-        ),
-      ]);
-      entry.count = parentCount;
-      entry.repliedCount = repliedCount;
-      for (const [subKey, n] of subPairs) {
-        if (entry.subTags[subKey]) entry.subTags[subKey].count = n;
-      }
-    }),
-  );
-}
-
-/** 时间窗内各 locale / 全部 / 当前筛选下的评论条数，与列表 count 一致。 */
-async function reconcileWindowAndLocaleCounts(
-  scope: ListCountScope,
-  localeKeys: string[],
-): Promise<{ total: number; windowReviewTotal: number; localeCounts: Record<string, number> }> {
-  const { appId, since, until, locale } = scope;
-  const windowScope: ReviewQueryFilters = { appId, since, until };
-  const [windowReviewTotal, total, localePairs] = await Promise.all([
-    countReviewsMatching(windowScope),
-    countReviewsMatching({ ...windowScope, locale: locale || undefined }),
-    Promise.all(localeKeys.map(async (l) => [l, await countReviewsMatching({ ...windowScope, locale: l })] as const)),
-  ]);
-  return { total, windowReviewTotal, localeCounts: Object.fromEntries(localePairs) };
+/** 时间窗 / locale 计数：在已按 since/until 筛好的行上聚合，避免对每个 tag 再打 N 次 Supabase count（Workers 上会超时）。 */
+function windowCountsFromRows(sinceRows: StatsFields[], locale?: string) {
+  const windowReviewTotal = sinceRows.length;
+  const scoped = locale ? sinceRows.filter((r) => (r.locale ?? "unknown") === locale) : sinceRows;
+  const localeCounts: Record<string, number> = {};
+  for (const r of sinceRows) {
+    const l = r.locale;
+    if (!l) continue;
+    localeCounts[l] = (localeCounts[l] ?? 0) + 1;
+  }
+  return { total: scoped.length, windowReviewTotal, localeCounts };
 }
 
 /** 在当前筛选条件下（不含 replied 筛选）统计全部/已回复/未回复数量，供评论回复栏下拉与计数展示。 */
@@ -201,7 +167,9 @@ export async function fetchReviewsForReclassify(
 
 export function invalidateStatsCache(appId?: string) {
   if (appId) {
-    statsRowsCache.delete(appId);
+    for (const key of [...statsRowsCache.keys()]) {
+      if (key === appId || key.startsWith(`${appId}\0`)) statsRowsCache.delete(key);
+    }
     invalidateScopedSummaryCache(appId);
     invalidateScopedReviewSummaryCache(appId);
   } else {
@@ -354,22 +322,35 @@ async function fetchAllRows<T>(query: SupabaseQuery<T>, pageSize = 1000): Promis
 
 type StatsFields = Pick<
   ReviewRow,
-  "rating" | "locale" | "ai_tags" | "ai_tag_keys" | "app_version" | "official_reply" | "review_date" | "content"
+  "rating" | "locale" | "ai_tags" | "ai_tag_keys" | "app_version" | "official_reply" | "review_date"
 >;
 
 // cron 每天才跑一次抓取，统计用的全量行短期内不会变，缓存住避免每次点筛选按钮都把全表拉一遍重新聚合
 const STATS_CACHE_TTL_MS = 5 * 60 * 1000;
 const statsRowsCache = new Map<string, { rows: StatsFields[]; summaryMap: Record<string, string>; fetchedAt: number }>();
 
-async function getStatsRows(appId: string, { forceRefresh = false } = {}) {
-  if (forceRefresh) statsRowsCache.delete(appId);
-  const cached = statsRowsCache.get(appId);
+function statsRowsCacheKey(appId: string, since?: string, until?: string) {
+  return `${appId}\0${since ?? ""}\0${until ?? ""}`;
+}
+
+async function getStatsRows(
+  appId: string,
+  { forceRefresh = false, since, until }: { forceRefresh?: boolean; since?: string; until?: string } = {},
+) {
+  const key = statsRowsCacheKey(appId, since, until);
+  if (forceRefresh) statsRowsCache.delete(key);
+  const cached = statsRowsCache.get(key);
   if (cached && Date.now() - cached.fetchedAt < STATS_CACHE_TTL_MS) return cached;
 
   const supabase = getServiceSupabase();
-  const rows = await fetchAllRows<StatsFields>(
-    supabase.from("reviews").select("rating, locale, ai_tags, ai_tag_keys, app_version, official_reply, review_date, content").eq("app_id", appId)
-  );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = supabase
+    .from("reviews")
+    .select("rating, locale, ai_tags, ai_tag_keys, app_version, official_reply, review_date")
+    .eq("app_id", appId);
+  if (since) query = query.gte("review_date", since);
+  if (until) query = query.lte("review_date", until);
+  const rows = await fetchAllRows<StatsFields>(query);
 
   const { data: summaryRows, error: summaryErr } = await supabase
     .from("tag_summaries")
@@ -380,7 +361,7 @@ async function getStatsRows(appId: string, { forceRefresh = false } = {}) {
   for (const s of summaryRows ?? []) summaryMap[s.tag_key] = s.summary;
 
   const entry = { rows, summaryMap, fetchedAt: Date.now() };
-  statsRowsCache.set(appId, entry);
+  statsRowsCache.set(key, entry);
   return entry;
 }
 
@@ -396,7 +377,11 @@ export async function computeStats(
     apiKey?: string | null;
   } = {},
 ) {
-  const { rows: allRows, summaryMap } = await getStatsRows(appId, { forceRefresh: opts.forceRefresh });
+  const { rows: allRows, summaryMap } = await getStatsRows(appId, {
+    forceRefresh: opts.forceRefresh,
+    since,
+    until,
+  });
 
   // localeCounts/localeRatings 都跟 total 用同一份 since 过滤、但不受当前 locale 筛选影响——
   // 这俩是给"对比各地区"用的，如果跟着当前选中的单一 locale 一起过滤就没法对比了
@@ -416,7 +401,7 @@ export async function computeStats(
 
   const scoped = locale ? sinceRows.filter((r) => (r.locale ?? "unknown") === locale) : sinceRows;
   const scopeActive = hasActiveStatsScope({ locale, since, until });
-  const listScope: ListCountScope = { appId, since, until, locale };
+  const { total, windowReviewTotal, localeCounts } = windowCountsFromRows(sinceRows, locale);
   const ratingDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   const tagCounts: Record<
     string,
@@ -435,7 +420,7 @@ export async function computeStats(
     d.count++;
     d.ratingSum += r.rating ?? 0;
     dailyMap.set(day, d);
-    accumulateTagCountsFromReview(r, tagCounts, { tagSamples, skipCounts: true });
+    accumulateTagCountsFromReview(r, tagCounts, { tagSamples, countOfficialReply: true });
     if (r.app_version) {
       const v = versionMap.get(r.app_version) ?? { count: 0, ratingSum: 0, dateSum: 0 };
       v.count++;
@@ -444,11 +429,6 @@ export async function computeStats(
       versionMap.set(r.app_version, v);
     }
   }
-
-  const [{ total, windowReviewTotal, localeCounts }] = await Promise.all([
-    reconcileWindowAndLocaleCounts(listScope, [...localeKeys]),
-    reconcileTagCountsFromListFilters(listScope, tagCounts),
-  ]);
 
   const tagsNeedingScopedSummary: {
     key: string;

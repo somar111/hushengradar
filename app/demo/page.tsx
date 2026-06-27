@@ -1003,6 +1003,31 @@ function localeLabel(locale: string | null) {
 
 // ─── 主组件 ─────────────────────────────────────────────────
 
+function InlineLoading({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16">
+      <div className="flex items-center gap-2">
+        <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-[pulse_1.2s_ease-in-out_infinite]" />
+        <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-[pulse_1.2s_ease-in-out_200ms_infinite]" />
+        <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-[pulse_1.2s_ease-in-out_400ms_infinite]" />
+      </div>
+      <p className="mt-3 text-white/45 text-[13px] tracking-wide">{label}</p>
+    </div>
+  );
+}
+
+function InlineLoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+      <p className="text-white/65 text-[14px] leading-relaxed mb-4">{message}</p>
+      <button onClick={onRetry}
+        className="px-4 py-2 rounded-xl text-[14px] text-white/90 bg-white/10 hover:bg-white/15 transition-colors">
+        重试
+      </button>
+    </div>
+  );
+}
+
 // 筛选/导航类状态同步进 URL query string——分享链接、浏览器前进后退都对这些字段生效。
 // 跟具体 App、具体数据无关，纯 UI 状态（侧栏开合、hover 高亮等）不进 URL，见下方各自的 useState。
 export default function DemoPage() {
@@ -1059,8 +1084,11 @@ function DemoPageInner() {
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [hoveredTag, setHoveredTag] = useState<string | null>(null);
   const [bootReady, setBootReady] = useState(false);
+  const [bootError, setBootError] = useState("");
 
   const [stats, setStats] = useState<Stats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState("");
   // "评分趋势/评分分布/地区满意度"是同一份评分数据的三种切面，合并成一张卡片用切换器选看哪个，
   // 不用三张卡片各占一块地方。选中具体地区后"地区满意度"这个切面本身没意义（已经聚焦到一个
   // 地区了），这时候要是还停在这个切面上，自动切回"趋势"，不能留着空切面晃在那
@@ -1196,13 +1224,30 @@ function DemoPageInner() {
 
   // 拉 App 列表，默认选 Demo 指定 App（HOK），找不到则退回列表第一项
   useEffect(() => {
-    fetch("/api/demo/apps").then((r) => r.json()).then((data) => {
-      setApps(data.apps);
-      if (data.apps.length && !selectedAppId) {
-        const defaultApp = resolveDefaultDemoApp(data.apps);
-        if (defaultApp) setSelectedAppId(defaultApp.id);
-      }
-    });
+    let cancelled = false;
+    fetch("/api/demo/apps")
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || `App 列表加载失败 (${r.status})`);
+        return data;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setApps(data.apps ?? []);
+        setBootError("");
+        const list = data.apps ?? [];
+        if (list.length && selectedAppId && !list.some((a: AppRow) => a.id === selectedAppId)) {
+          const defaultApp = resolveDefaultDemoApp(list);
+          if (defaultApp) setSelectedAppId(defaultApp.id);
+        } else if (list.length && !selectedAppId) {
+          const defaultApp = resolveDefaultDemoApp(list);
+          if (defaultApp) setSelectedAppId(defaultApp.id);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setBootError(e.message || "App 列表加载失败");
+      });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1219,12 +1264,25 @@ function DemoPageInner() {
     if (locale) params.set("locale", locale);
     if (statsFresh) params.set("fresh", "1");
     const reqId = ++statsReqIdRef.current;
+    setStatsLoading(true);
+    setStatsError("");
     fetch(`/api/demo/stats?${params}`)
-      .then((r) => r.json())
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || `统计加载失败 (${r.status})`);
+        return data;
+      })
       .then((data) => {
         if (reqId !== statsReqIdRef.current) return;
         setStats(data);
         if (statsFresh) setStatsFresh(false);
+      })
+      .catch((e) => {
+        if (reqId !== statsReqIdRef.current) return;
+        setStatsError(e.message || "统计加载失败");
+      })
+      .finally(() => {
+        if (reqId === statsReqIdRef.current) setStatsLoading(false);
       });
   }, [selectedAppId, selectedApp, locale, since, dataRefreshKey, statsFresh]);
 
@@ -1247,12 +1305,24 @@ function DemoPageInner() {
     params.set("page", String(page));
     params.set("pageSize", String(PAGE_SIZE));
     fetch(`/api/demo/reviews?${params}`)
-      .then((r) => r.json())
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || `评论加载失败 (${r.status})`);
+        return data;
+      })
       .then((data) => {
         if (reqId !== reviewsReqIdRef.current) return;
         setReviews(data.items ?? []);
         setTotal(data.total ?? 0);
         setReplyStatusCounts(data.replyCounts ?? null);
+        setBootError("");
+      })
+      .catch((e) => {
+        if (reqId !== reviewsReqIdRef.current) return;
+        setBootError(e.message || "评论加载失败");
+        setReviews([]);
+        setTotal(0);
+        setReplyStatusCounts(null);
       })
       .finally(() => {
         if (reqId === reviewsReqIdRef.current) setLoading(false);
@@ -1262,11 +1332,10 @@ function DemoPageInner() {
   useEffect(() => {
     if (bootReady) return;
     if (!selectedAppId || !selectedApp) return;
-    if (!stats) return;
     if (loading) return;
     const t = window.setTimeout(() => setBootReady(true), 220);
     return () => window.clearTimeout(t);
-  }, [bootReady, selectedAppId, selectedApp, stats, loading]);
+  }, [bootReady, selectedAppId, selectedApp, loading]);
 
   const showDataLoading = !bootReady;
 
@@ -1723,6 +1792,13 @@ function DemoPageInner() {
   // ── 中间区域：分析结果 ──
   const AnalyzeResult = (
     <div className="flex-1 overflow-y-auto px-6 py-5">
+      {activePanel !== "reply" && activePanel !== "ask" && !stats && statsLoading && (
+        <InlineLoading label="统计数据加载中…" />
+      )}
+      {activePanel !== "reply" && activePanel !== "ask" && !stats && !statsLoading && statsError && (
+        <InlineLoadError message={statsError} onRetry={() => setDataRefreshKey((k) => k + 1)} />
+      )}
+
       {activePanel === "complaints" && stats && (
         <div>
           <p className="text-white/75 text-[14px] mb-4">
@@ -2523,19 +2599,25 @@ function DemoPageInner() {
             options={rightPanelItems.map((item) => ({ value: item.key, label: item.label, icon: item.icon }))}
           />
         </div>
-        <span className="text-white/45 text-[13px] flex-none">{stats ? `${stats.total} 条评论` : "加载中..."}</span>
+        <span className="text-white/45 text-[13px] flex-none">
+          {stats ? `${stats.total} 条评论` : statsLoading ? "统计加载中…" : statsError ? "统计未就绪" : "—"}
+        </span>
       </div>
 
       {showDataLoading ? (
         <div className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center">
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-[pulse_1.2s_ease-in-out_infinite]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-[pulse_1.2s_ease-in-out_200ms_infinite]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-[pulse_1.2s_ease-in-out_400ms_infinite]" />
-            </div>
-            <p className="mt-3 text-white/45 text-[13px] tracking-wide">评论数据加载中</p>
-          </div>
+          {bootError ? (
+            <InlineLoadError
+              message={bootError}
+              onRetry={() => {
+                setBootError("");
+                setBootReady(false);
+                setDataRefreshKey((k) => k + 1);
+              }}
+            />
+          ) : (
+            <InlineLoading label={selectedApp ? "评论加载中…" : "App 数据加载中…"} />
+          )}
         </div>
       ) : (
         activePanel === "reply" ? ReplyResult : activePanel === "ask" ? AskResult : AnalyzeResult
