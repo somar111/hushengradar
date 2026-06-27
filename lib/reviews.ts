@@ -94,7 +94,7 @@ export class ReclassifyLimitError extends Error {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyReviewFilters(query: any, opts: Omit<ReviewQueryFilters, "appId">) {
   if (opts.tag && opts.subTag) query = query.contains("ai_tags", JSON.stringify([{ key: opts.tag, subKey: opts.subTag }]));
-  else if (opts.tag) query = query.contains("ai_tag_keys", [opts.tag]);
+  else if (opts.tag) query = query.contains("ai_tags", JSON.stringify([{ key: opts.tag }]));
   if (opts.locale) query = query.eq("locale", opts.locale);
   if (opts.rating) query = query.eq("rating", opts.rating);
   if (opts.replied === true) query = query.not("official_reply", "is", null);
@@ -259,18 +259,11 @@ export async function fetchReviewEvidenceForScope(
     .eq("app_id", appId);
   query = applyReviewFilters(query, { tag, subTag, ...filters });
 
-  let rows: EvidenceRow[];
-  if (!truncated) {
-    const { data, error } = await query.order("review_date", { ascending: false }).limit(total);
-    if (error) throw error;
-    rows = data ?? [];
-  } else {
-    const allRows = await fetchAllRows<EvidenceRow>(
-      query.order("review_date", { ascending: false }) as SupabaseQuery<EvidenceRow>
-    );
-    const picked = stratifiedSampleIndices(allRows.length, ASK_SUMMARIZE_MAX).map((i) => allRows[i]!);
-    rows = picked;
-  }
+  const orderedQuery = query.order("review_date", { ascending: false }) as SupabaseQuery<EvidenceRow>;
+  const allRows = await fetchAllRows(orderedQuery);
+  const rows = truncated
+    ? stratifiedSampleIndices(allRows.length, ASK_SUMMARIZE_MAX).map((i) => allRows[i]!)
+    : allRows;
 
   const { items, noTextInBatch } = rowsToEvidenceItems(rows, tag, subTag);
 
@@ -306,7 +299,10 @@ export async function queryReviews(opts: ReviewQueryFilters & {
 
 // Supabase/PostgREST 单次查询默认最多返回 1000 行，不分页会悄悄截断（这个项目已经在
 // cron-fetch.mjs 里踩过一次这个坑，这里是同一类查询的另一处，必须统一走这个分页 helper）。
-type SupabaseQuery<T> = { range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }> };
+type SupabaseQuery<T> = {
+  range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>;
+  limit: (n: number) => PromiseLike<{ data: T[] | null; error: unknown }>;
+};
 async function fetchAllRows<T>(query: SupabaseQuery<T>, pageSize = 1000): Promise<T[]> {
   const all: T[] = [];
   let from = 0;

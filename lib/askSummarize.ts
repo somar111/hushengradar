@@ -75,6 +75,13 @@ function deriveSummarizeCounts(opts: {
       notSummarized: Math.max(0, listTotal - scanned),
     };
   }
+  // 未超 ASK 上限但 scanned < listTotal：PostgREST 单次 1000 行截断等 fetch 不足
+  if (scanned < listTotal) {
+    return {
+      excludedNoText: noTextInBatch,
+      notSummarized: Math.max(0, listTotal - scanned),
+    };
+  }
   return {
     excludedNoText: Math.max(0, listTotal - evidenceUsed),
     notSummarized: 0,
@@ -95,6 +102,12 @@ function buildCountDisclaimer(opts: {
     if (excludedNoText > 0) parts.push(`${excludedNoText} 条无正文未纳入`);
     if (notSummarized > 0) parts.push(`${notSummarized} 条因单次上限 ${ASK_SUMMARIZE_MAX} 未纳入本次归纳（不是无正文）`);
     return `${base} ${parts.join("；")}。作答时必须先说「共 ${total} 条」，不要只说 ${evidenceUsed} 或把 ${evidenceUsed}+${excludedNoText} 当成总数。`;
+  }
+  if (notSummarized > 0) {
+    const parts = [`本次主题归纳纳入 ${evidenceUsed} 条`];
+    if (excludedNoText > 0) parts.push(`${excludedNoText} 条无正文未纳入`);
+    parts.push(`${notSummarized} 条因拉取不完整未纳入归纳`);
+    return `${base} ${parts.join("；")}。作答必须以 ${total} 为评论条数。`;
   }
   if (excludedNoText > 0) {
     return `${base} 其中 ${evidenceUsed} 条有正文/evidence 并参与主题归纳，${excludedNoText} 条因无正文未纳入。作答必须以 ${total} 为评论条数。`;
@@ -117,9 +130,11 @@ function buildSummarizeNote(opts: {
       ? "已覆盖该筛选下全部评论"
       : opts.truncated
         ? `单次上限 ${ASK_SUMMARIZE_MAX}：${opts.notSummarized} 条未扫描归纳${opts.excludedNoText > 0 ? `，已扫描中 ${opts.excludedNoText} 条无正文` : ""}；总条数仍为 ${opts.total}`
-        : opts.excludedNoText > 0
-          ? `${opts.excludedNoText} 条无正文未纳入；总条数仍为 ${opts.total}`
-          : null,
+        : opts.notSummarized > 0
+          ? `拉取不完整：${opts.notSummarized} 条未纳入归纳${opts.excludedNoText > 0 ? `，已拉取中 ${opts.excludedNoText} 条无正文` : ""}；总条数仍为 ${opts.total}`
+          : opts.excludedNoText > 0
+            ? `${opts.excludedNoText} 条无正文未纳入；总条数仍为 ${opts.total}`
+            : null,
     `LLM 调用 ${opts.llmCalls} 次`,
   ].filter(Boolean);
   return parts.join("；");

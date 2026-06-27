@@ -10,6 +10,7 @@ import {
   findTagCountInconsistencies,
   hasTaxonomyIntents,
   subTagMapToPromptObject,
+  aiTagKeysFromTags,
 } from "../lib/promptKit.mjs";
 import { classifyReviewWithPipeline } from "../lib/classifyReview.mjs";
 import { refreshTagSummaries } from "../lib/tagSummaries.mjs";
@@ -245,7 +246,7 @@ async function classifyPendingReviews(app, {
         if (!baselineKeys.has(t.key)) existingCustomTagsMap.set(t.key, t.label);
       }
       const { error } = await supabase.from("reviews").update({
-        ai_tags: tags, ai_tag_keys: tags.map((t) => t.key), ai_classified_at: new Date().toISOString(),
+        ai_tags: tags, ai_tag_keys: aiTagKeysFromTags(tags), ai_classified_at: new Date().toISOString(),
       }).eq("id", r.id);
       if (error) throw error;
     } catch (e) {

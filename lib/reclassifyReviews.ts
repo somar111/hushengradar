@@ -2,6 +2,7 @@ import {
   UNIVERSAL_CATEGORIES,
   buildSubTagReusePool,
   subTagMapToPromptObject,
+  aiTagKeysFromTags,
 } from "./promptKit.mjs";
 import { classifyReviewWithPipeline } from "./classifyReview.mjs";
 import { getUniversalSubcategories } from "./taxonomyEnrich.mjs";
@@ -128,7 +129,7 @@ export async function reclassifyReviewsMatching(app: AppRow, filters: ReviewQuer
         .from("reviews")
         .update({
           ai_tags: tags,
-          ai_tag_keys: tags.map((t) => t.key),
+          ai_tag_keys: aiTagKeysFromTags(tags),
           ai_classified_at: new Date().toISOString(),
         })
         .eq("id", r.id);
