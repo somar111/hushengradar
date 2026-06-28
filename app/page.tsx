@@ -6,7 +6,16 @@ export default function Home() {
       {/* Nav */}
       <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-10 flex items-center justify-between px-6 py-2.5 rounded-full bg-[rgb(227,227,226)]/60 backdrop-blur-md border border-gray-300/50 shadow-sm w-[90%] max-w-3xl">
         <span className="text-3xl tracking-tight" style={{ fontFamily: "'smiley-sans', sans-serif" }}>呼声雷达</span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <a
+            href="https://github.com/somar111/hushengradar"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="GitHub 仓库"
+            className="p-2 rounded-full hover:bg-gray-900/10 transition-colors"
+          >
+            <img src="/github-svgrepo-com.svg" alt="" className="w-6 h-6" />
+          </a>
           <a href="/demo" className="text-base font-medium text-white bg-gray-900 hover:bg-gray-700 px-6 py-2.5 rounded-full transition-colors">查看 Demo ↗</a>
         </div>
       </nav>
