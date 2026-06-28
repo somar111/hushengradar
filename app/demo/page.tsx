@@ -97,6 +97,9 @@ const ASK_DRAFT_STORAGE_PREFIX = "hushengradar.askDraft.v1";
 const ASK_CHAT_STORAGE_PREFIX = "hushengradar.askChat.v1";
 const TRANSLATE_SETTINGS_KEY = "hushengradar.translateSettings.v1";
 const ASK_SETTINGS_KEY = "hushengradar.askSettings.v1";
+const TAG_CLICK_TARGET_KEY = "hushengradar.tagClickTarget.v1";
+
+type TagClickTarget = "reply" | "ask";
 
 function askContextStorageKey(prefix: string, appId: string, timeRange: TimeRange, locale: string) {
   return `${prefix}:${appId || "no-app"}:${timeRange}:${locale || "all"}`;
@@ -139,6 +142,31 @@ function saveJsonSetting(key: string, value: unknown) {
   }
 }
 
+function loadTagClickTarget(): TagClickTarget {
+  if (typeof window === "undefined") return "reply";
+  try {
+    const raw = window.localStorage.getItem(TAG_CLICK_TARGET_KEY);
+    if (raw === "ask" || raw === "reply") return raw;
+  } catch {
+    // ignore
+  }
+  return "reply";
+}
+
+function saveTagClickTarget(value: TagClickTarget) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(TAG_CLICK_TARGET_KEY, value);
+  } catch {
+    // ignore
+  }
+}
+
+function buildTagAskPrefill(tagLabel: string, subTagLabel?: string) {
+  if (subTagLabel) return `关于「${tagLabel} / ${subTagLabel}」这类评论：\n`;
+  return `关于「${tagLabel}」这类评论：\n`;
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
@@ -163,13 +191,23 @@ function ShortcutRow({ keys, desc }: { keys: string[]; desc: string }) {
 }
 
 const GLASS_TOOLTIP_CLASS =
-  "pointer-events-none z-[100] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl";
+  "pointer-events-none z-[200] rounded-xl border border-white/18 bg-white/[0.14] px-3 py-2 text-[13px] text-white/88 leading-snug shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl";
 
 const LOCKED_FEATURE_HINT = "暂时不可自定义哦，敬请期待";
 const LOCKED_UNAVAILABLE_HINT = "暂时不可用，敬请期待";
 const LOCKED_SURFACE_CURSOR = "cursor-not-allowed";
 
 type GlassTooltipPlacement = "bottom-end" | "bottom-start" | "bottom-center" | "top-center" | "right";
+
+function resolveTooltipPlacement(placement: GlassTooltipPlacement, rect: DOMRect): GlassTooltipPlacement {
+  const gap = 8;
+  const margin = 8;
+  const estHeight = 44;
+  if (placement === "top-center" && rect.top - gap - estHeight < margin) return "bottom-center";
+  if (placement === "bottom-center" && rect.bottom + gap + estHeight > window.innerHeight - margin) return "top-center";
+  if (placement === "bottom-end" && rect.bottom + gap + estHeight > window.innerHeight - margin) return "top-center";
+  return placement;
+}
 
 function glassTooltipStyle(placement: GlassTooltipPlacement, rect: DOMRect): React.CSSProperties {
   const gap = 8;
@@ -206,7 +244,10 @@ function GlassHoverTooltip({
 
   const reveal = () => {
     const rect = wrapRef.current?.getBoundingClientRect();
-    if (rect) setTooltipStyle(glassTooltipStyle(placement, rect));
+    if (rect) {
+      const resolved = resolveTooltipPlacement(placement, rect);
+      setTooltipStyle(glassTooltipStyle(resolved, rect));
+    }
     setShow(true);
   };
 
@@ -446,7 +487,7 @@ function AskThinkingToggle({ enabled, onChange }: { enabled: boolean; onChange: 
 function AskEmojiToggle({ enabled, onChange, compact = false }: { enabled: boolean; onChange: (v: boolean) => void; compact?: boolean }) {
   return (
     <GlassHoverTooltip
-      message="设置AI回复里是否含emoji"
+      message="设置AI回复里能否包含Emoji"
       placement="top-center"
       wrapClassName="inline-flex flex-none"
       className="whitespace-nowrap">
@@ -479,6 +520,32 @@ function AskEmojiToggle({ enabled, onChange, compact = false }: { enabled: boole
           {enabled ? "开" : "关"}
         </span>
       </button>
+    </GlassHoverTooltip>
+  );
+}
+
+function TagClickTargetToggle({
+  value,
+  onChange,
+}: {
+  value: TagClickTarget;
+  onChange: (v: TagClickTarget) => void;
+}) {
+  return (
+    <GlassHoverTooltip
+      message="选择点击分类/子分类后的去向"
+      placement="bottom-end"
+      wrapClassName="inline-flex flex-none"
+      className="whitespace-nowrap">
+      <SegmentedControl<TagClickTarget>
+        value={value}
+        onChange={onChange}
+        itemClassName="px-2.5 py-1.5 text-[13px]"
+        options={[
+          { value: "reply", label: "看评论", icon: <Reply size={13} /> },
+          { value: "ask", label: "问 AI", icon: <Bot size={13} /> },
+        ]}
+      />
     </GlassHoverTooltip>
   );
 }
@@ -1038,6 +1105,7 @@ function DemoPageInner() {
   const [askSettings, setAskSettings] = useState<AskSettings>(() =>
     loadJsonSetting(ASK_SETTINGS_KEY, DEFAULT_ASK_SETTINGS)
   );
+  const [tagClickTarget, setTagClickTarget] = useState<TagClickTarget>(() => loadTagClickTarget());
   const [terminologyDraft, setTerminologyDraft] = useState<TerminologyEntry[]>([]);
   const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("filter");
   const [canReclassify, setCanReclassify] = useState(false);
@@ -1105,6 +1173,7 @@ function DemoPageInner() {
   const skipNextChatPersistRef = useRef(false);
   const pendingChatScrollRef = useRef<"top" | "bottom" | null>(null);
   const composingRef = useRef(false);
+  const pendingAskInputFocusRef = useRef(false);
   const replyDetailRef = useRef<HTMLDivElement>(null);
   const reviewsReqIdRef = useRef(0);
   const statsReqIdRef = useRef(0);
@@ -1467,6 +1536,10 @@ function DemoPageInner() {
     saveJsonSetting(ASK_SETTINGS_KEY, askSettings);
   }, [askSettings]);
 
+  useEffect(() => {
+    saveTagClickTarget(tagClickTarget);
+  }, [tagClickTarget]);
+
   function calcChatInputHeight(el: HTMLTextAreaElement) {
     const max = Math.min(Math.floor(window.innerHeight * 0.45), 420);
     el.style.height = "auto";
@@ -1486,6 +1559,19 @@ function DemoPageInner() {
     if (!el) return;
     autoGrowInput(el);
   }, [activePanel]);
+
+  useEffect(() => {
+    if (activePanel !== "ask" || !pendingAskInputFocusRef.current) return;
+    pendingAskInputFocusRef.current = false;
+    requestAnimationFrame(() => {
+      const el = chatInputRef.current;
+      if (!el) return;
+      el.focus();
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+      autoGrowInput(el);
+    });
+  }, [activePanel, chatInput]);
 
   function setMessageAnswer(messageId: string, text: string) {
     setChatMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, a: text } : m)));
@@ -1568,6 +1654,8 @@ function DemoPageInner() {
           history,
           useEmoji: askSettings.useEmoji,
           useThinking: askSettings.useThinking,
+          tag: tagFilter || undefined,
+          subTag: tagFilter && subTagFilter ? subTagFilter : undefined,
         }),
       });
       if (!res.ok || !res.body) {
@@ -1744,6 +1832,17 @@ function DemoPageInner() {
   // tag / subTag / panel 三个 URL 参数必须在同一次 push 里改完——之前分三次调 setter，
   // 互相覆盖，结果只有最后一个生效，标签压根没设上，所以点了没反应（这就是"点击进不去"的根因）。
   function jumpToTag(tag: string, subTag?: string) {
+    const tagStats = stats?.tagCounts[tag];
+    const tagLabel = tagStats?.label ?? tag;
+    const subTagLabel =
+      subTag && tagStats?.subTags[subTag] ? tagStats.subTags[subTag].label : undefined;
+
+    if (tagClickTarget === "ask") {
+      setParams({ tag, subTag: subTag ?? "", panel: "ask" });
+      setChatInput(buildTagAskPrefill(tagLabel, subTagLabel));
+      pendingAskInputFocusRef.current = true;
+      return;
+    }
     setParams({ tag, subTag: subTag ?? "", panel: "reply" });
   }
 
@@ -1771,9 +1870,12 @@ function DemoPageInner() {
 
       {activePanel === "complaints" && stats && (
         <div>
-          <p className="text-white/75 text-[14px] mb-4">
-            {locale ? localeLabel(locale) : "全部语言/地区批次"}：{timeRangeLabel}（{fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)}）共 {stats.total.toLocaleString()} 条公开评论：
-          </p>
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <p className="text-white/75 text-[14px] min-w-0 flex-1">
+              {locale ? localeLabel(locale) : "全部语言/地区批次"}：{timeRangeLabel}（{fmtDate(stats.dateRange.from)} ~ {fmtDate(stats.dateRange.to)}）共 {stats.total.toLocaleString()} 条公开评论：
+            </p>
+            <TagClickTargetToggle value={tagClickTarget} onChange={setTagClickTarget} />
+          </div>
           <div className="flex flex-col gap-3">
             {Object.entries(stats.tagCounts)
               .sort((a, b) => b[1].count - a[1].count)
@@ -1823,7 +1925,11 @@ function DemoPageInner() {
         }));
 
         return (
-          <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1fr] gap-5 items-start">
+          <div>
+            <div className="flex justify-end mb-3">
+              <TagClickTargetToggle value={tagClickTarget} onChange={setTagClickTarget} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1fr] gap-5 items-start">
             <div className="flex flex-col gap-3">
               <div className="bg-[#242c3d] rounded-3xl p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -1929,7 +2035,7 @@ function DemoPageInner() {
               <div className="bg-[#242c3d] rounded-3xl p-6">
                 <p className="text-white/95 text-[18px] font-bold mb-4">诉求占比</p>
                 <p className="text-white/75 text-[14px] mb-4">
-                  真实数据画像：按 AI 分类命中量统计{timeRangeLabel}整体构成，点击任意一块跳转查看该类全部真实评论：
+                  按 AI 分类命中量统计{timeRangeLabel}整体构成。
                 </p>
                 <div className="flex items-center gap-6 flex-wrap">
                   <PieBreakdown
@@ -1982,6 +2088,7 @@ function DemoPageInner() {
               </GlassHoverTooltip>
             </div>
 
+          </div>
           </div>
         );
       })()}

@@ -11,6 +11,9 @@ export type AskContext = {
   latestReviewDate: string | null;
   defaultSince?: string;
   defaultLocale?: string;
+  /** 从 Top 反馈等入口跳转问 AI 时，工具默认带的分类筛选 */
+  defaultTag?: string;
+  defaultSubTag?: string;
   timeRangeLabel: string;
   seedCategories?: { key: string; label: string; subcategories?: { key: string; label: string }[] }[] | null;
   universalSubcategories?: Record<string, { key: string; label: string }[]> | null;
@@ -40,10 +43,15 @@ function resolveFilters(
   };
 }
 
-function parseReviewFilters(args: Record<string, unknown>): ReviewFilterArgs {
+function parseReviewFilters(
+  args: Record<string, unknown>,
+  defaults?: Pick<ReviewFilterArgs, "tag" | "subTag">
+): ReviewFilterArgs {
+  const hasTagArg = typeof args.tag === "string";
+  const hasSubTagArg = typeof args.subTag === "string";
   return {
-    tag: typeof args.tag === "string" ? args.tag : undefined,
-    subTag: typeof args.subTag === "string" ? args.subTag : undefined,
+    tag: hasTagArg ? (args.tag as string) : defaults?.tag,
+    subTag: hasSubTagArg ? (args.subTag as string) : hasTagArg ? undefined : defaults?.subTag,
     rating: typeof args.rating === "number" ? args.rating : undefined,
     q: typeof args.q === "string" && args.q.trim() ? args.q.trim() : undefined,
   };
@@ -194,7 +202,10 @@ export async function executeAskTool(
   ctx: AskContext
 ): Promise<string> {
   const { since, until, locale } = resolveFilters(args, ctx);
-  const reviewFilters = parseReviewFilters(args);
+  const reviewFilters = parseReviewFilters(args, {
+    tag: ctx.defaultTag,
+    subTag: ctx.defaultSubTag,
+  });
 
   if (name === "get_stats") {
     const stats = await computeStats(ctx.appId, locale, since, until, {

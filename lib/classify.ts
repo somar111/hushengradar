@@ -230,6 +230,8 @@ function buildAskUserMessage(opts: {
   timeRangeLabel: string;
   defaultSince?: string;
   defaultLocale?: string;
+  defaultTag?: string;
+  defaultSubTag?: string;
   prefetchBlock?: string;
 }) {
   const lines = [
@@ -239,6 +241,11 @@ function buildAskUserMessage(opts: {
     `界面当前默认：${opts.timeRangeLabel}${
       opts.defaultSince ? `（since=${opts.defaultSince.slice(0, 10)}）` : ""
     }${opts.defaultLocale ? `，地区=${localeLabel(opts.defaultLocale)}（${opts.defaultLocale}）` : "，全部地区"}`,
+    opts.defaultTag
+      ? `界面已选分类：tag=${opts.defaultTag}${
+          opts.defaultSubTag ? `，subTag=${opts.defaultSubTag}` : ""
+        }。调用 count_reviews / summarize_reviews / query_reviews 时默认带上该筛选，除非用户明确扩大或更换范围。`
+      : null,
     "若问题指定了更细的时间或地区，优先按问题查；未指定时工具可不传 since/locale，将使用上述默认值。",
     "若问题涉及某标签/子标签的评论条数或「在抱怨/说什么」，须用 count_reviews 的 total 作答，并写明上述时间/地区范围。",
     "回答前自检：你准备写的每一句，能否在工具结果里找到对应数字或原文？找不到就删掉或改成「数据不足」。",
@@ -249,6 +256,11 @@ function buildAskUserMessage(opts: {
     `开发者的问题：${opts.question}`,
   ].filter((l) => l !== null && l !== "");
   return lines.join("\n");
+}
+
+/** 只合并行内连续空格/制表符，保留 Markdown 换行与段落结构 */
+function collapseHorizontalSpaces(text: string): string {
+  return text.replace(/[ \t]{2,}/g, " ");
 }
 
 function sanitizeUnsourcedContactInfo(answer: string, corpus: string): string {
@@ -270,8 +282,8 @@ function sanitizeUnsourcedContactInfo(answer: string, corpus: string): string {
     .replace(/\s*(或|和|or|atau|dan)\s+(访问|kelola|manage|visit)\b[^.。\n]*/gi, "")
     .replace(/(silakan\s+)?(hubungi|contact)\s+(tim\s+)?(dukungan\s+)?(kami\s+)?(di\s+)?/gi, "")
     .replace(/(建议引导用户)?(联系|通过)\s*(或|和)?\s*/g, "")
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s+([,.，。；;!?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+([,.，。；;!?])/g, "$1")
     .trim();
 
   const lines = out.split("\n").filter((line) => {
@@ -284,7 +296,7 @@ function sanitizeUnsourcedContactInfo(answer: string, corpus: string): string {
   });
 
   const cleaned = lines.join("\n").trim();
-  return cleaned || answer.replace(contactRe, "").replace(/\s{2,}/g, " ").trim();
+  return cleaned || answer.replace(contactRe, "").replace(/[ \t]{2,}/g, " ").trim();
 }
 
 function extractAskCountFacts(messages: ChatMessage[], prefetchBlock?: string): {
@@ -364,7 +376,7 @@ function sanitizeAskCounts(
     out = out.replace(/全部均参与主题归纳/g, `${evidenceUsed} 条参与主题归纳（共 ${total} 条）`);
   }
 
-  return out.replace(/\s{2,}/g, " ").trim();
+  return collapseHorizontalSpaces(out).trim();
 }
 
 /** 把误写入回答的 lang_country 批次代码替换为展示用 label */
@@ -463,6 +475,8 @@ export async function* answerQuestionStream(opts: {
   latestReviewDate: string | null;
   defaultSince?: string;
   defaultLocale?: string;
+  defaultTag?: string;
+  defaultSubTag?: string;
   history?: { q: string; a: string }[];
   useEmoji?: boolean;
   useThinking?: boolean;
@@ -479,6 +493,8 @@ export async function* answerQuestionStream(opts: {
     latestReviewDate: opts.latestReviewDate,
     defaultSince: opts.defaultSince,
     defaultLocale: opts.defaultLocale,
+    defaultTag: opts.defaultTag,
+    defaultSubTag: opts.defaultSubTag,
     timeRangeLabel: opts.timeRangeLabel,
     seedCategories: opts.seedCategories,
     universalSubcategories: opts.universalSubcategories,
