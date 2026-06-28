@@ -1181,6 +1181,7 @@ function DemoPageInner() {
   const pendingAskInputFocusRef = useRef(false);
   const pendingAskEntryScopeRef = useRef<AskThreadScope | null>(null);
   const replyDetailRef = useRef<HTMLDivElement>(null);
+  const replyListScrollRef = useRef<HTMLDivElement>(null);
   const reviewsReqIdRef = useRef(0);
   const statsReqIdRef = useRef(0);
 
@@ -1252,7 +1253,7 @@ function DemoPageInner() {
   }, [tagFilter, loading, reclassifyLoading, total]);
 
   // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目（输入框聚焦时仍生效）；问 AI 下 ⌘⇧O / Ctrl+Shift+O 清空对话；
-  // 评论查看&回复下 ⌥T / Alt+T 开关翻译（输入框聚焦时不拦截，避免与输入冲突）。逻辑同时认 metaKey/ctrlKey 与 altKey；
+  // 评论查看&回复下 ⌥T / Alt+T 开关翻译；⌘/Ctrl+↑↓ 跳到评论列表顶/底（无需先点列表内空白）。
   // ⌘⇧O 在问 AI 输入框内仍生效，并 preventDefault 避免浏览器打开书签管理器。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1268,6 +1269,22 @@ function DemoPageInner() {
           e.stopPropagation();
           setShowClearChatConfirm(true);
         }
+        return;
+      }
+
+      if (
+        activePanel === "reply" &&
+        (e.metaKey || e.ctrlKey) &&
+        (e.key === "ArrowUp" || e.key === "ArrowDown")
+      ) {
+        const scroller = replyListScrollRef.current;
+        if (!scroller) return;
+        e.preventDefault();
+        e.stopPropagation();
+        scroller.scrollTo({
+          top: e.key === "ArrowUp" ? 0 : scroller.scrollHeight,
+          behavior: "auto",
+        });
         return;
       }
 
@@ -1290,8 +1307,8 @@ function DemoPageInner() {
         setTranslateSettings((s) => ({ ...s, enabled: !s.enabled }));
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [activePanel, setActivePanel]);
 
   // 拉 App 列表，默认选 Demo 指定 App（HOK），找不到则退回列表第一项
@@ -2463,6 +2480,8 @@ function DemoPageInner() {
   );
 
   // ── 中间区域：回复模式 ──
+  const replyPageCount = total > PAGE_SIZE ? Math.ceil(total / PAGE_SIZE) : 0;
+
   const ReplyResult = (
     <div className="flex-1 flex flex-col overflow-hidden relative">
       {tagFilter && stats?.tagCounts[tagFilter] && (
@@ -2478,7 +2497,7 @@ function DemoPageInner() {
           </div>
         </div>
       )}
-      <div className={`flex-1 overflow-y-auto px-4 ${selectedReview ? "pb-56" : "pb-4"}`}>
+      <div ref={replyListScrollRef} className={`flex-1 overflow-y-auto px-4 ${selectedReview ? "pb-56" : "pb-4"}`}>
         <div className="sticky top-0 z-10 -mx-1 px-1 pt-3 pb-3 bg-gradient-to-b from-[#141a27] from-55% to-transparent">
           <div className="flex flex-wrap items-center gap-2.5 w-full">
             <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
@@ -2547,7 +2566,7 @@ function DemoPageInner() {
         <p className="px-1 pb-2.5 text-[13px] text-white/45 leading-snug">
           {loading && replyStatusCounts === null
             ? "正在统计评论…"
-            : `共 ${total.toLocaleString()} 条评论`}
+            : `共 ${total.toLocaleString()} 条评论${replyPageCount > 1 ? ` · 第 ${page}/${replyPageCount} 页` : ""}`}
           {reclassifyFeedback && (
             <span className={reclassifyFeedback.includes("失败") || reclassifyFeedback.includes("超过") ? " text-red-400/90" : " text-[#8fb0ff]/90"}>
               {" · "}{reclassifyFeedback}
@@ -2595,11 +2614,11 @@ function DemoPageInner() {
             })}
           </div>
         )}
-        {!loading && total > PAGE_SIZE && (
+        {!loading && replyPageCount > 1 && (
           <div className="flex items-center justify-center gap-3 mt-4 text-[13px] text-white/68">
             <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">上一页</button>
-            <span>第 {page} / {Math.ceil(total / PAGE_SIZE)} 页 · 共 {total} 条</span>
-            <button disabled={page >= Math.ceil(total / PAGE_SIZE)} onClick={() => setPage(page + 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">下一页</button>
+            <span>第 {page} / {replyPageCount} 页</span>
+            <button disabled={page >= replyPageCount} onClick={() => setPage(page + 1)} className="px-3 py-1 rounded-lg bg-white/8 disabled:opacity-30">下一页</button>
           </div>
         )}
       </div>
