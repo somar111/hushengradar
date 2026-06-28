@@ -1233,9 +1233,8 @@ function DemoPageInner() {
     return "";
   }, [tagFilter, loading, reclassifyLoading, total]);
 
-  // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目；问 AI 下 ⌘⇧O / Ctrl+Shift+O 清空对话；
-  // 评论查看&回复下 ⌥T / Alt+T 开关翻译。逻辑同时认 metaKey/ctrlKey 与 altKey，Mac 与 Windows 都生效；
-  // 面板用中性写法同时标注两套修饰键，不依赖平台检测。Alt 系列在输入框聚焦时不拦截；
+  // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目（输入框聚焦时仍生效）；问 AI 下 ⌘⇧O / Ctrl+Shift+O 清空对话；
+  // 评论查看&回复下 ⌥T / Alt+T 开关翻译（输入框聚焦时不拦截，避免与输入冲突）。逻辑同时认 metaKey/ctrlKey 与 altKey；
   // ⌘⇧O 在问 AI 输入框内仍生效，并 preventDefault 避免浏览器打开书签管理器。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1255,7 +1254,6 @@ function DemoPageInner() {
       }
 
       if (!e.altKey || e.metaKey || e.ctrlKey) return;
-      if (isEditableTarget(e.target)) return;
 
       const digit = e.code.match(/^Digit([1-4])$/)?.[1];
       if (digit) {
@@ -1266,6 +1264,8 @@ function DemoPageInner() {
         }
         return;
       }
+
+      if (isEditableTarget(e.target)) return;
 
       if (e.code === "KeyT" && activePanel === "reply") {
         e.preventDefault();
@@ -2744,7 +2744,7 @@ function DemoPageInner() {
                   <ShortcutRow keys={["⌥/Alt", "T"]} desc="开关翻译（评论查看&回复）" />
                 </div>
                 <p className="text-white/40 text-[12px] mt-2 px-1 leading-relaxed">
-                  Alt 系列在输入框内打字时不触发；问 AI 输入框内仍可用 ⌘⇧O / Ctrl+Shift+O 清空对话。
+                  ⌥T / Alt+T 在输入框内打字时不触发。
                 </p>
               </section>
             </div>
