@@ -1,6 +1,7 @@
 import { buildCategoryCatalog } from "./promptKit.mjs";
-import { countReviewsMatching } from "./reviews";
+import { buildAnalysisMetrics, computeStats, countReviewsMatching } from "./reviews";
 import type { AskContext } from "./askTools";
+import { localeLabel } from "./localeLabels";
 
 export type SeedCategory = {
   key: string;
@@ -31,6 +32,10 @@ const CATCH_ALL_RE = /其他|其它|\bgeneral\b/i;
 const EXISTENCE_QUESTION_RE =
   /(?:有没有|是否存在|是否|有.{0,16}评论|评论.{0,12}(提到|要求|想要|希望|要))|(?:吗[？?]\s*$)/i;
 
+/** 星级/占比/均分/回复率等聚合统计问法 */
+const STATS_SCOPE_QUESTION_RE =
+  /(?:百分比|百分之|占比|比例|几星|星级|评分分布|均分|平均分|打\s*[1-5]\s*[星⭐]|star|distribution|avg\s*rating|reply\s*rate|回复率)/i;
+
 function normalizeForMatch(s: string): string {
   return s.replace(/\s+/g, "").toLowerCase();
 }
@@ -52,6 +57,53 @@ export function shouldPrefetchTagScope(
   if (isTagCountQuestion(q) || TAG_SCOPE_QUESTION_RE.test(q)) return true;
   // 「功能请求 的其他」等：能解析出 tag 范围即预查条数
   return resolveTagRefsFromQuestion(question, catalog) !== null;
+}
+
+/** 星级/占比/均分/回复率等：预查 get_stats 同口径聚合 */
+export function shouldPrefetchStatsScope(question: string): boolean {
+  const q = question.trim();
+  return Boolean(q && STATS_SCOPE_QUESTION_RE.test(q));
+}
+
+/** 在 LLM 调工具前预查 review_stats_bundle 聚合（与 Demo 侧栏 totalReviews 同口径）。 */
+export async function prefetchAskStatsScope(
+  ctx: AskContext,
+  question: string
+): Promise<{ block: string; totalReviews: number; ratedReviewTotal: number } | null> {
+  if (!shouldPrefetchStatsScope(question)) return null;
+
+  const stats = await computeStats(ctx.appId, ctx.defaultLocale, ctx.defaultSince, undefined, {
+    attachDisplaySummaries: false,
+  });
+  const metrics = buildAnalysisMetrics(stats);
+
+  const scopeParts = [ctx.timeRangeLabel];
+  if (ctx.defaultLocale) scopeParts.push(`地区=${localeLabel(ctx.defaultLocale)}（${ctx.defaultLocale}）`);
+
+  const starLines = ([5, 4, 3, 2, 1] as const).map((star) => {
+    const count = stats.ratingDist[star] ?? 0;
+    return `${star}星：${count} 条，占全部评论 ${metrics.ratingDistributionPct[star]}%（ratingDistributionPct[${star}]）`;
+  });
+
+  const block = [
+    "【系统预查·聚合统计（权威，不可改写数字）】",
+    `已执行 get_stats 同口径：范围 ${scopeParts.join("，")}${ctx.defaultSince ? `（since=${ctx.defaultSince.slice(0, 10)}）` : ""}`,
+    stats.dateRange.from && stats.dateRange.to
+      ? `日期：${stats.dateRange.from.slice(0, 10)} ~ ${stats.dateRange.to.slice(0, 10)}`
+      : null,
+    `totalReviews=${metrics.totalReviews}（与 Demo 侧栏「全部 (N)」/ 评论列表同口径，问「共多少条」只用此数）`,
+    metrics.ratedReviewTotal !== metrics.totalReviews
+      ? `ratedReviewTotal=${metrics.ratedReviewTotal}（仅 1~5 星；unratedReviewCount=${metrics.unratedReviewCount}）。禁止把 ratedReviewTotal 当作评论总条数。`
+      : `ratedReviewTotal=${metrics.ratedReviewTotal}（全部评论均有 1~5 星）`,
+    `overallAvgRating=${metrics.overallAvgRating ?? "null"}（分母 totalReviews）`,
+    "星级占比（默认口径，用户未特指「有星级的评论里」时使用）：",
+    ...starLines,
+    "作答涉及「多少条评论/占比/百分比/均分」时直接引用上文数字；星级占比用 ratingDistributionPct，不要用 ratingDistribution 各星 count 相加当 total。",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return { block, totalReviews: metrics.totalReviews, ratedReviewTotal: metrics.ratedReviewTotal };
 }
 
 /** 从问题文本 + taxonomy 解析顶层 tag / 子 tag（「其他」→ general）。含 feature_request 等通用类。 */

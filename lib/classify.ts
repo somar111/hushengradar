@@ -1,5 +1,5 @@
 import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt } from "./promptKit.mjs";
-import { prefetchAskExistenceHint, prefetchAskTagScope } from "./askCountPrefetch";
+import { prefetchAskExistenceHint, prefetchAskStatsScope, prefetchAskTagScope } from "./askCountPrefetch";
 import { ASK_TOOLS, executeAskTool, type AskContext } from "./askTools";
 import { localeLabel, localeLabelOverrides } from "./localeLabels";
 import type { TerminologyEntry } from "./supabase";
@@ -289,20 +289,41 @@ function sanitizeUnsourcedContactInfo(answer: string, corpus: string): string {
 
 function extractAskCountFacts(messages: ChatMessage[], prefetchBlock?: string): {
   total: number;
+  ratedReviewTotal?: number;
   evidenceUsed?: number;
   scopeLabel?: string;
 } | null {
+  let facts: {
+    total: number;
+    ratedReviewTotal?: number;
+    evidenceUsed?: number;
+    scopeLabel?: string;
+  } | null = null;
+
   if (prefetchBlock) {
-    const m = prefetchBlock.match(/total=(\d+)/);
-    if (m) {
-      return { total: Number(m[1]) };
+    const totalReviews = prefetchBlock.match(/totalReviews=(\d+)/);
+    const rated = prefetchBlock.match(/ratedReviewTotal=(\d+)/);
+    const legacyTotal = prefetchBlock.match(/total=(\d+)/);
+    const total = totalReviews ? Number(totalReviews[1]) : legacyTotal ? Number(legacyTotal[1]) : null;
+    if (total !== null) {
+      facts = {
+        total,
+        ratedReviewTotal: rated ? Number(rated[1]) : undefined,
+      };
     }
   }
-  let facts: { total: number; evidenceUsed?: number; scopeLabel?: string } | null = null;
+
   for (const msg of messages) {
     if (msg.role !== "tool") continue;
     try {
       const j = JSON.parse(msg.content) as Record<string, unknown>;
+      if (typeof j.totalReviews === "number") {
+        facts = {
+          total: j.totalReviews,
+          ratedReviewTotal: typeof j.ratedReviewTotal === "number" ? j.ratedReviewTotal : facts?.ratedReviewTotal,
+        };
+        continue;
+      }
       if (typeof j.total !== "number") continue;
       if (Array.isArray(j.themes)) {
         facts = {
@@ -320,17 +341,18 @@ function extractAskCountFacts(messages: ChatMessage[], prefetchBlock?: string): 
   return facts;
 }
 
-/** 把模型误写的 evidenceUsed 等数字纠正为工具返回的 total */
+/** 把模型误写的 evidenceUsed / ratedReviewTotal 等数字纠正为工具返回的 totalReviews */
 function sanitizeAskCounts(
   answer: string,
-  facts: { total: number; evidenceUsed?: number; scopeLabel?: string } | null
+  facts: { total: number; ratedReviewTotal?: number; evidenceUsed?: number; scopeLabel?: string } | null
 ): string {
   if (!facts) return answer;
-  const { total, evidenceUsed } = facts;
+  const { total, ratedReviewTotal, evidenceUsed } = facts;
   let out = answer;
 
   const wrongCounts = new Set<number>();
   if (typeof evidenceUsed === "number" && evidenceUsed !== total) wrongCounts.add(evidenceUsed);
+  if (typeof ratedReviewTotal === "number" && ratedReviewTotal !== total) wrongCounts.add(ratedReviewTotal);
 
   for (const wrong of wrongCounts) {
     out = out.replace(new RegExp(`(共\\s*|，|：|:)\\s*${wrong}\\s*条`, "g"), `$1 ${total} 条`);
@@ -463,8 +485,10 @@ export async function* answerQuestionStream(opts: {
   };
 
   const tagPrefetch = await prefetchAskTagScope(ctx, opts.question);
+  const statsPrefetch = tagPrefetch ? null : await prefetchAskStatsScope(ctx, opts.question);
   const existencePrefetch = prefetchAskExistenceHint(opts.question);
-  const prefetchBlock = [tagPrefetch?.block, existencePrefetch?.block].filter(Boolean).join("\n\n") || undefined;
+  const prefetchBlock =
+    [tagPrefetch?.block, statsPrefetch?.block, existencePrefetch?.block].filter(Boolean).join("\n\n") || undefined;
 
   const systemPrompt = buildAskPrompt({
     appContext: opts.appContext,

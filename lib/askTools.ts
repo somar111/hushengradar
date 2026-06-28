@@ -93,7 +93,7 @@ export const ASK_TOOLS = [
     function: {
       name: "get_stats",
       description:
-        "获取指定时间/地区范围内的聚合统计：评论总数、日期范围、星级分布、均分、标签分布（含子问题）、版本评分、官方回复率等。tagBreakdown/subTagBreakdown 计数与 count_reviews 同口径。",
+        "获取指定时间/地区范围内的聚合统计：totalReviews（侧栏同口径总条数）、ratedReviewTotal（1~5星之和）、ratingDistributionPct（星级占比，分母 totalReviews）、均分、标签分布、版本评分、官方回复率等。问星级占比/均分/总条数时必须调用。",
       parameters: {
         type: "object",
         properties: {
@@ -206,7 +206,7 @@ export async function executeAskTool(
       filters: { since: since ?? null, until: until ?? null, locale: locale ?? null, localeLabel: localeLabel(locale) },
       dateRange: stats.dateRange,
       countDisclaimer:
-        "tagBreakdown[].count 与 subTagBreakdown[].count 均为评论条数（与 count_reviews / 列表筛选同口径）。问条数以 count_reviews.total 为准。",
+        "totalReviews 与 Demo 侧栏/评论列表同口径（含无星级评论）。ratedReviewTotal 仅为 1~5 星之和；问「共多少条」只用 totalReviews。星级占比默认用 ratingDistributionPct（分母 totalReviews）；仅当用户明确问「有星级的评论里」才用 ratingDistributionPctOfRated。tagBreakdown/subTagBreakdown 计数与 count_reviews 同口径。",
       ...metrics,
       tagSummaries: Object.fromEntries(
         Object.entries(stats.tagCounts).map(([key, t]) => [key, t.summary]).filter(([, s]) => s)

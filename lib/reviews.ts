@@ -475,18 +475,37 @@ export async function computeStats(
 /**
  * 把 computeStats 的结果整理成喂给AI（/api/demo/insights 和 /api/demo/ask 共用）的真实数字。
  * 单一来源，避免两条AI调用各自拼一份、改一处漏改另一处。
+ *
+ * 条数纪律：totalReviews = Demo 侧栏/列表同口径（含无星级评论）；ratedReviewTotal = 1~5 星之和。
+ * 星级占比默认用 totalReviews 作分母；仅当用户明确问「有星级的评论里」才用 ratedReviewTotal。
  */
 export function buildAnalysisMetrics(stats: ComputedStats) {
   const localeFloor = meaningfulLocaleFloor(stats.total);
+  const ratedReviewTotal = [1, 2, 3, 4, 5].reduce((sum, star) => sum + (stats.ratingDist[star] ?? 0), 0);
+  const unratedReviewCount = Math.max(0, stats.total - ratedReviewTotal);
   const overallAvgRating = stats.total
     ? Math.round(
         (Object.entries(stats.ratingDist).reduce((sum, [k, v]) => sum + Number(k) * v, 0) / stats.total) * 100
       ) / 100
     : null;
 
+  const ratingDistributionPct: Record<number, number> = {};
+  const ratingDistributionPctOfRated: Record<number, number> = {};
+  for (const star of [1, 2, 3, 4, 5] as const) {
+    const count = stats.ratingDist[star] ?? 0;
+    ratingDistributionPct[star] = stats.total ? Math.round((count / stats.total) * 1000) / 10 : 0;
+    ratingDistributionPctOfRated[star] = ratedReviewTotal
+      ? Math.round((count / ratedReviewTotal) * 1000) / 10
+      : 0;
+  }
+
   return {
     totalReviews: stats.total,
+    ratedReviewTotal,
+    unratedReviewCount,
     ratingDistribution: stats.ratingDist,
+    ratingDistributionPct,
+    ratingDistributionPctOfRated,
     overallAvgRating,
     versionStats: stats.versionStats.map((v) => ({
       version: v.version,
