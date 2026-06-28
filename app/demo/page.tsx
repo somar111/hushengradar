@@ -11,7 +11,7 @@ import {
   X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp, Trash2, Smile, Plus, RefreshCw, ListChecks, Mail,
 } from "lucide-react";
 import { type ReviewRow, type AppRow, type TerminologyEntry } from "@/lib/supabase";
-import { meaningfulLocaleFloor, sortSubTagRecordForDisplay } from "@/lib/analysisShared";
+import { meaningfulLocaleFloor, sortSubTagRecordForDisplay, buildAmbiguousSubLabelNorms, scopedSubTagDisplayLabel } from "@/lib/analysisShared";
 import { hasSubTagBreakdown } from "@/lib/promptKit.mjs";
 import { DEFAULT_DEMO_TIME_RANGE, resolveDefaultDemoApp } from "@/lib/demoDefaults";
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
@@ -1000,8 +1000,10 @@ function fmtDate(iso: string | null) {
 
 // Top 反馈 / 评论查看&回复头部共用 TagBreakdown。规则见 .cursor/rules/top-feedback-tagging.mdc：
 // praise、vague_complaint 无 breakdown；其余类有效子标签 ≥2 → chip，否则 → summarizeCluster 中文摘要（evidence 不作 UI 文案）。
-function TagBreakdown({ t, onJump, activeSubKey }: {
+function TagBreakdown({ t, parentLabel, ambiguousSubLabelNorms, onJump, activeSubKey }: {
   t: { count: number; summary: string | null; subTags: Record<string, { label: string; count: number }> };
+  parentLabel: string;
+  ambiguousSubLabelNorms: Set<string>;
   onJump?: (subKey?: string) => void;
   activeSubKey?: string;
 }) {
@@ -1016,7 +1018,8 @@ function TagBreakdown({ t, onJump, activeSubKey }: {
   return (
     <div className="flex flex-wrap gap-1.5">
       {subEntries.map(([key, s]) => {
-        const content = `${s.label}（${s.count}）`;
+        const label = scopedSubTagDisplayLabel(parentLabel, s.label, ambiguousSubLabelNorms);
+        const content = `${label}（${s.count}）`;
         const active = activeSubKey === key;
         return onJump ? (
           <button key={key} onClick={(e) => { e.stopPropagation(); onJump(key); }}
@@ -1182,6 +1185,7 @@ function DemoPageInner() {
   const pendingChatScrollRef = useRef<"top" | "bottom" | null>(null);
   const composingRef = useRef(false);
   const pendingAskInputFocusRef = useRef(false);
+  const pendingAskEntryScopeRef = useRef<AskThreadScope | null>(null);
   const replyDetailRef = useRef<HTMLDivElement>(null);
   const reviewsReqIdRef = useRef(0);
   const statsReqIdRef = useRef(0);
@@ -1230,6 +1234,11 @@ function DemoPageInner() {
     }
     return "";
   }, [tagFilter, loading, reclassifyLoading, total]);
+
+  const ambiguousSubLabelNorms = useMemo(
+    () => (stats ? buildAmbiguousSubLabelNorms(stats.tagCounts) : new Set<string>()),
+    [stats],
+  );
 
   // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目；问 AI 下 ⌘⇧O / Ctrl+Shift+O 清空对话；
   // 评论查看&回复下 ⌥T / Alt+T 开关翻译。逻辑同时认 metaKey/ctrlKey 与 altKey，Mac 与 Windows 都生效；
@@ -1527,6 +1536,7 @@ function DemoPageInner() {
     }
     setChatMessages(loaded);
     setAskThreadScope(loadedScope);
+    pendingAskEntryScopeRef.current = null;
     prevAskChatStorageKeyRef.current = askChatStorageKey;
     prevAskThreadScopeStorageKeyRef.current = askThreadScopeStorageKey;
     skipNextChatPersistRef.current = true;
@@ -1653,6 +1663,7 @@ function DemoPageInner() {
     }
     setChatMessages([]);
     setAskThreadScope(null);
+    pendingAskEntryScopeRef.current = null;
     chatUserDetachedRef.current = false;
     chatStickToBottomRef.current = true;
     if (chatViewportRef.current) chatViewportRef.current.scrollTop = 0;
@@ -1683,8 +1694,10 @@ function DemoPageInner() {
       q,
       selectedApp?.seed_categories ?? [],
       selectedAppUniversalSubs ?? {},
-      askThreadScopeRef.current
+      askThreadScopeRef.current,
+      pendingAskEntryScopeRef.current
     );
+    pendingAskEntryScopeRef.current = null;
     setAskThreadScope(scopeForTurn);
     chatStopRequestedRef.current = false;
     resetChatFollow();
@@ -1896,10 +1909,13 @@ function DemoPageInner() {
     const tagLabel = tagStats?.label ?? tag;
     const subTagLabel =
       subTag && tagStats?.subTags[subTag] ? tagStats.subTags[subTag].label : undefined;
+    const scopedSubTagLabel =
+      subTagLabel ? scopedSubTagDisplayLabel(tagLabel, subTagLabel, ambiguousSubLabelNorms) : undefined;
 
     if (tagClickTarget === "ask") {
       setParams({ panel: "ask" });
-      setChatInput(buildTagAskPrefill(tagLabel, subTagLabel, locale || undefined));
+      setChatInput(buildTagAskPrefill(tagLabel, scopedSubTagLabel, locale || undefined));
+      pendingAskEntryScopeRef.current = subTag ? { tag, subTag } : { tag };
       pendingAskInputFocusRef.current = true;
       return;
     }
@@ -1956,7 +1972,12 @@ function DemoPageInner() {
                         <span className="text-white/60 text-[14px] font-mono">#{i + 1}</span>
                         <span className="text-white/95 text-[17px] font-semibold">{t.label}（{t.count}）</span>
                       </div>
-                      <TagBreakdown t={t} onJump={(subKey) => jumpToTag(tag, subKey)} />
+                      <TagBreakdown
+                        t={t}
+                        parentLabel={t.label}
+                        ambiguousSubLabelNorms={ambiguousSubLabelNorms}
+                        onJump={(subKey) => jumpToTag(tag, subKey)}
+                      />
                     </div>
                   </div>
                 );
@@ -2309,8 +2330,13 @@ function DemoPageInner() {
           <DonutPercent percent={(stats.tagCounts[tagFilter].count / stats.total) * 100} size={48} />
           <div className="min-w-0">
             <p className="text-white/90 text-[15px] font-medium mb-1">{stats.tagCounts[tagFilter].label}（{stats.tagCounts[tagFilter].count}）</p>
-            <TagBreakdown t={stats.tagCounts[tagFilter]} activeSubKey={subTagFilter || undefined}
-              onJump={(subKey) => setSubTagFilter(subKey === subTagFilter ? undefined : subKey)} />
+            <TagBreakdown
+              t={stats.tagCounts[tagFilter]}
+              parentLabel={stats.tagCounts[tagFilter].label}
+              ambiguousSubLabelNorms={ambiguousSubLabelNorms}
+              activeSubKey={subTagFilter || undefined}
+              onJump={(subKey) => setSubTagFilter(subKey === subTagFilter ? undefined : subKey)}
+            />
           </div>
         </div>
       )}
@@ -2339,7 +2365,9 @@ function DemoPageInner() {
                 className={`${REPLY_FILTER_FIELD} px-3.5 py-2.5 text-white/90 min-w-[9rem]`}>
                 <option value="">全部子问题</option>
                 {sortSubTagRecordForDisplay(stats.tagCounts[tagFilter].subTags).map(([key, s]) => (
-                  <option key={key} value={key}>{s.label}（{s.count}）</option>
+                  <option key={key} value={key}>
+                    {scopedSubTagDisplayLabel(stats.tagCounts[tagFilter].label, s.label, ambiguousSubLabelNorms)}（{s.count}）
+                  </option>
                 ))}
               </select>
             )}

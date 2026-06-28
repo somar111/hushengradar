@@ -106,6 +106,51 @@ export async function prefetchAskStatsScope(
   return { block, totalReviews: metrics.totalReviews, ratedReviewTotal: metrics.ratedReviewTotal };
 }
 
+function labelOrKeyMatches(norm: string, label: string, key: string): boolean {
+  const labelNorm = normalizeForMatch(label);
+  const keyNorm = normalizeForMatch(key);
+  return norm === labelNorm || norm === keyNorm;
+}
+
+/** 预填/用户写的「父类 / 子类」格式——跨父类同名子标签时比子串扫描更可靠 */
+function resolveTagRefsFromSlashPattern(
+  question: string,
+  catalog: SeedCategory[]
+): { tag: string; tagLabel: string; subTag?: string; subLabel?: string } | null {
+  const m = question.match(/「([^」]+?)\s*\/\s*([^」]+)」/);
+  if (!m) return null;
+  const parentNorm = normalizeForMatch(m[1]);
+  const subNorm = normalizeForMatch(m[2]);
+
+  for (const cat of catalog) {
+    if (!labelOrKeyMatches(parentNorm, cat.label, cat.key)) continue;
+    for (const sub of cat.subcategories ?? []) {
+      if (labelOrKeyMatches(subNorm, sub.label, sub.key)) {
+        return { tag: cat.key, tagLabel: cat.label, subTag: sub.key, subLabel: sub.label };
+      }
+    }
+    return { tag: cat.key, tagLabel: cat.label };
+  }
+  return null;
+}
+
+/** 子标签名全局唯一命中时才采用（同名子标签跨父类并存时返回 null，避免误选父类） */
+function resolveTagRefsFromUniqueSubLabel(
+  qNorm: string,
+  catalog: SeedCategory[]
+): { tag: string; tagLabel: string; subTag?: string; subLabel?: string } | null {
+  let hit: { tag: string; tagLabel: string; subTag: string; subLabel: string } | null = null;
+  for (const cat of catalog) {
+    for (const sub of cat.subcategories ?? []) {
+      const subNorm = normalizeForMatch(sub.label);
+      if (subNorm.length < 2 || !qNorm.includes(subNorm)) continue;
+      if (hit) return null;
+      hit = { tag: cat.key, tagLabel: cat.label, subTag: sub.key, subLabel: sub.label };
+    }
+  }
+  return hit;
+}
+
 /** 从问题文本 + taxonomy 解析顶层 tag / 子 tag（「其他」→ general）。含 feature_request 等通用类。 */
 export function resolveTagRefsFromQuestion(
   question: string,
@@ -113,6 +158,9 @@ export function resolveTagRefsFromQuestion(
 ): { tag: string; tagLabel: string; subTag?: string; subLabel?: string } | null {
   if (!catalog?.length) return null;
   const qNorm = normalizeForMatch(question);
+
+  const slash = resolveTagRefsFromSlashPattern(question, catalog);
+  if (slash) return slash;
 
   let bestParent: SeedCategory | null = null;
   let bestParentLen = 0;
@@ -134,7 +182,9 @@ export function resolveTagRefsFromQuestion(
       }
     }
   }
-  if (!bestParent) return null;
+  if (!bestParent) {
+    return resolveTagRefsFromUniqueSubLabel(qNorm, catalog);
+  }
 
   let bestSub: { key: string; label: string } | null = null;
   let bestSubLen = 0;

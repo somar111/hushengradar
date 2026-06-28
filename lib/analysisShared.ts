@@ -1,6 +1,8 @@
 // 前端（客户端组件）和后端（API/服务端）都要用的纯函数，放这里——不依赖任何服务端代码
 // （比如 Supabase service client），所以客户端 import 不会把服务端逻辑/密钥打进前端包。
 
+import { labelsTooSimilar, normalizeComparableText } from "./promptKit.mjs";
+
 // 地区满意度对比的样本量下限——低于这个数的地区均分没有统计意义。不论是前端列表展示还是
 // 喂给AI下"地区差距"结论，都要用同一个门槛，否则会出现"AI说德国(8条)最差，但列表里根本
 // 没有德国"这种自相矛盾。相对+绝对自适应，跟具体App无关。
@@ -42,4 +44,43 @@ export function sortSubTagRecordForDisplay<T extends { count: number; label?: st
   subTags: Record<string, T>,
 ): [string, T][] {
   return sortSubTagsForDisplay(Object.entries(filterSubTagsForChipDisplay(subTags)));
+}
+
+/** 从聚合 tagCounts 找出跨父类同名/近义的 sub label（展示消歧用） */
+export function buildAmbiguousSubLabelNorms(
+  tagCounts: Record<string, { subTags: Record<string, { label: string }> }>,
+): Set<string> {
+  const entries: { norm: string; parentKey: string; label: string }[] = [];
+  for (const [parentKey, t] of Object.entries(tagCounts)) {
+    for (const s of Object.values(t.subTags)) {
+      entries.push({ norm: normalizeComparableText(s.label), parentKey, label: s.label });
+    }
+  }
+  const ambiguous = new Set<string>();
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      if (entries[i].parentKey === entries[j].parentKey) continue;
+      if (
+        entries[i].norm === entries[j].norm ||
+        labelsTooSimilar(entries[i].label, entries[j].label)
+      ) {
+        if (entries[i].norm) ambiguous.add(entries[i].norm);
+        if (entries[j].norm) ambiguous.add(entries[j].norm);
+      }
+    }
+  }
+  return ambiguous;
+}
+
+/** 跨父类同名 sub 的 chip/选项展示：加「（父类）」后缀 */
+export function scopedSubTagDisplayLabel(
+  parentLabel: string,
+  subLabel: string,
+  ambiguousNorms: Set<string>,
+): string {
+  const norm = normalizeComparableText(subLabel);
+  if (!ambiguousNorms.has(norm)) return subLabel;
+  const suffix = `（${parentLabel}）`;
+  if (subLabel.includes(suffix)) return subLabel;
+  return `${subLabel}${suffix}`;
 }
