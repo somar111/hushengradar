@@ -1182,6 +1182,8 @@ function DemoPageInner() {
   const pendingAskEntryScopeRef = useRef<AskThreadScope | null>(null);
   const replyDetailRef = useRef<HTMLDivElement>(null);
   const replyListScrollRef = useRef<HTMLDivElement>(null);
+  const leftPanelRef = useRef<HTMLDivElement>(null);
+  const interactionInLeftPanelRef = useRef(false);
   const reviewsReqIdRef = useRef(0);
   const statsReqIdRef = useRef(0);
 
@@ -1253,9 +1255,36 @@ function DemoPageInner() {
   }, [tagFilter, loading, reclassifyLoading, total]);
 
   // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目（输入框聚焦时仍生效）；问 AI 下 ⌘⇧O / Ctrl+Shift+O 清空对话；
-  // 评论查看&回复下 ⌥T / Alt+T 开关翻译；⌘/Ctrl+↑↓ 跳到评论列表顶/底（无需先点列表内空白）。
+  // 评论查看&回复下 ⌥T / Alt+T 开关翻译；⌘/Ctrl+↑↓ 跳到评论列表顶/底（最近点在左栏时改为滚左栏）。
   // ⌘⇧O 在问 AI 输入框内仍生效，并 preventDefault 避免浏览器打开书签管理器。
   useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      interactionInLeftPanelRef.current =
+        leftPanelRef.current?.contains(e.target as Node) ?? false;
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, []);
+
+  useEffect(() => {
+    const isLeftPanelInteraction = (e: KeyboardEvent) => {
+      const panel = leftPanelRef.current;
+      if (!panel) return false;
+      if (e.target instanceof Node && panel.contains(e.target)) return true;
+      const active = document.activeElement;
+      if (active instanceof Node && panel.contains(active)) return true;
+      return interactionInLeftPanelRef.current;
+    };
+
+    const findLeftPanelScroller = () => {
+      const panel = leftPanelRef.current;
+      if (!panel) return null;
+      for (const el of panel.querySelectorAll<HTMLElement>("[data-left-panel-scroll]")) {
+        if (el.clientHeight > 0 && el.scrollHeight > el.clientHeight) return el;
+      }
+      return null;
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
@@ -1273,18 +1302,34 @@ function DemoPageInner() {
       }
 
       if (
-        activePanel === "reply" &&
         (e.metaKey || e.ctrlKey) &&
         (e.key === "ArrowUp" || e.key === "ArrowDown")
       ) {
-        const scroller = replyListScrollRef.current;
-        if (!scroller) return;
-        e.preventDefault();
-        e.stopPropagation();
-        scroller.scrollTo({
-          top: e.key === "ArrowUp" ? 0 : scroller.scrollHeight,
-          behavior: "auto",
-        });
+        if (isLeftPanelInteraction(e)) {
+          if (leftOpen) {
+            const scroller = findLeftPanelScroller();
+            if (scroller) {
+              e.preventDefault();
+              e.stopPropagation();
+              scroller.scrollTo({
+                top: e.key === "ArrowUp" ? 0 : scroller.scrollHeight,
+                behavior: "auto",
+              });
+            }
+          }
+          return;
+        }
+
+        if (activePanel === "reply") {
+          const scroller = replyListScrollRef.current;
+          if (!scroller) return;
+          e.preventDefault();
+          e.stopPropagation();
+          scroller.scrollTo({
+            top: e.key === "ArrowUp" ? 0 : scroller.scrollHeight,
+            behavior: "auto",
+          });
+        }
         return;
       }
 
@@ -1309,7 +1354,7 @@ function DemoPageInner() {
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [activePanel, setActivePanel]);
+  }, [activePanel, setActivePanel, leftOpen]);
 
   // 拉 App 列表，默认选 Demo 指定 App（HOK），找不到则退回列表第一项
   useEffect(() => {
@@ -2696,7 +2741,7 @@ function DemoPageInner() {
   // 不做成悬浮卡片——左栏直接用自己的底色铺满整列，跟右栏之间不留缝、不加分割线，
   // 单靠色块深浅区分两栏，贴近一般 LLM 网页版的平铺式布局
   const LeftPanel = (
-    <div className={`flex-none flex flex-col overflow-hidden bg-[#1d2433] transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
+    <div ref={leftPanelRef} className={`flex-none flex flex-col overflow-hidden bg-[#1d2433] transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
       <div className="flex flex-col overflow-hidden flex-1 w-52 shrink-0">
         <div className="p-3 flex items-center flex-none gap-2">
           <button
@@ -2778,7 +2823,7 @@ function DemoPageInner() {
           )}
           {leftSidebarView === "filter" ? (
             platform === "googleplay" ? (
-              <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1 text-[14px]">
+              <div data-left-panel-scroll className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1 text-[14px]">
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-1.5 px-1 flex items-center gap-1.5">
                   语言/地区批次
                   <InfoTooltip text="此为 Google Play 官方分类方式，不代表评论的真实语言或所在地区" size={14} />
@@ -2800,7 +2845,7 @@ function DemoPageInner() {
               </div>
             )
           ) : (
-            <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col divide-y divide-white/10 text-[14px]">
+            <div data-left-panel-scroll className="flex-1 overflow-y-auto px-3 py-3 flex flex-col divide-y divide-white/10 text-[14px]">
               <p className="text-white/50 text-[12px] px-1 pb-4">
                 当前 App：{selectedApp?.display_name ?? "未选择"}
               </p>
