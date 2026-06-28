@@ -2028,7 +2028,7 @@ function DemoPageInner() {
               })}
           </div>
           <p className="text-white/35 text-[12px] mt-4 leading-relaxed">
-            一条评论可能命中多个 Tag，评论计数可能小于命中 Tag 总数之和。
+            一条评论可能同时命中多个分类或子分类，因此各项加起来不一定等于评论总数。
           </p>
         </div>
       )}
@@ -2581,7 +2581,7 @@ function DemoPageInner() {
 
   // ── 左栏 ──
   // 外层宽度做动画（48↔208，只动 width 一个属性），内层固定 w-52 由 overflow 裁剪——
-  // 开合按钮始终同一 DOM 节点，避免切换分支时图标抖动；其余内容仅在展开时挂载
+  // 开合按钮始终同一 DOM 节点，避免切换分支时图标抖动；正文保持挂载并用 invisible 隐藏，保留滚动位置
   // 不做成悬浮卡片——左栏直接用自己的底色铺满整列，跟右栏之间不留缝、不加分割线，
   // 单靠色块深浅区分两栏，贴近一般 LLM 网页版的平铺式布局
   const LeftPanel = (
@@ -2615,8 +2615,12 @@ function DemoPageInner() {
             />
           </div>
         </div>
-        {leftOpen && (
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div
+          className={`flex-1 flex flex-col overflow-hidden ${
+            leftOpen ? "" : "invisible pointer-events-none"
+          }`}
+          aria-hidden={!leftOpen}
+        >
           {leftSidebarView === "filter" && (
             <>
               <div className="py-2 flex items-center justify-center gap-3">
@@ -2796,7 +2800,6 @@ function DemoPageInner() {
             </div>
           )}
         </div>
-        )}
       </div>
     </div>
   );
