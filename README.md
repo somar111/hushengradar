@@ -63,7 +63,7 @@
 - 冷启动噪声（临场造 sub、单批偶发） → 复用池须命中 ≥5 次且排除 `general`；taxonomy 修订看过命中量与跨天沉淀；低命中 ephemeral sub 清零重标
 - 说不清该归哪个 sub → 暂归「其他」；满 20 条且过 3 天冷却才从 evidence enrich 新 sub 并重读原评论；滥用「其他」触发语义校准
 
-[![评论分类流程](docs/diagrams/classification.svg)](docs/diagrams/classification.svg)
+[![评论分类流程](docs/diagrams/classification.png)](docs/diagrams/classification.svg)
 
 <sub>源文件 <a href="docs/diagrams/classification.mmd">classification.mmd</a> · 修改后运行 <code>npm run diagrams</code> 重新导出 · <a href="docs/diagrams/classification.svg">打开原图</a>（新标签页可用浏览器缩放）</sub>
 

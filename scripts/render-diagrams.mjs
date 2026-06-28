@@ -67,7 +67,7 @@ if (!files.length) {
 for (const file of files) {
   const input = path.join(diagramsDir, file);
   const output = path.join(diagramsDir, file.replace(/\.mmd$/, ".svg"));
-  const scale = file === "classification.mmd" ? "3" : "2.5";
+  const scale = file === "classification.mmd" ? "4" : "2.5";
   console.log(`渲染 ${file} → ${path.basename(output)} (scale ${scale})`);
 
   const args = [
@@ -86,6 +86,17 @@ for (const file of files) {
   ];
   execFileSync(mmdc, args, { stdio: "inherit", env });
   postProcessSvg(output);
+
+  // 分类图节点多、画布极宽；README 内嵌 SVG 会被压到栏宽，字号几乎看不清。另导出固定页宽的 PNG 供内嵌。
+  if (file === "classification.mmd") {
+    const pngOutput = path.join(diagramsDir, "classification.png");
+    console.log(`渲染 ${file} → classification.png (README 内嵌)`);
+    execFileSync(
+      mmdc,
+      ["-i", input, "-o", pngOutput, "-t", "neutral", "-b", "#ffffff", "-w", "960", "-s", "1", "-c", configFile],
+      { stdio: "inherit", env }
+    );
+  }
 }
 
 console.log("完成。");
