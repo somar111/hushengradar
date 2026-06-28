@@ -1,4 +1,9 @@
-import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt } from "./promptKit.mjs";
+import {
+  buildAskPrompt,
+  buildInsightsPrompt,
+  buildReplyPrompt,
+  detectReplyContactTrigger,
+} from "./promptKit.mjs";
 import { prefetchAskExistenceHint, prefetchAskStatsScope, prefetchAskTagScope } from "./askCountPrefetch";
 import { ASK_TOOLS, executeAskTool, type AskContext } from "./askTools";
 import { localeLabel, localeLabelOverrides } from "./localeLabels";
@@ -91,12 +96,18 @@ export async function generateReplySuggestion(opts: {
   });
 
   const hasAuthorizedContact = Boolean(opts.replyContext?.contactInfo?.trim());
+  const contactTrigger = hasAuthorizedContact
+    ? detectReplyContactTrigger(opts.content, opts.tags)
+    : null;
 
   const userPrompt = [
     `评论作者：${opts.author}`,
     `评分：${opts.rating} 星`,
     `问题类型：${opts.tags.map((t) => t.label).join("、") || "无"}`,
     `评论内容：${opts.content}`,
+    contactTrigger
+      ? `【硬性要求】本条评论涉及${contactTrigger === "refund" ? "退款/退钱" : "扣费/订阅/账号"}类问题，且开发者已授权对应联系方式。回复中必须引导用户通过「开发者自定义联系方式」里匹配的邮箱联系处理，不得仅用「转交开发团队」了事。`
+      : "",
     hasAuthorizedContact ? "" : "注意：未配置自定义联系方式，禁止在回复中出现邮箱、网址、电话。",
   ].filter(Boolean).join("\n");
 
