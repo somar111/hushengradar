@@ -35,6 +35,16 @@
 
 ---
 
+## 架构（当前 Demo）
+
+[![Demo 架构](docs/diagrams/architecture.svg)](docs/diagrams/architecture.svg)
+
+<sub>源文件 <a href="docs/diagrams/architecture.mmd">architecture.mmd</a> · <a href="docs/diagrams/architecture.svg">打开原图</a></sub>
+
+离线主链路：抓取 → 分类（含 taxonomy 演进与按需重判）→ 翻译 → 标签摘要；重活放 cron，面板以查库为主，问 AI / 回复 / 洞察等按需调 DeepSeek。分类、校准、翻译、摘要、问 AI、回复等 prompt 集中在 `promptKit`，cron 与面板 API 共用。前端 Next.js / React / Tailwind；部署 OpenNext + Cloudflare Workers。
+
+---
+
 ## 通用性与可定制的工作流
 
 - 一套通用工作流服务任意 App：`add-app` 接入即可，标签从评论归纳、自动演进。
@@ -105,16 +115,6 @@
 [![问 AI 流程](docs/diagrams/ask-tools.svg)](docs/diagrams/ask-tools.svg)
 
 <sub>源文件 <a href="docs/diagrams/ask-tools.mmd">ask-tools.mmd</a> · <a href="docs/diagrams/ask-tools.svg">打开原图</a></sub>
-
----
-
-## 架构（当前 Demo）
-
-[![Demo 架构](docs/diagrams/architecture.svg)](docs/diagrams/architecture.svg)
-
-<sub>源文件 <a href="docs/diagrams/architecture.mmd">architecture.mmd</a> · <a href="docs/diagrams/architecture.svg">打开原图</a></sub>
-
-离线主链路：抓取 → 分类（含 taxonomy 演进与按需重判）→ 翻译 → 标签摘要；重活放 cron，面板以查库为主，问 AI / 回复 / 洞察等按需调 DeepSeek。分类、校准、翻译、摘要、问 AI、回复等 prompt 集中在 `promptKit`，cron 与面板 API 共用。前端 Next.js / React / Tailwind；部署 OpenNext + Cloudflare Workers。
 
 ---
 
