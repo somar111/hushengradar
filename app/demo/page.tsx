@@ -2009,7 +2009,9 @@ function DemoPageInner() {
           <div className="max-w-3xl mx-auto text-white/60 text-[19px] leading-relaxed">
             <p className="font-medium text-white/80">问我关于 {appName} {timeRangeLabel} 的评论的任何问题</p>
             <p className="text-white/40 text-[14px] mt-3 leading-relaxed">
-              分析评论内容时最多纳入 {ASK_SUMMARIZE_MAX} 条；统计类问题覆盖全部数据。
+              主题归纳类问题：单次提问读取上限 {ASK_SUMMARIZE_MAX} 条
+              <br />
+              统计数字类问题：不受此限
             </p>
             <p className="text-white/40 text-[14px] mt-2 leading-relaxed">
               对话记录保存在本机浏览器，换设备或清除缓存后会丢失。
