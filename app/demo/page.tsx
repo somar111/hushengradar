@@ -18,7 +18,7 @@ import { DEFAULT_DEMO_TIME_RANGE, resolveDefaultDemoApp } from "@/lib/demoDefaul
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
 import { RECLASSIFY_MAX, ASK_SUMMARIZE_MAX } from "@/lib/reviews";
 import { localeLabel } from "@/lib/localeLabels";
-import { resolveAskScopeForTurn, type AskThreadScope } from "@/lib/askThreadScope";
+import { planAskScopeTurn, type AskThreadScope } from "@/lib/askThreadScope";
 
 // ─── 类型 ────────────────────────────────────────────────────
 
@@ -48,6 +48,12 @@ type ChatMessage = {
   id: string;
   q: string;
   a: string;
+  scopePrompt?: {
+    inheritedScope: AskThreadScope;
+    optionALabel: string;
+    optionBLabel: string;
+  };
+  scopeResolved?: "scoped" | "global";
 };
 
 type ReplyStatusCounts = {
@@ -1702,44 +1708,28 @@ function DemoPageInner() {
     ? `${appName} · ${timeRangeLabel} · ${localeLabel(locale)}`
     : `${appName} · ${timeRangeLabel}`;
   const canClearChat = chatMessages.length > 0;
+  const hasPendingScopePrompt = chatMessages.some((m) => m.scopePrompt && !m.scopeResolved);
 
-  // 真实调AI回答——把当前筛选范围内的真实统计数字喂给DeepSeek，不是预设话术匹配
-  async function handleSendChat() {
-    // 兼容同一帧内的二次点击：即使还没 re-render，也能立即走"停止"
-    if (chatBusyRef.current) {
-      handleStopChat();
-      return;
-    }
-    const q = chatInput.trim();
-    if (!q || !selectedAppId || chatLoading) return;
-    // 把当前已完成的问答带上当上下文——闭包里的 chatMessages 还是追加新消息之前的值，
-    // 正好是历史轮次（都已经有 a），新问题不在里面，不会自己问自己。
-    const history = chatMessages
-      .filter((m) => m.a.trim())
-      .slice(-8)
-      .map((m) => ({ q: m.q, a: m.a }));
-    const scopeForTurn = resolveAskScopeForTurn(
-      q,
-      selectedApp?.seed_categories ?? [],
-      selectedAppUniversalSubs ?? {},
-      askThreadScopeRef.current,
-      pendingAskEntryScopeRef.current
-    );
-    pendingAskEntryScopeRef.current = null;
-    setAskThreadScope(scopeForTurn);
+  function scopedReviewCountFor(scope: AskThreadScope | null | undefined): number | undefined {
+    if (!scope || !stats) return undefined;
+    const t = stats.tagCounts[scope.tag];
+    if (!t) return undefined;
+    if (scope.subTag) return t.subTags[scope.subTag]?.count;
+    return t.count;
+  }
+
+  async function executeAskChat(
+    q: string,
+    scopeForTurn: AskThreadScope | null,
+    msgId: string,
+    history: { q: string; a: string }[]
+  ) {
     chatStopRequestedRef.current = false;
     resetChatFollow();
     chatBusyRef.current = true;
-    const msgId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const controller = new AbortController();
     chatAbortRef.current = controller;
     chatRequestStartedAtRef.current = Date.now();
-    setChatMessages((prev) => [...prev, { id: msgId, q, a: "" }]);
-    setChatInput("");
-    if (chatInputRef.current) {
-      chatInputRef.current.style.height = "52px";
-      chatInputRef.current.style.overflowY = "hidden";
-    }
     setChatLoading(true);
     try {
       const res = await fetch("/api/demo/ask", {
@@ -1764,7 +1754,6 @@ function DemoPageInner() {
         setMessageAnswer(msgId, `回答失败：${data?.error || "请求失败，请重试。"}`);
         return;
       }
-      // 读 NDJSON 流：真实 token 边到边渲染，不再等整段返回、也不靠假打字延时
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -1810,6 +1799,81 @@ function DemoPageInner() {
       chatBusyRef.current = false;
       setChatLoading(false);
     }
+  }
+
+  // 真实调AI回答——把当前筛选范围内的真实统计数字喂给DeepSeek，不是预设话术匹配
+  async function handleSendChat() {
+    // 兼容同一帧内的二次点击：即使还没 re-render，也能立即走"停止"
+    if (chatBusyRef.current) {
+      handleStopChat();
+      return;
+    }
+    const q = chatInput.trim();
+    if (!q || !selectedAppId || chatLoading || hasPendingScopePrompt) return;
+    const history = chatMessages
+      .filter((m) => m.a.trim() && !m.scopePrompt)
+      .slice(-8)
+      .map((m) => ({ q: m.q, a: m.a }));
+    const plan = planAskScopeTurn(
+      q,
+      selectedApp?.seed_categories ?? [],
+      selectedAppUniversalSubs ?? {},
+      askThreadScopeRef.current,
+      pendingAskEntryScopeRef.current,
+      {
+        timeRangeLabel,
+        globalReviewTotal: stats?.total,
+        scopedReviewCount: scopedReviewCountFor(askThreadScopeRef.current),
+      }
+    );
+    pendingAskEntryScopeRef.current = null;
+    const msgId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setChatInput("");
+    if (chatInputRef.current) {
+      chatInputRef.current.style.height = "52px";
+      chatInputRef.current.style.overflowY = "hidden";
+    }
+
+    if (plan.action === "clarify") {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: msgId,
+          q,
+          a: "",
+          scopePrompt: {
+            inheritedScope: plan.inheritedScope,
+            optionALabel: plan.optionALabel,
+            optionBLabel: plan.optionBLabel,
+          },
+        },
+      ]);
+      return;
+    }
+
+    setAskThreadScope(plan.scope);
+    setChatMessages((prev) => [...prev, { id: msgId, q, a: "" }]);
+    await executeAskChat(q, plan.scope, msgId, history);
+  }
+
+  async function handleAskScopeChoice(
+    msgId: string,
+    choice: "scoped" | "global",
+    inheritedScope: AskThreadScope
+  ) {
+    if (chatBusyRef.current || chatLoading) return;
+    const msg = chatMessages.find((m) => m.id === msgId);
+    if (!msg?.scopePrompt || msg.scopeResolved) return;
+    const scopeForTurn = choice === "scoped" ? inheritedScope : null;
+    setAskThreadScope(scopeForTurn);
+    setChatMessages((prev) =>
+      prev.map((m) => (m.id === msgId ? { ...m, scopePrompt: undefined, scopeResolved: choice } : m))
+    );
+    const history = chatMessages
+      .filter((m) => m.id !== msgId && m.a.trim() && !m.scopePrompt)
+      .slice(-8)
+      .map((m) => ({ q: m.q, a: m.a }));
+    await executeAskChat(msg.q, scopeForTurn, msgId, history);
   }
 
   function handleSelectReview(r: ReviewRow) {
@@ -2258,9 +2322,37 @@ function DemoPageInner() {
                     {m.q}
                   </div>
                 </div>
+                {m.scopePrompt && !m.scopeResolved ? (
+                  <div className="rounded-2xl border border-white/14 bg-white/[0.06] px-4 py-4 space-y-3">
+                    <p className="text-white/75 text-[15px] leading-relaxed">
+                      这个问题可以按不同范围回答，请先选择：
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => handleAskScopeChoice(m.id, "scoped", m.scopePrompt!.inheritedScope)}
+                        className="flex-1 text-left rounded-xl border border-white/16 bg-white/[0.08] hover:bg-white/[0.12] px-3.5 py-3 text-[14px] text-white/90 transition-colors"
+                      >
+                        <span className="font-semibold text-white/95">A</span>
+                        <span className="mx-2 text-white/35">·</span>
+                        {m.scopePrompt.optionALabel}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAskScopeChoice(m.id, "global", m.scopePrompt!.inheritedScope)}
+                        className="flex-1 text-left rounded-xl border border-white/16 bg-white/[0.08] hover:bg-white/[0.12] px-3.5 py-3 text-[14px] text-white/90 transition-colors"
+                      >
+                        <span className="font-semibold text-white/95">B</span>
+                        <span className="mx-2 text-white/35">·</span>
+                        {m.scopePrompt.optionBLabel}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                 <div className="w-full text-[18px] text-white leading-relaxed">
                   <MarkdownMessage content={m.a || (chatLoading && i === chatMessages.length - 1 ? "正在组织回答…" : "")} />
                 </div>
+                )}
               </div>
             ))}
             {chatLoading && (
@@ -2321,7 +2413,7 @@ function DemoPageInner() {
               <button
                 type="button"
                 onClick={chatLoading ? handleStopChat : handleSendChat}
-                disabled={!chatLoading && !chatInput.trim()}
+                disabled={!chatLoading && (!chatInput.trim() || hasPendingScopePrompt)}
                 aria-label={chatLoading ? "停止" : "发送"}
                 className="flex-none h-[52px] min-w-[52px] rounded-2xl px-3 flex items-center justify-center transition-colors disabled:cursor-not-allowed bg-[#e6ecff] text-[#20325f] hover:bg-[#f0f4ff] disabled:bg-[#e6ecff]/30 disabled:text-white/35">
                 {chatLoading ? <X size={16} /> : <ArrowUp size={19} strokeWidth={2.4} />}
