@@ -12,7 +12,8 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:migrate": "node scripts/migrate.mjs",
-    "retranslate": "node --env-file=.env.local scripts/retranslate-incomplete.mjs"
+    "retranslate": "node --env-file=.env.local scripts/retranslate-incomplete.mjs",
+    "diagrams": "node scripts/render-diagrams.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
@@ -27,6 +28,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.4.0",
     "@opennextjs/cloudflare": "^1.19.11",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

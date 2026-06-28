@@ -1,0 +1,32 @@
+%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28}}}%%
+flowchart TB
+  subgraph ctx [问答上下文]
+    Q[用户问题 + 筛选 since / locale / tag]
+    ANCHOR[latestReviewDate 时间锚]
+    APP[appContext + seed_categories + 术语表]
+  end
+
+  subgraph api [ask route answerQuestionStream]
+    Q --> STREAM[构建 buildAskPrompt]
+    ANCHOR --> STREAM
+    APP --> STREAM
+    STREAM --> PREF[askCountPrefetch 可选预取 get_stats]
+    PREF --> DS[DeepSeek 多轮 tool_calls]
+    STREAM --> DS
+  end
+
+  subgraph tools [工具按需取证]
+    DS --> T1[get_stats / count_reviews]
+    DS --> T2[summarize_reviews]
+    DS --> T3[query_reviews quotes]
+    T1 --> DB[(reviews + 聚合统计)]
+    T2 --> DB
+    T3 --> DB
+    T2 --> MR[超 1600 条 map-reduce 合并主题]
+    MR --> DS
+  end
+
+  subgraph out [作答与纪律]
+    DS --> SAN[sanitizeAskCounts 条数口径]
+    SAN --> NDJSON[流式 NDJSON 返回面板]
+  end

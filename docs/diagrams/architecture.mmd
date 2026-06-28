@@ -1,0 +1,29 @@
+%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 60, "rankSpacing": 70, "padding": 24}}}%%
+flowchart TB
+  GP[Google Play 公开页] --> Cron[cron-fetch.mjs]
+
+  subgraph pipeline [离线管线 — GitHub Actions / 本地]
+    Cron --> Classify[AI 分类]
+    Classify --> Translate[AI 翻译]
+    Translate --> Summarize[标签摘要]
+  end
+
+  DB[(Supabase / PostgreSQL)]
+
+  Cron -->|upsert 评论| DB
+  Classify -->|写 ai_tags| DB
+  Translate -->|写译文| DB
+  Summarize -->|写 tag_summaries| DB
+
+  subgraph app [应用层]
+    UI[Demo 面板 /demo]
+    API[Next.js API Routes]
+    DS[DeepSeek Chat API]
+  end
+
+  DB <-->|查询 / 聚合| API
+  API --> UI
+  API -->|问 AI · 回复 · 洞察 · 重分类| DS
+  Classify --> DS
+  Translate --> DS
+  Summarize --> DS

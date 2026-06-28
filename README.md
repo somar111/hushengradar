@@ -63,83 +63,9 @@
 - 冷启动噪声（临场造 sub、单批偶发） → 复用池须命中 ≥5 次且排除 `general`；taxonomy 修订看过命中量与跨天沉淀；低命中 ephemeral sub 清零重标
 - 说不清该归哪个 sub → 暂归「其他」；满 20 条且过 3 天冷却才从 evidence enrich 新 sub 并重读原评论；滥用「其他」触发语义校准
 
-```mermaid
-%%{init: {"themeVariables": {"fontSize": "24px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28}}}%%
-flowchart TB
-  subgraph ctx [分类上下文 per App]
-    SEED[seed_categories]
-    POOL[子问题复用池]
-    SUBS[universal_subcategories]
-    SEED --> GSUB["母类已有 2+ 有效 sub 才强制 subKey"]
-    POOL --> GSUB
-    SUBS --> GSUB
-  end
+[![评论分类流程](docs/diagrams/classification.svg)](docs/diagrams/classification.svg)
 
-  subgraph noise [前期噪声抑制]
-    N1["复用池门槛: 单 sub 命中未满 5 次不进池"]
-    N2["本轮新造 sub 不进复用池"]
-    N3["taxonomy 信号: 命中量 + 跨天沉淀才触发修订"]
-    N4["低命中 ephemeral sub 清零重标"]
-  end
-
-  subgraph pipe [单条管线 classifyReviewWithPipeline]
-    IN[评论 + 评分] --> LLM1[LLM 初判 + evidence]
-    GSUB --> LLM1
-    N1 -.-> POOL
-    N2 -.-> POOL
-    LLM1 --> FIN[finalizeClassifiedTags 确定性收尾]
-    FIN --> VAL{结构校验}
-    VAL -->|未过| RETRY[重试初判]
-    RETRY --> LLM1
-    VAL --> SEM{可疑信号 needsSemanticCalibration}
-    SEM -->|是| LLM2[语义校准 reroute]
-    SEM -->|否| CC{原因后果并存}
-    LLM2 --> CC
-    CC -->|是| LLM3[原因后果专检]
-    CC -->|否| SAVE[写入 reviews.ai_tags]
-    LLM3 --> SAVE
-  end
-
-  subgraph general [其他桶 subKey=general]
-    G0["说不清具体 sub 时暂归其他"]
-    G1["general 永不进入复用池"]
-    G2["母类已有具体 sub 仍标其他 触发语义校准"]
-    G3["单父类其他满 20 条 + 冷却 3 天"]
-    G3 --> G4[从其他 evidence 归纳新 sub]
-    G4 --> G5[重置该父类下其他评论]
-    G5 --> pipe
-  end
-
-  subgraph evo [批后演进 cron-fetch / reclassify-app]
-    SAVE --> FR[feature_request 子问题归纳]
-    FR --> SIGS[收集孤儿 / 碎片 / vague 占比等信号]
-    N3 -.-> SIGS
-    SIGS --> TD{过门槛}
-    TD -->|bootstrap 或 revise| TAI[taxonomy AI 设计或修订]
-    TD -->|跳过| POST[后续维护]
-    TAI --> MIN[ensureTaxonomyMinSubs]
-    MIN --> CHG{变更类型}
-    CHG -->|remap| REMAP[确定性改历史标签]
-    CHG -->|reclassify| PEND[pending_reclassify 待确认]
-    PEND --> RERUN[reclassify-app 批量重读]
-    RERUN --> pipe
-    REMAP --> POST
-    POST --> N4
-    N4 -->|有重置| pipe
-    SAVE --> G0
-    G0 --> G1
-    G0 --> G2
-    SAVE --> G3
-  end
-
-  subgraph ui [Top 反馈展示]
-    SAVE --> UIQ{"2+ 有效 sub 且各命中 2+"}
-    UIQ -->|是| CHIP[子标签 chip 下钻]
-    UIQ -->|否| SUM[摘要短语 tag_summaries / scoped]
-  end
-```
-
-
+<sub>源文件 <a href="docs/diagrams/classification.mmd">classification.mmd</a> · 修改后运行 <code>npm run diagrams</code> 重新导出</sub>
 
 ---
 
@@ -150,79 +76,17 @@ flowchart TB
 - 「最近一周」锚服务器今天，窗口尾部会空 → 相对时间锚该 App `latestReviewDate`，与 Demo 列表同口径
 - 归纳样本数被误当成评论总数 → `askCountPrefetch` 预取统计；作答只报 `total`，不用 `evidenceUsed` 代替
 
-```mermaid
-%%{init: {"themeVariables": {"fontSize": "24px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28}}}%%
-flowchart TB
-  subgraph ctx [问答上下文]
-    Q[用户问题 + 筛选 since / locale / tag]
-    ANCHOR[latestReviewDate 时间锚]
-    APP[appContext + seed_categories + 术语表]
-  end
+[![问 AI 流程](docs/diagrams/ask-tools.svg)](docs/diagrams/ask-tools.svg)
 
-  subgraph api [ask route answerQuestionStream]
-    Q --> STREAM[构建 buildAskPrompt]
-    ANCHOR --> STREAM
-    APP --> STREAM
-    STREAM --> PREF[askCountPrefetch 可选预取 get_stats]
-    PREF --> DS[DeepSeek 多轮 tool_calls]
-    STREAM --> DS
-  end
-
-  subgraph tools [工具按需取证]
-    DS --> T1[get_stats / count_reviews]
-    DS --> T2[summarize_reviews]
-    DS --> T3[query_reviews quotes]
-    T1 --> DB[(reviews + 聚合统计)]
-    T2 --> DB
-    T3 --> DB
-    T2 --> MR[超 1600 条 map-reduce 合并主题]
-    MR --> DS
-  end
-
-  subgraph out [作答与纪律]
-    DS --> SAN[sanitizeAskCounts 条数口径]
-    SAN --> NDJSON[流式 NDJSON 返回面板]
-  end
-```
-
-
+<sub>源文件 <a href="docs/diagrams/ask-tools.mmd">ask-tools.mmd</a></sub>
 
 ---
 
 ## 架构（当前 Demo）
 
-```mermaid
-flowchart TB
-  GP[Google Play 公开页] --> Cron[cron-fetch.mjs]
+[![Demo 架构](docs/diagrams/architecture.svg)](docs/diagrams/architecture.svg)
 
-  subgraph pipeline [离线管线 — GitHub Actions / 本地]
-    Cron --> Classify[AI 分类]
-    Classify --> Translate[AI 翻译]
-    Translate --> Summarize[标签摘要]
-  end
-
-  DB[(Supabase / PostgreSQL)]
-
-  Cron -->|upsert 评论| DB
-  Classify -->|写 ai_tags| DB
-  Translate -->|写译文| DB
-  Summarize -->|写 tag_summaries| DB
-
-  subgraph app [应用层]
-    UI[Demo 面板 /demo]
-    API[Next.js API Routes]
-    DS[DeepSeek Chat API]
-  end
-
-  DB <-->|查询 / 聚合| API
-  API --> UI
-  API -->|问 AI · 回复 · 洞察 · 重分类| DS
-  Classify --> DS
-  Translate --> DS
-  Summarize --> DS
-```
-
-
+<sub>源文件 <a href="docs/diagrams/architecture.mmd">architecture.mmd</a></sub>
 
 离线主链路：抓取 → 分类（含 taxonomy 演进与按需重判）→ 翻译 → 标签摘要；重活放 cron，面板以查库为主，问 AI / 回复 / 洞察等按需调 DeepSeek。分类、校准、翻译、摘要、问 AI、回复等 prompt 集中在 `promptKit`，cron 与面板 API 共用。前端 Next.js / React / Tailwind；部署 OpenNext + Cloudflare Workers。
 
