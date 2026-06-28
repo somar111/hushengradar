@@ -46,6 +46,9 @@ export async function POST(request: NextRequest) {
           displayName: app.display_name,
           terminologyGlossary: app.terminology_glossary ?? [],
           seedCategories: app.seed_categories ?? [],
+          universalSubcategories:
+            (app as { taxonomy_meta?: { universal_subcategories?: Record<string, { key: string; label: string }[]> } })
+              .taxonomy_meta?.universal_subcategories ?? {},
           timeRangeLabel: timeRangeLabel || "所选时间范围",
           latestReviewDate,
           defaultSince: since || undefined,

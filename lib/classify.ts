@@ -1,7 +1,7 @@
 import { buildAskPrompt, buildInsightsPrompt, buildReplyPrompt } from "./promptKit.mjs";
 import { prefetchAskExistenceHint, prefetchAskTagScope } from "./askCountPrefetch";
 import { ASK_TOOLS, executeAskTool, type AskContext } from "./askTools";
-import { localeLabel } from "./localeLabels";
+import { localeLabel, localeLabelOverrides } from "./localeLabels";
 import type { TerminologyEntry } from "./supabase";
 
 export type ClassifiedTag = { key: string; label: string; evidence?: string };
@@ -287,12 +287,82 @@ function sanitizeUnsourcedContactInfo(answer: string, corpus: string): string {
   return cleaned || answer.replace(contactRe, "").replace(/\s{2,}/g, " ").trim();
 }
 
-function sanitizeAskAnswer(answer: string, messages: ChatMessage[]): string {
+function extractAskCountFacts(messages: ChatMessage[], prefetchBlock?: string): {
+  total: number;
+  evidenceUsed?: number;
+  scopeLabel?: string;
+} | null {
+  if (prefetchBlock) {
+    const m = prefetchBlock.match(/total=(\d+)/);
+    if (m) {
+      return { total: Number(m[1]) };
+    }
+  }
+  let facts: { total: number; evidenceUsed?: number; scopeLabel?: string } | null = null;
+  for (const msg of messages) {
+    if (msg.role !== "tool") continue;
+    try {
+      const j = JSON.parse(msg.content) as Record<string, unknown>;
+      if (typeof j.total !== "number") continue;
+      if (Array.isArray(j.themes)) {
+        facts = {
+          total: j.total,
+          evidenceUsed: typeof j.evidenceUsed === "number" ? j.evidenceUsed : undefined,
+          scopeLabel: typeof j.scopeLabel === "string" ? j.scopeLabel : undefined,
+        };
+      } else if (j.note && String(j.note).includes("count_reviews")) {
+        facts = { total: j.total };
+      }
+    } catch {
+      /* ignore malformed tool payloads */
+    }
+  }
+  return facts;
+}
+
+/** 把模型误写的 evidenceUsed 等数字纠正为工具返回的 total */
+function sanitizeAskCounts(
+  answer: string,
+  facts: { total: number; evidenceUsed?: number; scopeLabel?: string } | null
+): string {
+  if (!facts) return answer;
+  const { total, evidenceUsed } = facts;
+  let out = answer;
+
+  const wrongCounts = new Set<number>();
+  if (typeof evidenceUsed === "number" && evidenceUsed !== total) wrongCounts.add(evidenceUsed);
+
+  for (const wrong of wrongCounts) {
+    out = out.replace(new RegExp(`(共\\s*|，|：|:)\\s*${wrong}\\s*条`, "g"), `$1 ${total} 条`);
+    out = out.replace(new RegExp(`${wrong}\\s*条评论`, "g"), `${total} 条评论`);
+  }
+
+  if (typeof evidenceUsed === "number" && evidenceUsed < total) {
+    out = out.replace(/全部参与了主题归纳/g, `${evidenceUsed} 条参与主题归纳（共 ${total} 条）`);
+    out = out.replace(/全部均参与主题归纳/g, `${evidenceUsed} 条参与主题归纳（共 ${total} 条）`);
+  }
+
+  return out.replace(/\s{2,}/g, " ").trim();
+}
+
+/** 把误写入回答的 lang_country 批次代码替换为展示用 label */
+function sanitizeAskLocaleCodes(answer: string): string {
+  let out = answer;
+  for (const code of Object.keys(localeLabelOverrides)) {
+    out = out.replace(new RegExp(`\\b${code}\\b`, "gi"), localeLabel(code));
+  }
+  return out.replace(/\b([a-z]{2})_([a-z]{2})\b/gi, (match) => localeLabel(match.toLowerCase()));
+}
+
+function sanitizeAskAnswer(answer: string, messages: ChatMessage[], prefetchBlock?: string): string {
   const corpus = messages
     .filter((m) => m.role === "tool")
     .map((m) => m.content)
     .join("\n");
-  return sanitizeUnsourcedContactInfo(answer, corpus);
+  const facts = extractAskCountFacts(messages, prefetchBlock);
+  const withoutContacts = sanitizeUnsourcedContactInfo(answer, corpus);
+  const withCounts = sanitizeAskCounts(withoutContacts, facts);
+  return sanitizeAskLocaleCodes(withCounts);
 }
 
 export type AskStreamEvent =
@@ -366,6 +436,7 @@ export async function* answerQuestionStream(opts: {
   displayName?: string | null;
   terminologyGlossary?: TerminologyEntry[] | null;
   seedCategories?: AskContext["seedCategories"];
+  universalSubcategories?: AskContext["universalSubcategories"];
   timeRangeLabel: string;
   latestReviewDate: string | null;
   defaultSince?: string;
@@ -388,6 +459,7 @@ export async function* answerQuestionStream(opts: {
     defaultLocale: opts.defaultLocale,
     timeRangeLabel: opts.timeRangeLabel,
     seedCategories: opts.seedCategories,
+    universalSubcategories: opts.universalSubcategories,
   };
 
   const tagPrefetch = await prefetchAskTagScope(ctx, opts.question);
@@ -492,7 +564,7 @@ export async function* answerQuestionStream(opts: {
     if (!answer) throw new Error("DeepSeek 未返回有效回答");
     // 净化兜底：删掉没有数据来源的邮箱/网址等。若净化后跟已流出的文本不一致（含罕见的
     // 正文前缀污染），发一条 replace 让前端整段替换成干净版本。
-    const cleaned = sanitizeAskAnswer(answer, messages);
+    const cleaned = sanitizeAskAnswer(answer, messages, prefetchBlock);
     if (cleaned !== streamedAnswer) {
       yield { type: "replace", text: cleaned };
     }
@@ -533,7 +605,7 @@ export async function* answerQuestionStream(opts: {
 
   const answer = finalContent.trim();
   if (!answer) throw new Error("DeepSeek 未返回有效回答");
-  const cleaned = sanitizeAskAnswer(answer, messages);
+  const cleaned = sanitizeAskAnswer(answer, messages, prefetchBlock);
   if (cleaned !== streamedAnswer) {
     yield { type: "replace", text: cleaned };
   }

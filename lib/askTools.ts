@@ -13,6 +13,7 @@ export type AskContext = {
   defaultLocale?: string;
   timeRangeLabel: string;
   seedCategories?: { key: string; label: string; subcategories?: { key: string; label: string }[] }[] | null;
+  universalSubcategories?: Record<string, { key: string; label: string }[]> | null;
 };
 
 type DateFilters = {

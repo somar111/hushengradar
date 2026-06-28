@@ -1,3 +1,4 @@
+import { buildCategoryCatalog } from "./promptKit.mjs";
 import { countReviewsMatching } from "./reviews";
 import type { AskContext } from "./askTools";
 
@@ -6,6 +7,16 @@ export type SeedCategory = {
   label: string;
   subcategories?: { key: string; label: string }[];
 };
+
+export type UniversalSubcategories = Record<string, { key: string; label: string }[]>;
+
+/** 通用类 + App taxonomy，与分类/Top 反馈展示一致 */
+export function buildAskCategoryCatalog(
+  seedCategories: SeedCategory[] | null | undefined,
+  universalSubcategories?: UniversalSubcategories | null
+): SeedCategory[] {
+  return buildCategoryCatalog(seedCategories ?? [], universalSubcategories ?? {}) as SeedCategory[];
+}
 
 const COUNT_QUESTION_RE =
   /(?:有多少|多少条|几条|共计|总数|数量|共\s*\d|\d+\s*条|count\s+of|how\s+many)/i;
@@ -32,33 +43,42 @@ export function isTagCountQuestion(question: string): boolean {
 }
 
 /** 条数预查 / summarize 前置：问题涉及某标签的条数或内容归纳 */
-export function shouldPrefetchTagScope(question: string): boolean {
+export function shouldPrefetchTagScope(
+  question: string,
+  catalog?: SeedCategory[] | null
+): boolean {
   const q = question.trim();
   if (!q || NON_TAG_COUNT_RE.test(q)) return false;
-  return isTagCountQuestion(q) || TAG_SCOPE_QUESTION_RE.test(q);
+  if (isTagCountQuestion(q) || TAG_SCOPE_QUESTION_RE.test(q)) return true;
+  // 「功能请求 的其他」等：能解析出 tag 范围即预查条数
+  return resolveTagRefsFromQuestion(question, catalog) !== null;
 }
 
-/** 从问题文本 + taxonomy 解析顶层 tag / 子 tag（「其他」→ general）。 */
+/** 从问题文本 + taxonomy 解析顶层 tag / 子 tag（「其他」→ general）。含 feature_request 等通用类。 */
 export function resolveTagRefsFromQuestion(
   question: string,
-  seedCategories: SeedCategory[] | null | undefined
+  catalog: SeedCategory[] | null | undefined
 ): { tag: string; tagLabel: string; subTag?: string; subLabel?: string } | null {
-  if (!seedCategories?.length) return null;
+  if (!catalog?.length) return null;
   const qNorm = normalizeForMatch(question);
 
   let bestParent: SeedCategory | null = null;
   let bestParentLen = 0;
+  let bestParentExact = false;
 
-  for (const cat of seedCategories) {
+  for (const cat of catalog) {
     const labelNorm = normalizeForMatch(cat.label);
     const keyNorm = normalizeForMatch(cat.key);
+    const exactLabel = labelNorm.length >= 2 && qNorm === labelNorm;
     const labelHit = labelNorm.length >= 2 && qNorm.includes(labelNorm);
     const keyHit = keyNorm.length > 4 && qNorm.includes(keyNorm);
-    if (labelHit || keyHit) {
-      const len = labelHit ? labelNorm.length : keyNorm.length;
-      if (len > bestParentLen) {
+    if (exactLabel || labelHit || keyHit) {
+      const len = exactLabel ? labelNorm.length + 1000 : labelHit ? labelNorm.length : keyNorm.length;
+      const exact = exactLabel;
+      if (len > bestParentLen || (len === bestParentLen && exact && !bestParentExact)) {
         bestParent = cat;
         bestParentLen = len;
+        bestParentExact = exact;
       }
     }
   }
@@ -95,11 +115,12 @@ export function resolveTagRefsFromQuestion(
 
 /** 在 LLM 调工具前预查 count_reviews 同口径条数（条数问法 + 某标签内容/抱怨归纳问法）。 */
 export async function prefetchAskTagScope(
-  ctx: AskContext & { seedCategories?: SeedCategory[] | null },
+  ctx: AskContext,
   question: string
 ): Promise<{ block: string; total: number; refs: NonNullable<ReturnType<typeof resolveTagRefsFromQuestion>> } | null> {
-  if (!shouldPrefetchTagScope(question)) return null;
-  const refs = resolveTagRefsFromQuestion(question, ctx.seedCategories);
+  const catalog = buildAskCategoryCatalog(ctx.seedCategories, ctx.universalSubcategories);
+  if (!shouldPrefetchTagScope(question, catalog)) return null;
+  const refs = resolveTagRefsFromQuestion(question, catalog);
   if (!refs) return null;
 
   const total = await countReviewsMatching({
@@ -122,7 +143,9 @@ export async function prefetchAskTagScope(
     `已执行 count_reviews：${tagPath}（tag=${refs.tag}${refs.subTag ? `, subTag=${refs.subTag}` : ""}）`,
     `范围：${scopeParts.join("，")}${ctx.defaultSince ? `（since=${ctx.defaultSince.slice(0, 10)}）` : ""}`,
     `total=${total}（与 Demo 评论查看&回复 / Top 反馈列表同口径）`,
-    "调用 summarize_reviews 后也必须以 total 为评论总条数；evidenceUsed 仅为纳入归纳的条数，notSummarized 为因上限未扫描的条数，禁止把 evidenceUsed+excludedNoText 相加当作 total。",
+    `作答开头须写「共 ${total} 条评论」——禁止写 evidenceUsed 或其它数字代替 total。`,
+    `调用 summarize_reviews 时必须传 tag="${refs.tag}"${refs.subTag ? `, subTag="${refs.subTag}"` : ""}（与上文一致）；勿换成其它顶层标签。`,
+    "调用 summarize_reviews 后仍以 total 为评论总条数。evidenceUsed 仅为纳入归纳的条数，notSummarized 为因上限未扫描的条数，禁止把 evidenceUsed+excludedNoText 相加当作 total。",
     refs.subTag === "general"
       ? "「其他」是兜底子类，不含同顶层下具名子标签里的评论；勿把 sibling 子标签分布当成「其他」的内容。"
       : null,
@@ -152,7 +175,7 @@ export function prefetchAskExistenceHint(question: string): { block: string } | 
 
 /** @deprecated 使用 prefetchAskTagScope */
 export async function prefetchAskTagCount(
-  ctx: AskContext & { seedCategories?: SeedCategory[] | null },
+  ctx: AskContext,
   question: string
 ): Promise<{ block: string; total: number } | null> {
   const r = await prefetchAskTagScope(ctx, question);
