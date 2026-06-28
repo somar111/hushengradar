@@ -173,6 +173,16 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return Boolean(target.closest("[contenteditable='true']"));
 }
 
+/** 输入框内须交还浏览器/IME 的原生编辑快捷键（全局 capture 不碰这些键）。 */
+function isNativeEditingShortcut(e: KeyboardEvent): boolean {
+  if (!(e.metaKey || e.ctrlKey)) return false;
+  if (e.code === "KeyA" || e.code === "KeyC" || e.code === "KeyV" || e.code === "KeyX") return true;
+  if (e.code === "KeyZ" || e.code === "KeyY") return true;
+  if (e.code.startsWith("Arrow") || e.code === "Backspace" || e.code === "Delete") return true;
+  if (e.code === "Home" || e.code === "End") return true;
+  return false;
+}
+
 function ShortcutRow({ keys, desc }: { keys: string[]; desc: string }) {
   return (
     <div className="flex flex-col gap-1.5 text-white/75">
@@ -1301,10 +1311,16 @@ function DemoPageInner() {
         return;
       }
 
+      // 输入框聚焦时：复制/粘贴/全选/撤销等一律交还浏览器与 IME，避免与 Alt+数字切换、组合输入打架。
+      if (isEditableTarget(e.target) && isNativeEditingShortcut(e)) {
+        return;
+      }
+
       if (
         (e.metaKey || e.ctrlKey) &&
         (e.key === "ArrowUp" || e.key === "ArrowDown")
       ) {
+        if (isEditableTarget(e.target)) return;
         if (isLeftPanelInteraction(e)) {
           if (leftOpen) {
             const scroller = findLeftPanelScroller();
@@ -1340,6 +1356,7 @@ function DemoPageInner() {
         const panel = RIGHT_PANEL_NAV[Number(digit) - 1]?.key;
         if (panel) {
           e.preventDefault();
+          e.stopImmediatePropagation();
           setActivePanel(panel);
         }
         return;
@@ -1573,6 +1590,7 @@ function DemoPageInner() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      if (composingRef.current) return;
       const saved = window.localStorage.getItem(askDraftStorageKey);
       setChatInput(saved ?? "");
       requestAnimationFrame(() => autoGrowInput());
@@ -1763,7 +1781,11 @@ function DemoPageInner() {
     chatUserDetachedRef.current = false;
     chatStickToBottomRef.current = true;
     if (chatViewportRef.current) chatViewportRef.current.scrollTop = 0;
+    composingRef.current = false;
     setShowClearChatConfirm(false);
+    requestAnimationFrame(() => {
+      chatInputRef.current?.focus();
+    });
   }
 
   const askContextLabel = locale
@@ -2442,15 +2464,22 @@ function DemoPageInner() {
               onCompositionStart={() => {
                 composingRef.current = true;
               }}
-              onCompositionEnd={() => {
+              onCompositionEnd={(e) => {
                 // 中文 IME 用 Enter 确认候选时，keydown 常在 compositionend 之后且 isComposing 已为 false；
                 // 延后一帧再解除，避免误触发发送。
+                setChatInput(e.currentTarget.value);
                 setTimeout(() => {
                   composingRef.current = false;
                 }, 0);
               }}
+              onBlur={() => {
+                composingRef.current = false;
+              }}
               onKeyDown={(e) => {
                 if (chatBusyRef.current) {
+                  return;
+                }
+                if (e.metaKey || e.ctrlKey) {
                   return;
                 }
                 const nativeKey = e.nativeEvent as KeyboardEvent;

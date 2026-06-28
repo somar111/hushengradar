@@ -111,6 +111,7 @@
 - 抽几条样本容易以偏概全 → 要主题先对 scope 内 evidence 全量归纳，超 1600 条 map-reduce 合并，再 `query_reviews` 补少量引用
 - 「最近一周」锚服务器今天，窗口尾部会空 → 相对时间锚该 App `latestReviewDate`，与 Demo 列表同口径
 - 归纳样本数被误当成评论总数 → `askCountPrefetch` 预取统计；作答只报 `total`，不用 `evidenceUsed` 代替
+- 从子标签点进或沿用上一轮分类，但新问题其实在问全局 → `planAskScopeTurn` 识别全局/追问语义；歧义时面板 A/B 选范围再调 API
 
 [![问 AI 流程](docs/diagrams/ask-tools.svg)](docs/diagrams/ask-tools.svg)
 

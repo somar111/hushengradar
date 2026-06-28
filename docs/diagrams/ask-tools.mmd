@@ -1,21 +1,33 @@
 flowchart TB
   classDef note fill:#35353c,stroke:#707080,stroke-width:1px,color:#d8d8dc
+  classDef cache fill:#2c3530,stroke:#5a7a62,stroke-width:1px,color:#d0dcd4
 
-  NOTE_ASK["说明：问 AI 不灌全库，用工具按需取证。<br/>作答只报 total 条数；evidenceUsed 是归纳样本量，不是评论总数。"]
+  NOTE_ASK["说明：问 AI 不灌全库，用工具按需取证。<br/>会话 scope 独立于「评论查看」筛选；歧义时先 A/B 选范围再调 API。<br/>作答只报 total 条数；evidenceUsed 是归纳样本量，不是评论总数。"]
   class NOTE_ASK note
 
-  subgraph ctx [问答上下文]
+  subgraph ui [Demo 问 AI 面板]
     direction TB
-    Q[用户问题 + 筛选<br/>since / locale / tag]
-    ANCHOR["latestReviewDate 时间锚<br/>「最近一周」等同 Demo 列表口径"]
-    APP[appContext + seed_categories + 术语表]
-    Q --> ANCHOR --> APP
+    FILT[since / locale 筛选<br/>独立于评论列表 tag 筛选]
+    ENTRY[Top 反馈点标签进入<br/>entryScope 预填问题]
+    PLAN[planAskScopeTurn<br/>文本解析 tag · 全局/追问启发式]
+    AMB{会继承上一轮分类<br/>且非追问/全局问法?}
+    AB[A/B：继续该分类 vs 全部评论]
+    SEND[executeAskChat<br/>带 tag/subTag 调 API]
+    SCOPE[(askThreadScope<br/>localStorage 按 App·时间·地区)]
+    FILT --> PLAN
+    ENTRY --> PLAN
+    SCOPE -.-> PLAN
+    PLAN --> AMB
+    AMB -->|是| AB
+    AMB -->|否| SEND
+    AB -->|用户选择| SEND
+    SEND --> SCOPE
   end
 
   subgraph api [ask route · answerQuestionStream]
     direction TB
     STREAM[构建 buildAskPrompt]
-    PREF[askCountPrefetch<br/>可选预取 get_stats]
+    PREF[askCountPrefetch<br/>tag / stats / existence 预取]
     DS[DeepSeek 多轮 tool_calls]
     STREAM --> PREF --> DS
   end
@@ -29,13 +41,15 @@ flowchart TB
 
   subgraph out [作答与纪律]
     direction TB
-    SAN[sanitizeAskCounts<br/>统一条数口径]
+    SAN[sanitizeAskAnswer<br/>条数口径 + 剔除无来源联系方式]
     NDJSON[流式 NDJSON 返回面板]
     SAN --> NDJSON
   end
 
-  NOTE_ASK --> ctx
-  ctx --> api
+  class SCOPE cache
+
+  NOTE_ASK --> ui
+  ui --> api
   api --> tools
   tools --> DS
   DS --> out
