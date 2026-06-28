@@ -2289,16 +2289,20 @@ function DemoPageInner() {
                 composingRef.current = true;
               }}
               onCompositionEnd={() => {
-                composingRef.current = false;
+                // 中文 IME 用 Enter 确认候选时，keydown 常在 compositionend 之后且 isComposing 已为 false；
+                // 延后一帧再解除，避免误触发发送。
+                setTimeout(() => {
+                  composingRef.current = false;
+                }, 0);
               }}
               onKeyDown={(e) => {
                 if (chatBusyRef.current) {
                   return;
                 }
-                if (e.key === "Enter" && (e.nativeEvent as KeyboardEvent).isComposing) {
-                  return;
-                }
-                if (e.key === "Enter" && composingRef.current) {
+                const nativeKey = e.nativeEvent as KeyboardEvent;
+                const imeActive =
+                  nativeKey.isComposing || composingRef.current || nativeKey.keyCode === 229;
+                if (e.key === "Enter" && imeActive) {
                   return;
                 }
                 if (e.key === "Enter" && !e.shiftKey) {
