@@ -242,7 +242,7 @@ function buildAskUserMessage(opts: {
       opts.defaultSince ? `（since=${opts.defaultSince.slice(0, 10)}）` : ""
     }${opts.defaultLocale ? `，地区=${localeLabel(opts.defaultLocale)}（${opts.defaultLocale}）` : "，全部地区"}`,
     opts.defaultTag
-      ? `界面已选分类：tag=${opts.defaultTag}${
+      ? `当前对话话题分类：tag=${opts.defaultTag}${
           opts.defaultSubTag ? `，subTag=${opts.defaultSubTag}` : ""
         }。调用 count_reviews / summarize_reviews / query_reviews 时默认带上该筛选，除非用户明确扩大或更换范围。`
       : null,

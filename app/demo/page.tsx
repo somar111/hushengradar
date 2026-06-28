@@ -17,6 +17,7 @@ import { DEFAULT_DEMO_TIME_RANGE, resolveDefaultDemoApp } from "@/lib/demoDefaul
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
 import { RECLASSIFY_MAX, ASK_SUMMARIZE_MAX } from "@/lib/reviews";
 import { localeLabel } from "@/lib/localeLabels";
+import { resolveAskScopeForTurn, type AskThreadScope } from "@/lib/askThreadScope";
 
 // ─── 类型 ────────────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ const PANEL_ICONS: Record<RightPanel, React.ReactNode> = {
 const PAGE_SIZE = 200;
 const ASK_DRAFT_STORAGE_PREFIX = "hushengradar.askDraft.v1";
 const ASK_CHAT_STORAGE_PREFIX = "hushengradar.askChat.v1";
+const ASK_THREAD_SCOPE_STORAGE_PREFIX = "hushengradar.askThreadScope.v1";
 const TRANSLATE_SETTINGS_KEY = "hushengradar.translateSettings.v1";
 const ASK_SETTINGS_KEY = "hushengradar.askSettings.v1";
 const TAG_CLICK_TARGET_KEY = "hushengradar.tagClickTarget.v1";
@@ -1156,6 +1158,7 @@ function DemoPageInner() {
 
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [askThreadScope, setAskThreadScope] = useState<AskThreadScope | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [showClearChatConfirm, setShowClearChatConfirm] = useState(false);
   const chatViewportRef = useRef<HTMLDivElement>(null);
@@ -1170,8 +1173,12 @@ function DemoPageInner() {
   const chatAutoScrollingRef = useRef(false);
   const chatMessagesRef = useRef(chatMessages);
   chatMessagesRef.current = chatMessages;
+  const askThreadScopeRef = useRef(askThreadScope);
+  askThreadScopeRef.current = askThreadScope;
   const prevAskChatStorageKeyRef = useRef<string | null>(null);
+  const prevAskThreadScopeStorageKeyRef = useRef<string | null>(null);
   const skipNextChatPersistRef = useRef(false);
+  const skipNextThreadScopePersistRef = useRef(false);
   const pendingChatScrollRef = useRef<"top" | "bottom" | null>(null);
   const composingRef = useRef(false);
   const pendingAskInputFocusRef = useRef(false);
@@ -1208,6 +1215,11 @@ function DemoPageInner() {
   const appName = selectedApp?.display_name ?? "App";
   const askDraftStorageKey = askContextStorageKey(ASK_DRAFT_STORAGE_PREFIX, selectedAppId, timeRange, locale);
   const askChatStorageKey = askContextStorageKey(ASK_CHAT_STORAGE_PREFIX, selectedAppId, timeRange, locale);
+  const askThreadScopeStorageKey = askContextStorageKey(ASK_THREAD_SCOPE_STORAGE_PREFIX, selectedAppId, timeRange, locale);
+
+  const selectedAppUniversalSubs = (
+    selectedApp as { taxonomy_meta?: { universal_subcategories?: Record<string, { key: string; label: string }[]> } } | undefined
+  )?.taxonomy_meta?.universal_subcategories;
 
   const reclassifyBlockedReason = useMemo(() => {
     if (!tagFilter) return "请先选择问题类型";
@@ -1479,11 +1491,21 @@ function DemoPageInner() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const prevKey = prevAskChatStorageKeyRef.current;
-    if (prevKey === askChatStorageKey) return;
+    const prevScopeKey = prevAskThreadScopeStorageKeyRef.current;
+    if (prevKey === askChatStorageKey && prevScopeKey === askThreadScopeStorageKey) return;
 
     if (prevKey !== null) {
       try {
         window.localStorage.setItem(prevKey, JSON.stringify(chatMessagesRef.current));
+      } catch {
+        // ignore
+      }
+    }
+    if (prevScopeKey !== null) {
+      try {
+        const scope = askThreadScopeRef.current;
+        if (scope) window.localStorage.setItem(prevScopeKey, JSON.stringify(scope));
+        else window.localStorage.removeItem(prevScopeKey);
       } catch {
         // ignore
       }
@@ -1496,9 +1518,19 @@ function DemoPageInner() {
     } catch {
       loaded = [];
     }
+    let loadedScope: AskThreadScope | null = null;
+    try {
+      const savedScope = window.localStorage.getItem(askThreadScopeStorageKey);
+      if (savedScope) loadedScope = JSON.parse(savedScope) as AskThreadScope;
+    } catch {
+      loadedScope = null;
+    }
     setChatMessages(loaded);
+    setAskThreadScope(loadedScope);
     prevAskChatStorageKeyRef.current = askChatStorageKey;
+    prevAskThreadScopeStorageKeyRef.current = askThreadScopeStorageKey;
     skipNextChatPersistRef.current = true;
+    skipNextThreadScopePersistRef.current = true;
     setShowClearChatConfirm(false);
 
     chatStopRequestedRef.current = true;
@@ -1514,7 +1546,7 @@ function DemoPageInner() {
     } else {
       pendingChatScrollRef.current = "bottom";
     }
-  }, [askChatStorageKey]);
+  }, [askChatStorageKey, askThreadScopeStorageKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1528,6 +1560,23 @@ function DemoPageInner() {
       // ignore
     }
   }, [askChatStorageKey, chatMessages]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (skipNextThreadScopePersistRef.current) {
+      skipNextThreadScopePersistRef.current = false;
+      return;
+    }
+    try {
+      if (askThreadScope) {
+        window.localStorage.setItem(askThreadScopeStorageKey, JSON.stringify(askThreadScope));
+      } else {
+        window.localStorage.removeItem(askThreadScopeStorageKey);
+      }
+    } catch {
+      // ignore
+    }
+  }, [askThreadScopeStorageKey, askThreadScope]);
 
   useEffect(() => {
     saveJsonSetting(TRANSLATE_SETTINGS_KEY, translateSettings);
@@ -1595,12 +1644,15 @@ function DemoPageInner() {
     chatBusyRef.current = false;
     setChatLoading(false);
     skipNextChatPersistRef.current = true;
+    skipNextThreadScopePersistRef.current = true;
     try {
       window.localStorage.removeItem(askChatStorageKey);
+      window.localStorage.removeItem(askThreadScopeStorageKey);
     } catch {
       // ignore
     }
     setChatMessages([]);
+    setAskThreadScope(null);
     chatUserDetachedRef.current = false;
     chatStickToBottomRef.current = true;
     if (chatViewportRef.current) chatViewportRef.current.scrollTop = 0;
@@ -1627,6 +1679,13 @@ function DemoPageInner() {
       .filter((m) => m.a.trim())
       .slice(-8)
       .map((m) => ({ q: m.q, a: m.a }));
+    const scopeForTurn = resolveAskScopeForTurn(
+      q,
+      selectedApp?.seed_categories ?? [],
+      selectedAppUniversalSubs ?? {},
+      askThreadScopeRef.current
+    );
+    setAskThreadScope(scopeForTurn);
     chatStopRequestedRef.current = false;
     resetChatFollow();
     chatBusyRef.current = true;
@@ -1655,8 +1714,8 @@ function DemoPageInner() {
           history,
           useEmoji: askSettings.useEmoji,
           useThinking: askSettings.useThinking,
-          tag: tagFilter || undefined,
-          subTag: tagFilter && subTagFilter ? subTagFilter : undefined,
+          tag: scopeForTurn?.tag,
+          subTag: scopeForTurn?.subTag,
         }),
       });
       if (!res.ok || !res.body) {
@@ -1839,7 +1898,7 @@ function DemoPageInner() {
       subTag && tagStats?.subTags[subTag] ? tagStats.subTags[subTag].label : undefined;
 
     if (tagClickTarget === "ask") {
-      setParams({ tag, subTag: subTag ?? "", panel: "ask" });
+      setParams({ panel: "ask" });
       setChatInput(buildTagAskPrefill(tagLabel, subTagLabel, locale || undefined));
       pendingAskInputFocusRef.current = true;
       return;
