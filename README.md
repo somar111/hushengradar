@@ -65,7 +65,7 @@
 
 [![评论分类流程](docs/diagrams/classification.svg)](docs/diagrams/classification.svg)
 
-<sub>源文件 <a href="docs/diagrams/classification.mmd">classification.mmd</a> · 修改后运行 <code>npm run diagrams</code> 重新导出</sub>
+<sub>源文件 <a href="docs/diagrams/classification.mmd">classification.mmd</a> · 修改后运行 <code>npm run diagrams</code> 重新导出 · <a href="docs/diagrams/classification.svg">打开原图</a>（新标签页可用浏览器缩放）</sub>
 
 ---
 
@@ -78,7 +78,7 @@
 
 [![问 AI 流程](docs/diagrams/ask-tools.svg)](docs/diagrams/ask-tools.svg)
 
-<sub>源文件 <a href="docs/diagrams/ask-tools.mmd">ask-tools.mmd</a></sub>
+<sub>源文件 <a href="docs/diagrams/ask-tools.mmd">ask-tools.mmd</a> · <a href="docs/diagrams/ask-tools.svg">打开原图</a></sub>
 
 ---
 
@@ -86,7 +86,7 @@
 
 [![Demo 架构](docs/diagrams/architecture.svg)](docs/diagrams/architecture.svg)
 
-<sub>源文件 <a href="docs/diagrams/architecture.mmd">architecture.mmd</a></sub>
+<sub>源文件 <a href="docs/diagrams/architecture.mmd">architecture.mmd</a> · <a href="docs/diagrams/architecture.svg">打开原图</a></sub>
 
 离线主链路：抓取 → 分类（含 taxonomy 演进与按需重判）→ 翻译 → 标签摘要；重活放 cron，面板以查库为主，问 AI / 回复 / 洞察等按需调 DeepSeek。分类、校准、翻译、摘要、问 AI、回复等 prompt 集中在 `promptKit`，cron 与面板 API 共用。前端 Next.js / React / Tailwind；部署 OpenNext + Cloudflare Workers。
 
