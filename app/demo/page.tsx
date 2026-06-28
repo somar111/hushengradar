@@ -162,9 +162,10 @@ function saveTagClickTarget(value: TagClickTarget) {
   }
 }
 
-function buildTagAskPrefill(tagLabel: string, subTagLabel?: string) {
-  if (subTagLabel) return `关于「${tagLabel} / ${subTagLabel}」这类评论：\n`;
-  return `关于「${tagLabel}」这类评论：\n`;
+function buildTagAskPrefill(tagLabel: string, subTagLabel?: string, locale?: string) {
+  const tagPart = subTagLabel ? `「${tagLabel} / ${subTagLabel}」` : `「${tagLabel}」`;
+  const prefix = locale ? `${localeLabel(locale)}，` : "";
+  return `${prefix}关于${tagPart}这类评论：\n`;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -1839,7 +1840,7 @@ function DemoPageInner() {
 
     if (tagClickTarget === "ask") {
       setParams({ tag, subTag: subTag ?? "", panel: "ask" });
-      setChatInput(buildTagAskPrefill(tagLabel, subTagLabel));
+      setChatInput(buildTagAskPrefill(tagLabel, subTagLabel, locale || undefined));
       pendingAskInputFocusRef.current = true;
       return;
     }
