@@ -1180,6 +1180,7 @@ function DemoPageInner() {
   const skipNextChatPersistRef = useRef(false);
   const skipNextThreadScopePersistRef = useRef(false);
   const pendingChatScrollRef = useRef<"top" | "bottom" | null>(null);
+  const prevActivePanelRef = useRef<RightPanel | null>(null);
   const composingRef = useRef(false);
   const pendingAskInputFocusRef = useRef(false);
   const pendingAskEntryScopeRef = useRef<AskThreadScope | null>(null);
@@ -1419,9 +1420,31 @@ function DemoPageInner() {
 
   // useLayoutEffect：DOM 更新后、绘制前跟滚，比 useEffect 少一帧滞后
   useLayoutEffect(() => {
+    if (activePanel !== "ask") {
+      prevActivePanelRef.current = activePanel;
+      return;
+    }
+
+    const enteringAsk = prevActivePanelRef.current !== "ask";
+    prevActivePanelRef.current = activePanel;
+
     const pending = pendingChatScrollRef.current;
     if (pending) {
       pendingChatScrollRef.current = null;
+      const viewport = chatViewportRef.current;
+      if (viewport) {
+        chatAutoScrollingRef.current = true;
+        resetChatFollow();
+        viewport.scrollTop = pending === "bottom" ? viewport.scrollHeight : 0;
+        requestAnimationFrame(() => {
+          chatAutoScrollingRef.current = false;
+        });
+      }
+      return;
+    }
+
+    // 从其他栏目切回问 AI 时聊天区会重新挂载，scrollTop 归零；有历史则定位到最近对话
+    if (enteringAsk && chatMessages.length > 0) {
       const viewport = chatViewportRef.current;
       if (viewport) {
         chatAutoScrollingRef.current = true;
@@ -1433,8 +1456,9 @@ function DemoPageInner() {
       }
       return;
     }
+
     scrollChatToBottomIfNeeded();
-  }, [chatMessages, chatLoading]);
+  }, [chatMessages, chatLoading, activePanel]);
 
   function handleChatViewportWheel(e: React.WheelEvent) {
     // 比 onScroll 更早拦截：用户往上滑的瞬间就停止跟滚，避免和逐字更新抢滚动条
