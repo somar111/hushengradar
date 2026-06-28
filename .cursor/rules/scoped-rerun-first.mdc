@@ -1,0 +1,27 @@
+---
+description: 重跑工作流时优先局部范围，禁止默认全量重跑
+alwaysApply: true
+---
+
+# 局部重跑优先
+
+能只重跑问题定义范围内的那一部分时，**优先局部重跑**；**不要默认全量重跑**，除非用户明确要求。
+
+## 原则
+
+1. **先界定问题范围**：用 audit / 统计 / `pending_reclassify.affectedKeys` 弄清「实际要修多少」，再选命令。
+2. **默认最小动作**：taxonomy 设计稿已干净、仅评论误标 → remap 或定向 reclassify，不跑 `build-taxonomy --force`。
+3. **全量是显式 opt-in**：`--full`、force 全量修订、清空全 App 分类等，仅在用户明确说要全跑时使用。
+
+## 本仓库常用入口
+
+| 场景 | 优先 | 避免默认 |
+|------|------|----------|
+| 跨父重复 sub 已合并，少数评论标签旧 | 确定性 remap / `buildSubLabelRemapsFromTaxonomyDiff` | `reclassify-app` 全量 |
+| 个别父类 / sub 误标 | `reclassify-app --keys=parent_a,parent_b` 或 `--reset-only` 后小范围 cron | 无 `--keys` 的增量（易波及整类上千条） |
+| taxonomy 仅 1～2 组跨父撞名 | 等 cron 信号修订，或说明范围后手动修订 | `build-taxonomy --force` 当「只修重复」用 |
+| 用户说「跑工作流自我完善」 | 仍先 audit 定范围；能 remap 不重分类 | 把 force 修订 + 大规模 reclassify 当成默认 |
+
+## 执行前一句话
+
+向用户说明：**将重跑 N 条 / 哪些 key / 是否调用 LLM**；若 N 明显大于问题定义范围，先收窄方案再执行。

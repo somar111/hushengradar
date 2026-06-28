@@ -20,7 +20,7 @@ import {
   translateReviewWithPipeline,
 } from "../lib/translateReview.mjs";
 import { enrichFeatureRequestSubs, enrichTaxonomyIntents, getUniversalSubcategories, runGeneralBucketEnrichStage } from "../lib/taxonomyEnrich.mjs";
-import { runTaxonomyStage, resetLowHitSubsForReclassify, resetReviewsForCatchAllReclassify, ensureTaxonomySubLabelDisambiguation } from "../lib/taxonomy.mjs";
+import { runTaxonomyStage, resetLowHitSubsForReclassify, resetReviewsForCatchAllReclassify } from "../lib/taxonomy.mjs";
 import { createDeepSeekCaller } from "../lib/deepseek.mjs";
 
 const UNIVERSAL_KEYS = new Set(UNIVERSAL_CATEGORIES.map((c) => c.key));
@@ -328,14 +328,6 @@ async function processApp(app, { skipFetch = false } = {}) {
     app = { ...app, seed_categories: seedCategories, taxonomy_meta: enrichedApp.taxonomy_meta ?? app.taxonomy_meta };
   } catch (e) {
     console.error("intent 补全失败（已跳过）：", e.message);
-  }
-
-  try {
-    const disambiguatedApp = await ensureTaxonomySubLabelDisambiguation({ supabase, app, logger: console });
-    seedCategories = disambiguatedApp.seed_categories ?? seedCategories;
-    app = { ...app, seed_categories: seedCategories };
-  } catch (e) {
-    console.error("跨父类 sub label 消歧失败（已跳过）：", e.message);
   }
 
   const universalSubcategories = getUniversalSubcategories(app);

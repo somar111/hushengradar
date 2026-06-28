@@ -137,7 +137,7 @@ async function main() {
         }
       }
     }
-    // taxonomy 设计撞名但评论实况未体现时，也计入「若消歧 remap」范围
+    // taxonomy 设计撞名但评论实况未体现时，也计入 remap 范围
     for (const o of taxonomyOverlaps) {
       for (const r of reviews ?? []) {
         for (const t of r.ai_tags ?? []) {
@@ -153,7 +153,7 @@ async function main() {
     }
 
     console.log(`\n  涉及评论（去重）：${affectedIds.size} / ${reviews?.length ?? 0} 条已分类`);
-    console.log(`  若只 remap subLabel（taxonomy 消歧）：0 次 LLM，确定性改写标签`);
+    console.log(`  若 taxonomy 修订后 remap subLabel：0 次 LLM，确定性改写标签`);
     console.log(`  若全量重分类：${reviews?.length ?? 0} 次 LLM 调用（通常不必）`);
     console.log(`  若仅重跑涉及组：${affectedIds.size} 次 LLM 调用\n`);
   }

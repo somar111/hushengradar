@@ -11,7 +11,7 @@ import {
   X, BarChart2, LineChart, PanelLeft, Search, Loader2, Settings, ChevronDown, Info, ArrowUp, Trash2, Smile, Plus, RefreshCw, ListChecks, Mail,
 } from "lucide-react";
 import { type ReviewRow, type AppRow, type TerminologyEntry } from "@/lib/supabase";
-import { meaningfulLocaleFloor, sortSubTagRecordForDisplay, buildAmbiguousSubLabelNorms, scopedSubTagDisplayLabel } from "@/lib/analysisShared";
+import { meaningfulLocaleFloor, sortSubTagRecordForDisplay } from "@/lib/analysisShared";
 import { hasSubTagBreakdown } from "@/lib/promptKit.mjs";
 import { DEFAULT_DEMO_TIME_RANGE, resolveDefaultDemoApp } from "@/lib/demoDefaults";
 import { useQueryState, useQueryParams } from "@/lib/useQueryState";
@@ -1000,10 +1000,8 @@ function fmtDate(iso: string | null) {
 
 // Top 反馈 / 评论查看&回复头部共用 TagBreakdown。规则见 .cursor/rules/top-feedback-tagging.mdc：
 // praise、vague_complaint 无 breakdown；其余类有效子标签 ≥2 → chip，否则 → summarizeCluster 中文摘要（evidence 不作 UI 文案）。
-function TagBreakdown({ t, parentLabel, ambiguousSubLabelNorms, onJump, activeSubKey }: {
+function TagBreakdown({ t, onJump, activeSubKey }: {
   t: { count: number; summary: string | null; subTags: Record<string, { label: string; count: number }> };
-  parentLabel: string;
-  ambiguousSubLabelNorms: Set<string>;
   onJump?: (subKey?: string) => void;
   activeSubKey?: string;
 }) {
@@ -1018,8 +1016,7 @@ function TagBreakdown({ t, parentLabel, ambiguousSubLabelNorms, onJump, activeSu
   return (
     <div className="flex flex-wrap gap-1.5">
       {subEntries.map(([key, s]) => {
-        const label = scopedSubTagDisplayLabel(parentLabel, s.label, ambiguousSubLabelNorms);
-        const content = `${label}（${s.count}）`;
+        const content = `${s.label}（${s.count}）`;
         const active = activeSubKey === key;
         return onJump ? (
           <button key={key} onClick={(e) => { e.stopPropagation(); onJump(key); }}
@@ -1234,11 +1231,6 @@ function DemoPageInner() {
     }
     return "";
   }, [tagFilter, loading, reclassifyLoading, total]);
-
-  const ambiguousSubLabelNorms = useMemo(
-    () => (stats ? buildAmbiguousSubLabelNorms(stats.tagCounts) : new Set<string>()),
-    [stats],
-  );
 
   // ⌘B / Ctrl+B 切换左侧栏；⌥1~4 / Alt+1~4 切换右侧栏目；问 AI 下 ⌘⇧O / Ctrl+Shift+O 清空对话；
   // 评论查看&回复下 ⌥T / Alt+T 开关翻译。逻辑同时认 metaKey/ctrlKey 与 altKey，Mac 与 Windows 都生效；
@@ -1909,12 +1901,9 @@ function DemoPageInner() {
     const tagLabel = tagStats?.label ?? tag;
     const subTagLabel =
       subTag && tagStats?.subTags[subTag] ? tagStats.subTags[subTag].label : undefined;
-    const scopedSubTagLabel =
-      subTagLabel ? scopedSubTagDisplayLabel(tagLabel, subTagLabel, ambiguousSubLabelNorms) : undefined;
-
     if (tagClickTarget === "ask") {
       setParams({ panel: "ask" });
-      setChatInput(buildTagAskPrefill(tagLabel, scopedSubTagLabel, locale || undefined));
+      setChatInput(buildTagAskPrefill(tagLabel, subTagLabel, locale || undefined));
       pendingAskEntryScopeRef.current = subTag ? { tag, subTag } : { tag };
       pendingAskInputFocusRef.current = true;
       return;
@@ -1974,8 +1963,6 @@ function DemoPageInner() {
                       </div>
                       <TagBreakdown
                         t={t}
-                        parentLabel={t.label}
-                        ambiguousSubLabelNorms={ambiguousSubLabelNorms}
                         onJump={(subKey) => jumpToTag(tag, subKey)}
                       />
                     </div>
@@ -2332,8 +2319,6 @@ function DemoPageInner() {
             <p className="text-white/90 text-[15px] font-medium mb-1">{stats.tagCounts[tagFilter].label}（{stats.tagCounts[tagFilter].count}）</p>
             <TagBreakdown
               t={stats.tagCounts[tagFilter]}
-              parentLabel={stats.tagCounts[tagFilter].label}
-              ambiguousSubLabelNorms={ambiguousSubLabelNorms}
               activeSubKey={subTagFilter || undefined}
               onJump={(subKey) => setSubTagFilter(subKey === subTagFilter ? undefined : subKey)}
             />
@@ -2366,7 +2351,7 @@ function DemoPageInner() {
                 <option value="">全部子问题</option>
                 {sortSubTagRecordForDisplay(stats.tagCounts[tagFilter].subTags).map(([key, s]) => (
                   <option key={key} value={key}>
-                    {scopedSubTagDisplayLabel(stats.tagCounts[tagFilter].label, s.label, ambiguousSubLabelNorms)}（{s.count}）
+                    {s.label}（{s.count}）
                   </option>
                 ))}
               </select>
