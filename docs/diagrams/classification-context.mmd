@@ -1,0 +1,24 @@
+%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28, "wrappingWidth": 280}}}%%
+flowchart TB
+  subgraph ctx [分类上下文 per App]
+    SEED[seed_categories]
+    POOL[子问题复用池]
+    SUBS[universal_subcategories]
+    SEED --> GSUB["母类已有 2+ 有效 sub 才强制 subKey"]
+    POOL --> GSUB
+    SUBS --> GSUB
+  end
+
+  subgraph noise [前期噪声抑制]
+    N1["复用池门槛: 单 sub 命中未满 5 次不进池"]
+    N2["本轮新造 sub 不进复用池"]
+    N3["taxonomy 信号: 命中量 + 跨天沉淀才触发修订"]
+    N4["低命中 ephemeral sub 清零重标"]
+  end
+
+  N1 -.-> POOL
+  N2 -.-> POOL
+
+  GSUB --> OUT_PIPE["→ 单条分类管线 初判输入"]
+  N3 --> OUT_EVO["→ 批后 taxonomy 演进"]
+  N4 --> OUT_RERUN["→ 清零后重回单条管线"]

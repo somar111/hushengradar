@@ -1,0 +1,18 @@
+%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28, "wrappingWidth": 280}}}%%
+flowchart TB
+  SAVE[分类落库 ai_tags]
+
+  subgraph general [其他桶 subKey=general]
+    G0["说不清具体 sub 时暂归其他"]
+    G1["general 永不进入复用池"]
+    G2["母类已有具体 sub 仍标其他 触发语义校准"]
+    G3["单父类其他满 20 条 + 冷却 3 天"]
+    G3 --> G4[从其他 evidence 归纳新 sub]
+    G4 --> G5[重置该父类下其他评论]
+  end
+
+  SAVE --> G0
+  G0 --> G1
+  G0 --> G2
+  SAVE --> G3
+  G5 --> RERUN["→ 单条管线重读"]

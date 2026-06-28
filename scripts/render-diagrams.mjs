@@ -1,7 +1,7 @@
 // 将 docs/diagrams/*.mmd 导出为同名 SVG（README 嵌图用）。
 // 用法：npm run diagrams
 //
-// 白底 + neutral 主题：GitHub 深色模式下 README 内嵌图仍可读（透明底会让 #333 连线消失在黑底上）。
+// 灰黑底主题（见 mermaid-config.json）：比 GitHub 暗色页更浅，偏灰；浅色/深色 README 下均自成一块。
 // 首次安装若 Chromium 下载慢，可：
 //   PUPPETEER_SKIP_DOWNLOAD=true npm install
 // macOS 渲染需本机 Chrome：
@@ -14,6 +14,8 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const diagramsDir = path.join(root, "docs/diagrams");
 const configFile = path.join(diagramsDir, "mermaid-config.json");
+const diagramTheme = JSON.parse(readFileSync(configFile, "utf8"));
+const diagramBg = diagramTheme.themeVariables?.background ?? "#333338";
 const mmdc = path.join(root, "node_modules/.bin/mmdc");
 const chrome =
   process.env.PUPPETEER_EXECUTABLE_PATH ||
@@ -45,14 +47,22 @@ function postProcessSvg(svgPath) {
 
   svg = svg.replace(
     /(<svg\b[^>]*?)style="[^"]*background-color:[^"]*"/,
-    '$1style="background-color: #ffffff"'
+    `$1style="background-color: ${diagramBg}"`
   );
   if (!/<svg\b[^>]*style=/.test(svg)) {
-    svg = svg.replace(/<svg\b/, `<svg style="background-color: #ffffff"`);
+    svg = svg.replace(/<svg\b/, `<svg style="background-color: ${diagramBg}"`);
   }
 
   if (!svg.includes('id="diagram-bg"')) {
-    svg = svg.replace(/(<svg\b[^>]*>)/, `$1<rect id="diagram-bg" x="0" y="0" width="${w}" height="${h}" fill="#ffffff"/>`);
+    svg = svg.replace(
+      /(<svg\b[^>]*>)/,
+      `$1<rect id="diagram-bg" x="0" y="0" width="${w}" height="${h}" fill="${diagramBg}"/>`
+    );
+  } else {
+    svg = svg.replace(
+      /(<rect id="diagram-bg"[^>]*fill=")[^"]*(")/,
+      `$1${diagramBg}$2`
+    );
   }
 
   writeFileSync(svgPath, svg);
@@ -67,7 +77,7 @@ if (!files.length) {
 for (const file of files) {
   const input = path.join(diagramsDir, file);
   const output = path.join(diagramsDir, file.replace(/\.mmd$/, ".svg"));
-  const scale = file === "classification.mmd" ? "4" : "2.5";
+  const scale = "2.5";
   console.log(`渲染 ${file} → ${path.basename(output)} (scale ${scale})`);
 
   const args = [
@@ -76,9 +86,9 @@ for (const file of files) {
     "-o",
     output,
     "-t",
-    "neutral",
+    "dark",
     "-b",
-    "#ffffff",
+    diagramBg,
     "-s",
     scale,
     "-c",
@@ -86,17 +96,6 @@ for (const file of files) {
   ];
   execFileSync(mmdc, args, { stdio: "inherit", env });
   postProcessSvg(output);
-
-  // 分类图节点多、画布极宽；README 内嵌 SVG 会被压到栏宽，字号几乎看不清。另导出固定页宽的 PNG 供内嵌。
-  if (file === "classification.mmd") {
-    const pngOutput = path.join(diagramsDir, "classification.png");
-    console.log(`渲染 ${file} → classification.png (README 内嵌)`);
-    execFileSync(
-      mmdc,
-      ["-i", input, "-o", pngOutput, "-t", "neutral", "-b", "#ffffff", "-w", "960", "-s", "1", "-c", configFile],
-      { stdio: "inherit", env }
-    );
-  }
 }
 
 console.log("完成。");

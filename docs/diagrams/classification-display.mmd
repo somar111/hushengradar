@@ -1,0 +1,10 @@
+%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28, "wrappingWidth": 280}}}%%
+flowchart TB
+  SAVE[分类落库 ai_tags]
+
+  subgraph ui [Top 反馈展示]
+    SAVE --> UIQ{"2+ 有效 sub 且各命中 2+"}
+    UIQ -->|是| CHIP[子标签 chip 下钻]
+    UIQ -->|否| SUM[摘要短语 tag_summaries / scoped]
+    PRAISE["praise / vague_complaint"] --> NOCHIP[永不 breakdown]
+  end

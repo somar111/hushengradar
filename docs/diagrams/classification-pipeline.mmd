@@ -1,0 +1,19 @@
+%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28, "wrappingWidth": 280}}}%%
+flowchart TB
+  subgraph pipe [单条管线 classifyReviewWithPipeline]
+    CTX["上下文: subKey 强制 + 复用池"] --> LLM1
+    IN[评论 + 评分] --> LLM1[LLM 初判 + evidence]
+    LLM1 --> FIN[finalizeClassifiedTags 确定性收尾]
+    FIN --> VAL{结构校验}
+    VAL -->|未过| RETRY[重试初判]
+    RETRY --> LLM1
+    VAL --> SEM{可疑信号 needsSemanticCalibration}
+    SEM -->|是| LLM2[语义校准 reroute]
+    SEM -->|否| CC{原因后果并存}
+    LLM2 --> CC
+    CC -->|是| LLM3[原因后果专检]
+    CC -->|否| SAVE[写入 reviews.ai_tags]
+    LLM3 --> SAVE
+  end
+
+  SAVE --> OUT["→ 其他桶 / 批后演进 / Top 反馈"]

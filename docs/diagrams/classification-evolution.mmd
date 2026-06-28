@@ -1,0 +1,22 @@
+%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28, "wrappingWidth": 280}}}%%
+flowchart TB
+  SAVE[分类落库 ai_tags]
+
+  subgraph evo [批后演进 cron-fetch / reclassify-app]
+    SAVE --> FR[feature_request 子问题归纳]
+    FR --> SIGS[收集孤儿 / 碎片 / vague 占比等信号]
+    SIGS --> TD{过门槛}
+    TD -->|bootstrap 或 revise| TAI[taxonomy AI 设计或修订]
+    TD -->|跳过| POST[后续维护]
+    TAI --> MIN[ensureTaxonomyMinSubs]
+    MIN --> CHG{变更类型}
+    CHG -->|remap| REMAP[确定性改历史标签]
+    CHG -->|reclassify| PEND[pending_reclassify 待确认]
+    PEND --> RERUN[reclassify-app 批量重读]
+    REMAP --> POST
+    POST --> N4["低命中 ephemeral sub 清零重标"]
+  end
+
+  N3["taxonomy 信号: 命中量 + 跨天沉淀"] -.-> SIGS
+  RERUN --> PIPE["→ 单条分类管线"]
+  N4 -->|有重置| PIPE
