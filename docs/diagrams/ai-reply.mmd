@@ -1,0 +1,60 @@
+flowchart TB
+  classDef note fill:#35353c,stroke:#707080,stroke-width:1px,color:#d8d8dc
+  classDef cache fill:#2c3530,stroke:#5a7a62,stroke-width:1px,color:#d0dcd4
+
+  NOTE_REPLY["说明：按条生成回复草稿，不灌评论库。<br/>静态策略离线压成 playbook；在线只带本条评论与标签。"]
+  class NOTE_REPLY note
+
+  subgraph config [可配置输入]
+    direction TB
+    RS[reply_settings<br/>语气 / 句式 / 联系方式]
+    SHARED[context + terminology_glossary<br/>与分类、问 AI 共用]
+    RS --> HASH
+    SHARED --> HASH[reply_playbook_inputs_hash]
+  end
+
+  subgraph offline [离线 · playbook]
+    direction TB
+    TRIG[cron · 保存 settings/术语表]
+    SKIP{hash 未变?}
+    COMP[LLM 压缩 → reply_playbook]
+    FB[确定性短手册兜底]
+    STORE[(apps.reply_playbook)]
+    HASH --> TRIG --> SKIP
+    SKIP -->|是 · 跳过压缩| STORE
+    SKIP -->|否| COMP --> STORE
+    COMP -.->|失败| FB --> STORE
+  end
+
+  subgraph online [在线 · 单条生成 · maxDuration=60]
+    direction TB
+    UI[Demo 评论查看&回复<br/>选中评论]
+    ROUTE[POST /api/demo/ai-reply]
+    APPCACHE[getCachedApps<br/>TTL 5min]
+    RESOLVE[读 playbook<br/>热路径不压缩]
+    HINTS[buildReplyGenerationHints<br/>确定性 · 无 LLM]
+    SYS["system 固定前缀 + playbook<br/>DeepSeek context cache"]
+    USER[user · 本条评论]
+    DS[fetchDeepSeekForReply<br/>50s · 重试 1 次]
+    STRIP[stripLeakedHan 本地修正<br/>可用则跳过 LLM]
+    POST[混语 LLM 修正 · sanitize 联系方式]
+    UI --> ROUTE --> APPCACHE --> RESOLVE --> HINTS
+    HINTS --> SYS --> USER --> DS --> STRIP --> POST
+  end
+
+  subgraph extra [可选 · 生成与译文解耦]
+    direction TB
+    SHOW[面板先展示正文 · 结束 loading]
+    TRCHK{replyTranslationNeeded?}
+    TR[mode=translate 另发请求]
+    POST --> SHOW --> TRCHK
+    TRCHK -->|否| DONE[完成]
+    TRCHK -->|是| TR --> DONE
+  end
+
+  class APPCACHE,SKIP,SYS cache
+
+  NOTE_REPLY --> config
+  STORE --> RESOLVE
+  config --> offline
+  offline --> online

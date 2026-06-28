@@ -118,6 +118,39 @@
 
 ---
 
+## AI 回复建议
+
+- 与问 AI 分工不同 → 问 AI 做库内统计与归纳；回复建议只在「评论查看&回复」里为**单条**评论起草回帖草稿，按需调 DeepSeek，不走 tool_calls
+- 每条都塞 context / 语气 / 术语表又贵又慢 → 离线把 `context` + `reply_settings` + `terminology_glossary` 压成 App 级 `reply_playbook`（模式对齐 `tag_summaries`）；在线只带本条评论与标签
+- 在线热路径不跑 playbook 压缩 → 读库内 playbook；指纹 `reply_playbook_inputs_hash` 与输入不一致或缺失时，用确定性短手册兜底；完整压缩由 cron 或保存 settings / 术语表后触发
+- 联系方式不能靠模型编造 → `reply_settings.contactInfo` 写明使用条件；`detectReplyContactTrigger` 按评论内容（退款、扣费、订阅等）生成硬性提示；成稿后再 `sanitizeUnsourcedContactInfo` 剔除未授权邮箱/电话
+- 用评论原文语言写回复 → 好评 / 投诉 / 功能请求等场景由 `buildReplyGenerationHints` 确定性标注；若外语回复混入中文词，先本地剔除，必要时再打一轮修正
+- 开发者看不懂外语草稿 → 可选第二步 `mode=translate`，把成稿译成中文或英文供阅读（与回帖语言无关）
+
+### 配置项
+
+
+| 字段 | 存储 | 作用 |
+| ---- | ---- | ---- |
+| `reply_settings.tone` | `apps.reply_settings` | 语气（投诉先致歉、好评不致歉等） |
+| `reply_settings.style` | 同上 | 句式长度（默认 2~4 句、约 40~120 字） |
+| `reply_settings.contactInfo` | 同上 | 何时附邮箱/客服入口（须逐字配置，禁止模型自造） |
+| `context` | 同上 App 行 | 产品背景，参与 playbook 压缩 |
+| `terminology_glossary` | 同上 | 专名一致，参与压缩与成稿 |
+| `reply_playbook` | 同上 | 离线压缩结果，在线生成复用 |
+
+Demo 面板可编辑前三项（`PATCH /api/demo/apps/:appId/reply-settings`）；DB 为空时 `PUT` 幂等写入默认占位策略。语气纪律与问 AI 共用 `promptKit` 里的 `TONE_POLICY` / `REPLY_TONE_POLICY`。
+
+### playbook 刷新
+
+输入变更（`context`、`reply_settings`、`terminology_glossary`、`display_name`）→ 重算 `reply_playbook_inputs_hash` → `ensureReplyPlaybookFresh`：cron 每日管线末尾、保存回复设置或术语表后、或手动 `node --env-file=.env.local scripts/refresh-reply-playbook.mjs [--app=名称]`。
+
+[![AI 回复建议流程](docs/diagrams/ai-reply.svg)](docs/diagrams/ai-reply.svg)
+
+<sub>源文件 <a href="docs/diagrams/ai-reply.mmd">ai-reply.mmd</a> · <a href="docs/diagrams/ai-reply.svg">打开原图</a> · 修改后运行 <code>npm run diagrams</code> 重新导出</sub>
+
+---
+
 ## 演进方向（产品化，非当前 Demo）
 
 Demo 先验证 AI 分析 + 互动这条工作流；正式版会在接数据和回帖上换成官方渠道。
