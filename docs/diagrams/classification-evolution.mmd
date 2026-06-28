@@ -1,22 +1,33 @@
-%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28, "wrappingWidth": 280}}}%%
 flowchart TB
+  classDef note fill:#35353c,stroke:#707080,stroke-width:1px,color:#d8d8dc
+
+  NOTE_EVO["说明：cron ③ 分类落库后的体系演进。<br/>非破坏性变更自动 remap；需重读评论的写 pending_reclassify，确认后 reclassify-app。"]
+  class NOTE_EVO note
+
   SAVE[分类落库 ai_tags]
 
-  subgraph evo [批后演进 cron-fetch / reclassify-app]
-    SAVE --> FR[feature_request 子问题归纳]
-    FR --> SIGS[收集孤儿 / 碎片 / vague 占比等信号]
+  subgraph evo [批后演进 · cron-fetch ④ / reclassify-app]
+    direction TB
+    SAVE --> FR
+    FR[feature_request<br/>子问题归纳]
+    FR --> SIGS
+    SIGS["收集信号<br/>孤儿 / 碎片 / vague 占比等"]
     SIGS --> TD{过门槛}
-    TD -->|bootstrap 或 revise| TAI[taxonomy AI 设计或修订]
+    TD -->|bootstrap 或 revise| TAI[taxonomy AI<br/>设计或修订]
     TD -->|跳过| POST[后续维护]
-    TAI --> MIN[ensureTaxonomyMinSubs]
+    TAI --> MIN[ensureTaxonomyMinSubs<br/>母类 sub 不足 2 自动补]
     MIN --> CHG{变更类型}
     CHG -->|remap| REMAP[确定性改历史标签]
-    CHG -->|reclassify| PEND[pending_reclassify 待确认]
-    PEND --> RERUN[reclassify-app 批量重读]
+    CHG -->|reclassify| PEND[pending_reclassify<br/>待人工确认]
+    PEND --> RERUN[reclassify-app<br/>批量重读]
     REMAP --> POST
-    POST --> N4["低命中 ephemeral sub 清零重标"]
+    POST --> N4
+    N4["低命中 ephemeral sub<br/>命中 ≤4 清零重标"]
+    N4 --> GEN["→ 其他桶 enrich<br/>见下一张图"]
   end
 
-  N3["taxonomy 信号: 命中量 + 跨天沉淀"] -.-> SIGS
+  N3["taxonomy 信号护栏<br/>命中量 + 跨 ≥3 天沉淀"] -.-> SIGS
   RERUN --> PIPE["→ 单条分类管线"]
   N4 -->|有重置| PIPE
+
+  NOTE_EVO -.-> evo

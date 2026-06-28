@@ -1,17 +1,33 @@
-%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 60, "rankSpacing": 70, "padding": 24}}}%%
 flowchart TB
-  GP[Google Play 公开页] --> Cron[cron-fetch.mjs]
+  classDef note fill:#35353c,stroke:#707080,stroke-width:1px,color:#d8d8dc
 
-  subgraph pipeline [离线管线 — GitHub Actions / 本地]
-    Cron --> Classify[AI 分类]
-    Classify --> Translate[AI 翻译]
-    Translate --> Summarize[标签摘要]
+  GP[Google Play 公开页] --> Cron
+
+  NOTE_ARCH["说明：Demo 架构总览。<br/>离线 cron 写库；面板/API 读库，按需调 LLM。"]
+  class NOTE_ARCH note
+
+  subgraph pipeline ["离线管线 · GitHub Actions 每日 UTC 02:00 / cron-fetch.mjs"]
+    direction TB
+    Cron[脚本入口<br/>循环 apps 表每个 App]
+    Cron --> Fetch
+    Fetch["① 增量抓取<br/>按 locale 水位线 upsert reviews"]
+    Fetch --> Prep
+    Prep["② 分类准备<br/>intent 补全 · 构建复用池"]
+    Prep --> Classify
+    Classify["③ AI 分类<br/>未分类评论 → ai_tags"]
+    Classify --> Post
+    Post["④ 批后维护<br/>feature 归纳 · taxonomy 修订<br/>低命中重置 · 其他桶 enrich"]
+    Post --> Translate
+    Translate["⑤ AI 翻译<br/>缺译文评论"]
+    Translate --> Summarize
+    Summarize["⑥ 标签摘要<br/>有增量或 taxonomy 变更时刷新"]
   end
 
   DB[(Supabase / PostgreSQL)]
 
-  Cron -->|upsert 评论| DB
+  Fetch -->|upsert 评论| DB
   Classify -->|写 ai_tags| DB
+  Post -->|改 seed_categories<br/>pending_reclassify| DB
   Translate -->|写译文| DB
   Summarize -->|写 tag_summaries| DB
 
@@ -25,5 +41,8 @@ flowchart TB
   API --> UI
   API -->|问 AI · 回复 · 洞察 · 重分类| DS
   Classify --> DS
+  Post --> DS
   Translate --> DS
   Summarize --> DS
+
+  NOTE_ARCH -.-> pipeline

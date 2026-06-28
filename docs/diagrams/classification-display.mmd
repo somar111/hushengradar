@@ -1,10 +1,27 @@
-%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28, "wrappingWidth": 280}}}%%
 flowchart TB
+  classDef note fill:#35353c,stroke:#707080,stroke-width:1px,color:#d8d8dc
+
+  NOTE_UI["说明：Top 反馈面板如何展示某类问题。<br/>chip = 可点子标签下钻；摘要 = 离线/按筛选生成的中文短语。"]
+  class NOTE_UI note
+
   SAVE[分类落库 ai_tags]
 
-  subgraph ui [Top 反馈展示]
-    SAVE --> UIQ{"2+ 有效 sub 且各命中 2+"}
-    UIQ -->|是| CHIP[子标签 chip 下钻]
-    UIQ -->|否| SUM[摘要短语 tag_summaries / scoped]
-    PRAISE["praise / vague_complaint"] --> NOCHIP[永不 breakdown]
+  subgraph ui [Top 反馈展示 · computeStats]
+    direction TB
+    ROUTE{顶层类型}
+    NOCHIP[praise / vague_complaint<br/>永不 breakdown]
+    UIQ{"≥2 个有效 sub<br/>且各命中 ≥2 条"}
+    CHIP[子标签 chip 下钻]
+    SCOPE{有 locale / 时间筛选}
+    SUM_OFF[tag_summaries<br/>全库离线摘要]
+    SUM_SCOPE[summarizeTagsForScope<br/>scope 内现场概括]
+    ROUTE -->|praise / vague| NOCHIP
+    ROUTE -->|其余类| UIQ
+    UIQ -->|是| CHIP
+    UIQ -->|否| SCOPE
+    SCOPE -->|无| SUM_OFF
+    SCOPE -->|有| SUM_SCOPE
   end
+
+  NOTE_UI --> SAVE
+  SAVE --> ROUTE

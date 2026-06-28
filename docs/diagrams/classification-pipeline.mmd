@@ -1,13 +1,19 @@
-%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28, "wrappingWidth": 280}}}%%
 flowchart TB
+  classDef note fill:#35353c,stroke:#707080,stroke-width:1px,color:#d8d8dc
+
+  NOTE_PIPE["说明：一条评论的在线分类链路。<br/>evidence = 该标签在原文中的依据片段，供统计/校准用，不直接展示。"]
+  class NOTE_PIPE note
+
   subgraph pipe [单条管线 classifyReviewWithPipeline]
-    CTX["上下文: subKey 强制 + 复用池"] --> LLM1
-    IN[评论 + 评分] --> LLM1[LLM 初判 + evidence]
-    LLM1 --> FIN[finalizeClassifiedTags 确定性收尾]
+    direction TB
+    IN[评论 + 评分] --> LLM1
+    CTX["上下文<br/>subKey 强制 + 复用池"] --> LLM1
+    LLM1["LLM 初判<br/>顶层标签 + evidence"]
+    LLM1 --> FIN[finalizeClassifiedTags<br/>确定性收尾]
     FIN --> VAL{结构校验}
     VAL -->|未过| RETRY[重试初判]
     RETRY --> LLM1
-    VAL --> SEM{可疑信号 needsSemanticCalibration}
+    VAL -->|通过| SEM{可疑信号<br/>needsSemanticCalibration}
     SEM -->|是| LLM2[语义校准 reroute]
     SEM -->|否| CC{原因后果并存}
     LLM2 --> CC
@@ -17,3 +23,5 @@ flowchart TB
   end
 
   SAVE --> OUT["→ 其他桶 / 批后演进 / Top 反馈"]
+
+  NOTE_PIPE -.-> pipe

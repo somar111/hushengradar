@@ -1,18 +1,28 @@
-%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28, "wrappingWidth": 280}}}%%
 flowchart TB
+  classDef note fill:#35353c,stroke:#707080,stroke-width:1px,color:#d8d8dc
+
+  NOTE_GEN["说明：「其他」桶 = subKey=general。<br/>cron ④ 批后维护末尾执行；满量且过冷却才 enrich，非固定周期重跑。"]
+  class NOTE_GEN note
+
   SAVE[分类落库 ai_tags]
 
-  subgraph general [其他桶 subKey=general]
-    G0["说不清具体 sub 时暂归其他"]
-    G1["general 永不进入复用池"]
-    G2["母类已有具体 sub 仍标其他 触发语义校准"]
-    G3["单父类其他满 20 条 + 冷却 3 天"]
-    G3 --> G4[从其他 evidence 归纳新 sub]
-    G4 --> G5[重置该父类下其他评论]
+  subgraph rules [分类期规则]
+    direction TB
+    G0["说不清具体 sub<br/>暂归「其他」"]
+    G1["general 永不进复用池"]
+    G2["母类已有具体 sub<br/>仍标其他 → 语义校准"]
+    G0 --> G1 --> G2
   end
 
-  SAVE --> G0
-  G0 --> G1
-  G0 --> G2
+  subgraph enrich [cron 按需 enrich]
+    direction TB
+    G3["单父类「其他」≥20 条<br/>且距上次 enrich ≥3 天"]
+    G4[从其他 evidence<br/>归纳新 sub]
+    G5[重置该父类下<br/>「其他」评论]
+    G3 --> G4 --> G5
+  end
+
+  NOTE_GEN --> SAVE
+  SAVE --> rules
   SAVE --> G3
   G5 --> RERUN["→ 单条管线重读"]

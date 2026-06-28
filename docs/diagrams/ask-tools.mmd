@@ -1,32 +1,41 @@
-%%{init: {"themeVariables": {"fontSize": "18px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 90, "padding": 28}}}%%
 flowchart TB
+  classDef note fill:#35353c,stroke:#707080,stroke-width:1px,color:#d8d8dc
+
+  NOTE_ASK["说明：问 AI 不灌全库，用工具按需取证。<br/>作答只报 total 条数；evidenceUsed 是归纳样本量，不是评论总数。"]
+  class NOTE_ASK note
+
   subgraph ctx [问答上下文]
-    Q[用户问题 + 筛选 since / locale / tag]
-    ANCHOR[latestReviewDate 时间锚]
+    direction TB
+    Q[用户问题 + 筛选<br/>since / locale / tag]
+    ANCHOR["latestReviewDate 时间锚<br/>「最近一周」等同 Demo 列表口径"]
     APP[appContext + seed_categories + 术语表]
+    Q --> ANCHOR --> APP
   end
 
-  subgraph api [ask route answerQuestionStream]
-    Q --> STREAM[构建 buildAskPrompt]
-    ANCHOR --> STREAM
-    APP --> STREAM
-    STREAM --> PREF[askCountPrefetch 可选预取 get_stats]
-    PREF --> DS[DeepSeek 多轮 tool_calls]
-    STREAM --> DS
+  subgraph api [ask route · answerQuestionStream]
+    direction TB
+    STREAM[构建 buildAskPrompt]
+    PREF[askCountPrefetch<br/>可选预取 get_stats]
+    DS[DeepSeek 多轮 tool_calls]
+    STREAM --> PREF --> DS
   end
 
   subgraph tools [工具按需取证]
-    DS --> T1[get_stats / count_reviews]
-    DS --> T2[summarize_reviews]
-    DS --> T3[query_reviews quotes]
-    T1 --> DB[(reviews + 聚合统计)]
-    T2 --> DB
-    T3 --> DB
-    T2 --> MR[超 1600 条 map-reduce 合并主题]
-    MR --> DS
+    direction TB
+    TOOLS["get_stats · count_reviews<br/>summarize_reviews · query_reviews<br/>大 scope 归纳走 map-reduce"]
+    DB[(reviews + 聚合统计)]
+    TOOLS --> DB
   end
 
   subgraph out [作答与纪律]
-    DS --> SAN[sanitizeAskCounts 条数口径]
-    SAN --> NDJSON[流式 NDJSON 返回面板]
+    direction TB
+    SAN[sanitizeAskCounts<br/>统一条数口径]
+    NDJSON[流式 NDJSON 返回面板]
+    SAN --> NDJSON
   end
+
+  NOTE_ASK --> ctx
+  ctx --> api
+  api --> tools
+  tools --> DS
+  DS --> out

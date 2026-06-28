@@ -1,5 +1,12 @@
 {
   "theme": "dark",
+  "flowchart": {
+    "nodeSpacing": 55,
+    "rankSpacing": 65,
+    "padding": 24,
+    "wrappingWidth": 240,
+    "htmlLabels": true
+  },
   "themeVariables": {
     "fontSize": "18px",
     "fontFamily": "trebuchet ms, verdana, arial, sans-serif",
