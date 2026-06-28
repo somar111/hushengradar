@@ -37,7 +37,7 @@ html, body {
   color: #eef3ff;
 }
 
-/* 滚动条参考 claude.ai 侧边栏：细、透明轨道、半透明小圆角滑块，不滚动时几乎隐身 */
+/* 细滚动条：透明轨道、半透明小圆角滑块，不滚动时几乎隐身 */
 * {
   scrollbar-width: thin;
   scrollbar-color: rgb(124, 139, 176) transparent;

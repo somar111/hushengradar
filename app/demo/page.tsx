@@ -542,7 +542,7 @@ function TagClickTargetToggle({
   );
 }
 
-// 主题强调色：跟 Claude Code 用量统计图的蓝色对齐（从截图实测取色 rgb(87,129,216)）
+// 主题强调色 rgb(87,129,216)
 const THEME_BLUE = "#5781d8";
 
 // 分段切换器统一样式：深色轨道 + 选中态是一块"磨砂玻璃胶囊"（半透明白底、上缘高光、细边、
@@ -2580,7 +2580,7 @@ function DemoPageInner() {
   // 收起那支永远只有一个图标按钮，结构上不可能露出别的内容；展开那支固定 w-52，
   // 跟外层当前宽度无关，所以外层变宽的过程中它不会被压着重新换行
   // 不做成悬浮卡片——左栏直接用自己的底色铺满整列，跟右栏之间不留缝、不加分割线，
-  // 单靠色块深浅区分两栏，贴近一般 LLM 网页版（ChatGPT/Claude）的平铺式布局
+  // 单靠色块深浅区分两栏，贴近一般 LLM 网页版的平铺式布局
   const LeftPanel = (
     <div className={`flex-none flex flex-col overflow-hidden bg-[#1d2433] transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
       {!leftOpen ? (
