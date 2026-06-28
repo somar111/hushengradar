@@ -2576,40 +2576,42 @@ function DemoPageInner() {
   );
 
   // ── 左栏 ──
-  // 外层宽度做动画（48↔208，只动 width 一个属性），内层按 leftOpen 整体切换分支——
-  // 收起那支永远只有一个图标按钮，结构上不可能露出别的内容；展开那支固定 w-52，
-  // 跟外层当前宽度无关，所以外层变宽的过程中它不会被压着重新换行
+  // 外层宽度做动画（48↔208，只动 width 一个属性），内层固定 w-52 由 overflow 裁剪——
+  // 开合按钮始终同一 DOM 节点，避免切换分支时图标抖动；其余内容仅在展开时挂载
   // 不做成悬浮卡片——左栏直接用自己的底色铺满整列，跟右栏之间不留缝、不加分割线，
   // 单靠色块深浅区分两栏，贴近一般 LLM 网页版的平铺式布局
   const LeftPanel = (
     <div className={`flex-none flex flex-col overflow-hidden bg-[#1d2433] transition-[width] duration-200 ease-in-out ${leftOpen ? "w-52" : "w-12"}`}>
-      {!leftOpen ? (
-        <div className="p-3 flex-none">
-          <button onClick={() => setLeftOpen(true)}
-            className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors">
+      <div className="flex flex-col overflow-hidden flex-1 w-52 shrink-0">
+        <div className="p-3 flex items-center flex-none gap-2">
+          <button
+            onClick={() => setLeftOpen((o) => !o)}
+            aria-expanded={leftOpen}
+            aria-label={leftOpen ? "收起左侧栏" : "展开左侧栏"}
+            className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none shrink-0"
+          >
             <PanelLeft size={20} strokeWidth={1.5} />
           </button>
+          <div
+            className={`flex-1 min-w-0 overflow-hidden transition-opacity duration-200 ${
+              leftOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
+            aria-hidden={!leftOpen}
+          >
+            <SegmentedControl<LeftSidebarView>
+              value={leftSidebarView}
+              onChange={setLeftSidebarView}
+              className="flex-1 min-w-0"
+              itemClassName="px-2.5 py-1.5 text-[13px]"
+              fill
+              options={[
+                { value: "filter", label: "筛选" },
+                { value: "settings", label: "设置", icon: <Settings size={12} /> },
+              ]}
+            />
+          </div>
         </div>
-      ) : (
-      <div className="flex flex-col overflow-hidden flex-1 w-52">
-        {/* 跟收起状态用一样的 p-3，图标在两种状态下像素对齐，切换时看起来"原地"不挪 */}
-        <div className="p-3 flex items-center justify-between flex-none gap-2">
-          <button onClick={() => setLeftOpen(false)}
-            className="text-white/80 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors flex-none">
-            <PanelLeft size={20} strokeWidth={1.5} />
-          </button>
-          <SegmentedControl<LeftSidebarView>
-            value={leftSidebarView}
-            onChange={setLeftSidebarView}
-            className="flex-1 min-w-0"
-            itemClassName="px-2.5 py-1.5 text-[13px]"
-            fill
-            options={[
-              { value: "filter", label: "筛选" },
-              { value: "settings", label: "设置", icon: <Settings size={12} /> },
-            ]}
-          />
-        </div>
+        {leftOpen && (
         <div className="flex-1 flex flex-col overflow-hidden">
           {leftSidebarView === "filter" && (
             <>
@@ -2790,8 +2792,8 @@ function DemoPageInner() {
             </div>
           )}
         </div>
+        )}
       </div>
-      )}
     </div>
   );
 
