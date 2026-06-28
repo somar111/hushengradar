@@ -63,7 +63,7 @@
 - 冷启动噪声（临场造 sub、单批偶发） → 复用池须命中 ≥5 次且排除 `general`；taxonomy 修订看过命中量与跨天沉淀；低命中 ephemeral sub 清零重标
 - 说不清该归哪个 sub → 暂归「其他」；满 20 条且过 3 天冷却才从 evidence enrich 新 sub 并重读原评论；滥用「其他」触发语义校准
 
-### 分类上下文与前期抑制
+### 分类上下文与前期噪音抑制
 
 [![分类上下文](docs/diagrams/classification-context.svg)](docs/diagrams/classification-context.svg)
 

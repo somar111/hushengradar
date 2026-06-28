@@ -9,7 +9,7 @@ flowchart TB
     SUBS --> GSUB
   end
 
-  subgraph noise [前期噪声抑制]
+  subgraph noise [前期噪音抑制]
     N1["复用池门槛: 单 sub 命中未满 5 次不进池"]
     N2["本轮新造 sub 不进复用池"]
     N3["taxonomy 信号: 命中量 + 跨天沉淀才触发修订"]
