@@ -149,9 +149,9 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 function ShortcutRow({ keys, desc }: { keys: string[]; desc: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 text-white/75">
-      <span className="min-w-0 leading-snug">{desc}</span>
-      <span className="flex items-center gap-1 flex-none">
+    <div className="flex flex-col gap-1.5 text-white/75">
+      <span className="text-[13px] leading-snug">{desc}</span>
+      <span className="flex items-center gap-1 flex-wrap">
         {keys.map((k) => (
           <kbd key={k} className="min-w-[1.35rem] text-center px-1.5 py-0.5 rounded bg-[#1d2433] border border-white/12 text-[11px] text-white/70 font-mono">
             {k}
@@ -2531,13 +2531,13 @@ function DemoPageInner() {
               </section>
               <section className="pt-4 pb-1">
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">快捷键</p>
-                <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-2">
+                <div className="bg-white/6 rounded-xl p-3 flex flex-col gap-3">
                   <ShortcutRow keys={["⌘/Ctrl", "B"]} desc="显示 / 隐藏左侧栏" />
                   {RIGHT_PANEL_NAV.map((item, i) => (
                     <ShortcutRow key={item.key} keys={["⌥/Alt", String(i + 1)]} desc={item.label} />
                   ))}
                   <ShortcutRow keys={["⌘/Ctrl", "Shift", "O"]} desc="清空此对话（问 AI）" />
-                  <ShortcutRow keys={["⌥/Alt", "T"]} desc="开关翻译（评论查看&回复栏目）" />
+                  <ShortcutRow keys={["⌥/Alt", "T"]} desc="开关翻译（评论查看&回复）" />
                 </div>
                 <p className="text-white/40 text-[12px] mt-2 px-1 leading-relaxed">
                   Alt 系列在输入框内打字时不触发；问 AI 输入框内仍可用 ⌘⇧O / Ctrl+Shift+O 清空对话。
