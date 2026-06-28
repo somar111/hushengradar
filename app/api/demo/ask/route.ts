@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getApp, getDefaultApp, getLatestReviewDate } from "@/lib/reviews";
 import { answerQuestionStream } from "@/lib/classify";
+import { formatDeepSeekUserError } from "@/lib/deepseekFetch.mjs";
 
 export async function POST(request: NextRequest) {
   if (!process.env.DEEPSEEK_API_KEY) {
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
         if ((e as Error)?.name === "AbortError") {
           // 客户端主动断开（点了"停止"），静默收尾即可
         } else {
-          send({ type: "error", message: (e as Error).message });
+          send({ type: "error", message: formatDeepSeekUserError(e) });
         }
       } finally {
         controller.close();

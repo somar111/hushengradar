@@ -67,13 +67,16 @@ function evidenceForRow(r: ReviewRow, tag?: string, subTag?: string): string | n
 }
 
 function compactReviewQuote(r: ReviewRow, tag?: string, subTag?: string) {
+  const evidence = evidenceForRow(r, tag, subTag);
+  const translatedZh = String(r.translated_zh ?? "").trim() || null;
   return {
     reviewId: r.id,
     date: r.review_date.slice(0, 10),
     rating: r.rating,
     locale: r.locale,
     localeLabel: localeLabel(r.locale),
-    evidence: evidenceForRow(r, tag, subTag),
+    evidence,
+    ...(translatedZh ? { translatedZh } : {}),
   };
 }
 
@@ -172,7 +175,7 @@ export const ASK_TOOLS = [
     function: {
       name: "query_reviews",
       description:
-        "查询少量评论样本作代表引用或关键词 existence 检查。归纳主题必须用 summarize_reviews，不要用本工具代替。mode=quotes（默认）只返回 evidence+元数据；mode=full 含译文/原文。支持 page 翻页。",
+        "查询少量评论样本作代表引用或关键词 existence 检查。归纳主题必须用 summarize_reviews，不要用本工具代替。mode=quotes（默认）返回 evidence+元数据+translatedZh（若有）；mode=full 含译文/原文。支持 page 翻页。",
       parameters: {
         type: "object",
         properties: {

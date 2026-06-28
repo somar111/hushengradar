@@ -43,6 +43,11 @@ export type AppRow = {
   } | null;
   active_locales: [string, string][] | null;
   locale_probed_at: string | null;
+  /** 回复建议策略（语气/句式/联系方式） */
+  reply_settings?: { tone?: string; style?: string; contactInfo?: string } | null;
+  reply_playbook?: string | null;
+  reply_playbook_at?: string | null;
+  reply_playbook_inputs_hash?: string | null;
   created_at: string;
 };
 

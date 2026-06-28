@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { normalizeReplySettings } from "@/lib/replySettings.shared.mjs";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -66,12 +67,6 @@ type AskSettings = {
   useThinking: boolean;
 };
 
-type AiReplySettings = {
-  tone: string;
-  style: string;
-  contactInfo: string;
-};
-
 type LeftSidebarView = "filter" | "settings";
 type RatingView = "trend" | "distribution" | "locale";
 
@@ -116,12 +111,6 @@ const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
 const DEFAULT_ASK_SETTINGS: AskSettings = {
   useEmoji: true,
   useThinking: false,
-};
-
-const DEFAULT_AI_REPLY_SETTINGS: AiReplySettings = {
-  tone: "口语化、像真人而非客服模板。按评论类型调整基调：投诉/差评——先表达理解或致歉（如确有问题），再说明，不过度承诺；若联系方式规则命中（退款、扣费争议、试用转订阅、账号/订单需核实等），必须引导对应授权邮箱，不要仅用「已转达开发团队」敷衍。未命中时可用「已收到问题」「已转达开发团队」。好评——真诚感谢、不要致歉、无需附联系方式；功能请求——感谢建议并说明「已转达产品团队评估」，不承诺一定实现。遇崩溃/闪退/卡顿等 bug，请用户补充设备型号、系统与版本、复现步骤或截图，便于跟进。",
-  style: "不要千篇一律、不要客服腔模板，自然简洁。长度控制在 2~4 句、约 40~120 字，差评也不要堆砌道歉。默认不主动使用 emoji；仅在回复好评等轻松场景最多用 1 个，投诉、退款、账号、扣费、严重 bug 等场景一律不用。",
-  contactInfo: "凡用户明确要求退款/退钱、或抱怨未经授权扣费/乱扣费/试用未取消被续订/充值未到账、或账号/订单需人工核实的，须在回复中引导联系对应邮箱。涉及退款/退订：refund@yourapp.com；涉及扣费争议、试用转订阅、账号（丢失/封号/申诉）、充值未到账、严重 bug 等需核实订单或身份：support@yourapp.com。仅表达对产品功能/体验的一般差评、或与人工处理无关的 bug 反馈，不要附联系方式。（占位邮箱，请替换为团队真实邮箱）",
 };
 
 function loadJsonSetting<T>(key: string, fallback: T): T {
@@ -1149,6 +1138,7 @@ function DemoPageInner() {
   const [aiReply, setAiReply] = useState("");
   const [aiReplyTranslation, setAiReplyTranslation] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiTranslationLoading, setAiTranslationLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [reclassifyLoading, setReclassifyLoading] = useState(false);
   const [reclassifyFeedback, setReclassifyFeedback] = useState("");
@@ -1189,6 +1179,10 @@ function DemoPageInner() {
   const statsReqIdRef = useRef(0);
 
   const selectedApp = apps.find((a) => a.id === selectedAppId);
+  const replySettingsDisplay = useMemo(
+    () => normalizeReplySettings(selectedApp?.reply_settings),
+    [selectedApp?.reply_settings]
+  );
 
   useEffect(() => {
     if (!selectedApp) {
@@ -1204,6 +1198,24 @@ function DemoPageInner() {
       }))
     );
   }, [selectedAppId, selectedApp?.terminology_glossary, selectedApp]);
+
+  // 首次选中 App 时把默认 reply_settings 幂等写入 DB（与术语表一样 per-App 持久化）
+  useEffect(() => {
+    if (!selectedAppId) return;
+    let cancelled = false;
+    fetch(`/api/demo/apps/${selectedAppId}/reply-settings`, { method: "PUT" })
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok || cancelled || !data.seeded) return;
+        setApps((prev) =>
+          prev.map((a) => (a.id === selectedAppId ? { ...a, reply_settings: data.settings } : a))
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAppId]);
 
   // 锚点用这个App真实数据里最新一条评论的日期，不用服务器当前时间——见 lib/reviews.ts
   // 的 getLatestReviewDate 注释，Google Play 评论接口本身有索引延迟，锚定"现在"会让窗口
@@ -1808,6 +1820,7 @@ function DemoPageInner() {
     setSelectedReview(r);
     setAiReply("");
     setAiReplyTranslation(null);
+    setAiTranslationLoading(false);
     setAiError("");
   }
 
@@ -1824,36 +1837,56 @@ function DemoPageInner() {
   async function handleGenerateAiReply() {
     if (!selectedReview) return;
     setAiLoading(true);
+    setAiTranslationLoading(false);
     setAiError("");
+    setAiReply("");
+    setAiReplyTranslation(null);
+    const payload = {
+      content: selectedReview.content,
+      rating: selectedReview.rating,
+      tags: selectedReview.ai_tags,
+      author: selectedReview.author,
+      appId: selectedAppId,
+      reviewDetectedLang: selectedReview.detected_lang,
+      translateSettings,
+    };
     try {
       const res = await fetch("/api/demo/ai-reply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: selectedReview.content,
-          rating: selectedReview.rating,
-          tags: selectedReview.ai_tags,
-          author: selectedReview.author,
-          appId: selectedAppId,
-          replyContext: {
-            tone: DEFAULT_AI_REPLY_SETTINGS.tone,
-            style: DEFAULT_AI_REPLY_SETTINGS.style,
-            contactInfo: DEFAULT_AI_REPLY_SETTINGS.contactInfo,
-          },
-          translateSettings,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) {
         setAiError(data.error || "生成失败");
-      } else {
-        setAiReply(data.reply);
-        setAiReplyTranslation(data.translation ?? null);
+        return;
+      }
+      setAiReply(data.reply);
+      setAiLoading(false);
+
+      if (!translateSettings.enabled) return;
+
+      setAiTranslationLoading(true);
+      try {
+        const trRes = await fetch("/api/demo/ai-reply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, mode: "translate", reply: data.reply }),
+        });
+        const trData = await trRes.json();
+        if (trRes.ok && trData.translation) {
+          setAiReplyTranslation(trData.translation);
+        }
+      } catch {
+        // 正文已展示；译文失败静默降级
+      } finally {
+        setAiTranslationLoading(false);
       }
     } catch {
       setAiError("请求失败，请重试");
     } finally {
       setAiLoading(false);
+      setAiTranslationLoading(false);
     }
   }
 
@@ -2514,6 +2547,12 @@ function DemoPageInner() {
               {aiReply ? (
                 <>
                   <p className="text-white/90 text-[16px] leading-relaxed whitespace-pre-line">{aiReply}</p>
+                  {aiTranslationLoading && (
+                    <p className="text-white/45 text-[13px] mt-2.5 flex items-center gap-1.5">
+                      <Loader2 size={13} className="animate-spin" />
+                      译文加载中…
+                    </p>
+                  )}
                   {aiReplyTranslation && (
                     <>
                       <p className="text-white/60 text-[14px] mt-2.5 mb-1">译文（该译文不会被发送）</p>
@@ -2707,22 +2746,23 @@ function DemoPageInner() {
               </section>
               <section className="py-4">
                 <p className="text-white/60 uppercase tracking-wider text-[13px] font-semibold mb-2 px-1">AI 回复建议 context 设置</p>
-                <p className="text-white/40 text-[12px] mb-2 px-1 leading-relaxed">仅用于「评论查看&回复」栏目的 AI 回复建议，与「问 AI」无关。</p>
+                <p className="text-white/40 text-[12px] mb-2 px-1 leading-relaxed">
+                  仅用于「评论查看&回复」的 AI 回复建议；已按 App 存入数据库并离线压缩为 playbook（演示版暂锁定编辑）。
+                </p>
                 <GlassHoverTooltip message={LOCKED_FEATURE_HINT} wrapClassName={`relative block ${LOCKED_SURFACE_CURSOR}`}>
                 <div className="relative bg-white/6 rounded-xl p-3 flex flex-col gap-3">
                   <div className="pointer-events-none select-none flex flex-col gap-3">
                   {([
-                    ["语气", DEFAULT_AI_REPLY_SETTINGS.tone, 2],
-                    ["句式", DEFAULT_AI_REPLY_SETTINGS.style, 2],
-                    ["联系方式", DEFAULT_AI_REPLY_SETTINGS.contactInfo, 3],
-                  ] as const).map(([label, placeholder, rows]) => (
+                    ["语气", replySettingsDisplay.tone, 2],
+                    ["句式", replySettingsDisplay.style, 2],
+                    ["联系方式", replySettingsDisplay.contactInfo, 3],
+                  ] as const).map(([label, value, rows]) => (
                     <div key={label} className="flex flex-col gap-1.5">
                       <span className="text-white/55 text-[12px]">{label}</span>
                       <textarea
                         readOnly
                         tabIndex={-1}
-                        value=""
-                        placeholder={placeholder}
+                        value={value}
                         rows={rows}
                         className={AI_REPLY_FIELD_LOCKED_CLASS}
                       />

@@ -39,6 +39,7 @@ export type SummarizeReviewsResult = {
     rating: number | null;
     locale: string | null;
     evidence: string;
+    translatedZh?: string;
   }[];
   note: string;
 };
@@ -231,6 +232,7 @@ export async function summarizeReviewsForAsk(opts: {
     locale: i.locale,
     localeLabel: localeLabel(i.locale),
     evidence: i.evidence,
+    ...(i.translated_zh ? { translatedZh: i.translated_zh } : {}),
   }));
 
   if (!evidences.length) {

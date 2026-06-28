@@ -14,6 +14,7 @@ import {
 } from "../lib/promptKit.mjs";
 import { classifyReviewWithPipeline } from "../lib/classifyReview.mjs";
 import { refreshTagSummaries } from "../lib/tagSummaries.mjs";
+import { ensureReplyPlaybookFresh } from "../lib/replyPlaybook.mjs";
 import {
   listReviewsNeedingTranslation,
   persistTranslationResult,
@@ -497,6 +498,14 @@ async function processApp(app, { skipFetch = false } = {}) {
   } else {
     console.log("没有新数据、也无 taxonomy 变更，跳过摘要刷新");
   }
+
+  const { refreshed: playbookRefreshed } = await ensureReplyPlaybookFresh({
+    supabase,
+    app,
+    apiKey: DEEPSEEK_API_KEY,
+    logger: console,
+  });
+  if (playbookRefreshed) console.log("已刷新回复建议 playbook");
 
   // 5. 整条管线跑完，更新展示用时间戳（locale_watermarks 已在抓取后落盘）
   const { error: e4 } = await supabase.from("apps").update({

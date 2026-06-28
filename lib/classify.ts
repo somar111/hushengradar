@@ -1,9 +1,13 @@
 import {
   buildAskPrompt,
   buildInsightsPrompt,
-  buildReplyPrompt,
-  detectReplyContactTrigger,
+  formatTerminologyGlossaryBlock,
 } from "./promptKit.mjs";
+import { DEEPSEEK_URL, fetchDeepSeekForReply, fetchDeepSeekWithRetry } from "./deepseekFetch.mjs";
+import {
+  buildOnlineReplySystemPrompt,
+  buildOnlineReplyUserPrompt,
+} from "./replyPlaybook.mjs";
 import { prefetchAskExistenceHint, prefetchAskStatsScope, prefetchAskTagScope } from "./askCountPrefetch";
 import { ASK_TOOLS, executeAskTool, type AskContext } from "./askTools";
 import { localeLabel, localeLabelOverrides } from "./localeLabels";
@@ -26,7 +30,6 @@ type ToolCall = {
   function: { name: string; arguments: string };
 };
 
-const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 const ASK_MAX_ROUNDS = 10;
 const ASK_CHAT_MODEL = "deepseek-chat";
 const ASK_THINKING_MODEL = "deepseek-reasoner";
@@ -50,7 +53,7 @@ function buildAskCompletionBody(opts: {
 }
 
 async function callDeepSeek(apiKey: string, body: Record<string, unknown>) {
-  const res = await fetch(DEEPSEEK_URL, {
+  const res = await fetchDeepSeekWithRetry(DEEPSEEK_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -58,9 +61,18 @@ async function callDeepSeek(apiKey: string, body: Record<string, unknown>) {
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    throw new Error(`DeepSeek API 出错：${await res.text()}`);
-  }
+  return res.json();
+}
+
+async function callDeepSeekForReply(apiKey: string, body: Record<string, unknown>) {
+  const res = await fetchDeepSeekForReply(DEEPSEEK_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
   return res.json();
 }
 
@@ -73,81 +85,157 @@ export type ReplyContext = {
   contactInfo?: string;
 };
 
+export type ReplySuggestionResult = {
+  reply: string;
+};
+
+/** 回复建议是否需要附带开发者阅读用的译文（与 pickReplyTranslation 规则一致）。 */
+export function replyTranslationNeeded(
+  detectedLang: string | null | undefined,
+  settings: ReplyTranslationSettings
+): boolean {
+  if (!settings.enabled) return false;
+  if (!detectedLang) return true;
+  if (settings.scope === "non_zh_en" && (detectedLang === "zh" || detectedLang === "en")) return false;
+  if (settings.targetLang === "zh") return detectedLang !== "zh";
+  return detectedLang !== "en";
+}
+
+/** 把已生成的短回复译成开发者阅读语言（极简 prompt，单独一步）。 */
+export async function translateReplyForDeveloper(
+  reply: string,
+  targetLang: "zh" | "en",
+  opts: {
+    displayName?: string | null;
+    terminologyGlossary?: TerminologyEntry[] | null;
+  } = {}
+): Promise<string> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error("DEEPSEEK_API_KEY 未配置");
+
+  const targetLabel = targetLang === "zh" ? "简体中文" : "英文";
+  const glossary = formatTerminologyGlossaryBlock(opts.terminologyGlossary, { displayName: opts.displayName });
+
+  const data = await callDeepSeekForReply(apiKey, {
+    model: "deepseek-chat",
+    messages: [
+      {
+        role: "system",
+        content: [
+          `把用户给出的短客服回复忠实翻译成${targetLabel}。只输出译文正文，不要解释。`,
+          glossary,
+        ].filter(Boolean).join("\n"),
+      },
+      { role: "user", content: reply },
+    ],
+    temperature: 0.1,
+  });
+  return data.choices?.[0]?.message?.content?.trim() || "";
+}
+
+async function fixLanguageMixedReply(apiKey: string, reply: string): Promise<string> {
+  const data = await callDeepSeekForReply(apiKey, {
+    model: "deepseek-chat",
+    messages: [
+      {
+        role: "system",
+        content: "下面回复混入了不该出现的中文词。去掉中文并用其余语言重写，保持原意。只输出修正后的正文。",
+      },
+      { role: "user", content: reply },
+    ],
+    temperature: 0.1,
+  });
+  return data.choices?.[0]?.message?.content?.trim() || reply;
+}
+
+export type ReplyGenerationHints = {
+  scenario: string;
+  contactInstruction: string | null;
+  tagLabels: string;
+  lengthHint: string;
+};
+
 export async function generateReplySuggestion(opts: {
   content: string;
   rating: number;
   author: string;
   tags: ClassifiedTag[];
-  appContext?: string | null;
-  displayName?: string | null;
-  terminologyGlossary?: TerminologyEntry[] | null;
-  replyContext?: ReplyContext | null;
-}): Promise<string> {
+  replyPlaybook: string;
+  generationHints: ReplyGenerationHints;
+  contactCorpus?: string | null;
+}): Promise<ReplySuggestionResult> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY 未配置");
   }
 
-  const systemPrompt = buildReplyPrompt({
-    appContext: opts.appContext,
-    replyContext: opts.replyContext,
-    displayName: opts.displayName,
-    terminologyGlossary: opts.terminologyGlossary,
+  const systemPrompt = buildOnlineReplySystemPrompt({ playbook: opts.replyPlaybook });
+
+  const userPrompt = buildOnlineReplyUserPrompt({
+    author: opts.author,
+    rating: opts.rating,
+    hints: opts.generationHints,
+    content: opts.content,
   });
 
-  const hasAuthorizedContact = Boolean(opts.replyContext?.contactInfo?.trim());
-  const contactTrigger = hasAuthorizedContact
-    ? detectReplyContactTrigger(opts.content, opts.tags)
-    : null;
+  const data = await callDeepSeekForReply(apiKey, {
+    model: "deepseek-chat",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.3,
+  });
 
-  const userPrompt = [
-    `评论作者：${opts.author}`,
-    `评分：${opts.rating} 星`,
-    `问题类型：${opts.tags.map((t) => t.label).join("、") || "无"}`,
-    `评论内容：${opts.content}`,
-    contactTrigger
-      ? `【硬性要求】本条评论涉及${contactTrigger === "refund" ? "退款/退钱" : "扣费/订阅/账号"}类问题，且开发者已授权对应联系方式。回复中必须引导用户通过「开发者自定义联系方式」里匹配的邮箱联系处理，不得仅用「转交开发团队」了事。`
-      : "",
-    hasAuthorizedContact ? "" : "注意：未配置自定义联系方式，禁止在回复中出现邮箱、网址、电话。",
-  ].filter(Boolean).join("\n");
-
-  // 模型偶发会把中文词漏进外语回复里（如葡语句子中突然冒出"公平性"）。这种回复要直接发给
-  // 外语用户，夹生很不专业。判据：评论原文几乎没有中文，回复里却出现了中文 → 多半是漏词，
-  // 自动重写一次（追加纠正指令）。重写后仍夹生就只能用现有结果（极罕见，靠 corpus 净化兜底）。
-  const baseMessages: ChatMessage[] = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userPrompt },
-  ];
-
-  let reply = "";
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const messages: ChatMessage[] =
-      attempt === 0
-        ? baseMessages
-        : [
-            ...baseMessages,
-            {
-              role: "system",
-              content: "上一版回复里混入了中文词。请重写：整条回复只用评论原文的语言，绝不夹杂中文或其它语言的词。",
-            },
-          ];
-    const data = await callDeepSeek(apiKey, {
-      model: "deepseek-chat",
-      messages,
-      temperature: 0.3,
-    });
-    reply = data.choices?.[0]?.message?.content?.trim() || "";
-    if (!looksLanguageMixed(reply, opts.content)) break;
+  let reply = data.choices?.[0]?.message?.content?.trim() || "";
+  const mixed = tryFixLanguageMixedReply(reply, opts.content);
+  reply = mixed.reply;
+  if (mixed.needsLlm) {
+    reply = await fixLanguageMixedReply(apiKey, reply);
   }
 
-  const corpus = [opts.content, opts.replyContext?.contactInfo ?? ""].join("\n");
-  return sanitizeUnsourcedContactInfo(reply, corpus);
+  const corpus = [opts.content, opts.contactCorpus ?? ""].join("\n");
+  return { reply: sanitizeUnsourcedContactInfo(reply, corpus) };
 }
 
 const HAN_RE = /[\u4e00-\u9fff]/;
 // 评论原文没有中文、回复却带中文 → 判定为模型把中文词漏进了外语回复。
 function looksLanguageMixed(reply: string, source: string): boolean {
   return HAN_RE.test(reply) && !HAN_RE.test(source);
+}
+
+/** 漏进外语回复的少量中文词：先本地剔除，避免再打一轮 LLM（常省 3~6 秒）。 */
+function stripLeakedHanFromReply(reply: string): string {
+  return reply
+    .replace(/[\u4e00-\u9fff]/g, "")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function hanCharRatio(text: string): number {
+  const chars = [...text.replace(/\s/g, "")];
+  if (!chars.length) return 0;
+  return chars.filter((c) => HAN_RE.test(c)).length / chars.length;
+}
+
+function strippedReplyLooksUsable(stripped: string): boolean {
+  if (!stripped || stripped.length < 24) return false;
+  const letters = (stripped.match(/[a-zA-Z\u00C0-\u024F]/g) ?? []).length;
+  if (letters < 16) return false;
+  if (/^[\s.,;:!?。，、；：！？\-–—'"()]+$/.test(stripped)) return false;
+  return true;
+}
+
+function tryFixLanguageMixedReply(reply: string, source: string): { reply: string; needsLlm: boolean } {
+  if (!looksLanguageMixed(reply, source)) return { reply, needsLlm: false };
+  // 大段中文（整段用错语言）必须 LLM 重写；本地删字会只剩标点+零星英文碎片。
+  if (hanCharRatio(reply) > 0.2) return { reply, needsLlm: true };
+  const stripped = stripLeakedHanFromReply(reply);
+  if (strippedReplyLooksUsable(stripped) && !looksLanguageMixed(stripped, source)) {
+    return { reply: stripped, needsLlm: false };
+  }
+  return { reply, needsLlm: true };
 }
 
 export type TranslateResult = {
@@ -260,6 +348,7 @@ function buildAskUserMessage(opts: {
     "若问题指定了更细的时间或地区，优先按问题查；未指定时工具可不传 since/locale，将使用上述默认值。",
     "若问题涉及某标签/子标签的评论条数或「在抱怨/说什么」，须用 count_reviews 的 total 作答，并写明上述时间/地区范围。",
     "回答前自检：你准备写的每一句，能否在工具结果里找到对应数字或原文？找不到就删掉或改成「数据不足」。",
+    "若回答里引用了非中文原文，自检是否在同一处紧跟了简体中文译意（优先用工具 translatedZh / full 模式 text）。",
     "禁止编造邮箱、网址、电话；除非评论/官方回复原文里逐字出现。",
     opts.prefetchBlock ? "" : null,
     opts.prefetchBlock ?? null,
@@ -548,7 +637,7 @@ export async function* answerQuestionStream(opts: {
   let streamedAnswer = "";
 
   for (let round = 0; round < ASK_MAX_ROUNDS; round++) {
-    const res = await fetch(DEEPSEEK_URL, {
+    const res = await fetchDeepSeekWithRetry(DEEPSEEK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(
@@ -559,9 +648,6 @@ export async function* answerQuestionStream(opts: {
       ),
       signal: opts.signal,
     });
-    if (!res.ok) {
-      throw new Error(`DeepSeek API 出错：${await res.text()}`);
-    }
 
     const toolCalls: ToolCall[] = [];
     let roundContent = "";
@@ -629,7 +715,7 @@ export async function* answerQuestionStream(opts: {
       "已达到工具调用上限。请仅根据上文已返回的工具结果直接作答，不要再调用工具；若数据仍不足请明确说明。",
   });
   streamedAnswer = "";
-  const finalRes = await fetch(DEEPSEEK_URL, {
+  const finalRes = await fetchDeepSeekWithRetry(DEEPSEEK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify(
@@ -641,9 +727,6 @@ export async function* answerQuestionStream(opts: {
     ),
     signal: opts.signal,
   });
-  if (!finalRes.ok) {
-    throw new Error(`DeepSeek API 出错：${await finalRes.text()}`);
-  }
 
   let finalContent = "";
   for await (const chunk of parseDeepSeekStream(finalRes)) {

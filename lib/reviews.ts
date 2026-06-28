@@ -33,6 +33,22 @@ export async function updateAppTerminologyGlossary(appId: string, glossary: Term
   return cleaned;
 }
 
+export type AppReplySettings = { tone: string; style: string; contactInfo: string };
+
+export async function updateAppReplySettings(
+  appId: string,
+  settings: Partial<AppReplySettings>
+): Promise<AppReplySettings> {
+  const { normalizeReplySettings } = await import("./replySettings.shared.mjs");
+  const app = await getApp(appId);
+  const merged = normalizeReplySettings({ ...app.reply_settings, ...settings });
+  const supabase = getServiceSupabase();
+  const { error } = await supabase.from("apps").update({ reply_settings: merged }).eq("id", appId);
+  if (error) throw error;
+  invalidateAppsCache();
+  return merged;
+}
+
 export async function listApps(): Promise<AppRow[]> {
   return getCachedApps();
 }
@@ -174,6 +190,7 @@ export type ReviewEvidenceItem = {
   review_date: string;
   locale: string | null;
   evidence: string;
+  translated_zh: string | null;
 };
 
 /** Ask summarize_reviews：单次主题归纳最多读取的评论条数（超出均匀抽样，计数仍用 count_reviews）。 */
@@ -192,7 +209,10 @@ function evidenceForTag(
   return text || null;
 }
 
-type EvidenceRow = Pick<ReviewRow, "id" | "rating" | "review_date" | "locale" | "content" | "ai_tags">;
+type EvidenceRow = Pick<
+  ReviewRow,
+  "id" | "rating" | "review_date" | "locale" | "content" | "ai_tags" | "translated_zh"
+>;
 
 function rowsToEvidenceItems(
   rows: EvidenceRow[],
@@ -209,6 +229,7 @@ function rowsToEvidenceItems(
       review_date: row.review_date,
       locale: row.locale,
       evidence,
+      translated_zh: String(row.translated_zh ?? "").trim() || null,
     });
   }
   return { items, noTextInBatch: rows.length - items.length };
@@ -233,7 +254,7 @@ export async function fetchReviewEvidenceForScope(
   const supabase = getServiceSupabase();
   let query = supabase
     .from("reviews")
-    .select("id, rating, review_date, locale, content, ai_tags")
+    .select("id, rating, review_date, locale, content, ai_tags, translated_zh")
     .eq("app_id", appId);
   query = applyReviewFilters(query, { tag, subTag, ...filters });
 
