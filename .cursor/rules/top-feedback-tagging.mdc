@@ -11,8 +11,8 @@ alwaysApply: true
 
 | 条件 | 展示 |
 |------|------|
-| 有效子标签 ≥ 2（不含 `general` / 「其他」） | 子标签 chip（`TagBreakdown` + `hasSubTagBreakdown`） |
-| 有效子标签 < 2 | 摘要兜底（**不视为分类错误**）——见下方「摘要 scope」 |
+| 有效子标签 ≥ 2（不含 `general` / 「其他」），且各 sub **命中 ≥ 2 条** | 子标签 chip（`TagBreakdown` + `hasSubTagBreakdown`） |
+| 有效子标签 < 2，或仅 1 条命中的 sub | 摘要兜底（**不视为分类错误**）——见下方「摘要 scope」 |
 
 `praise` / `vague_complaint` 始终不展示子标签 breakdown（见 `NO_SUBTAG_KEYS`）。
 
@@ -47,6 +47,7 @@ alwaysApply: true
 ## 改代码时
 
 - 勿为凑 ≥2 个 chip 硬拆 subKey；勿在 Top 反馈用摘要替代本已有 breakdown 的子标签。
-- 展示逻辑与分类强制逻辑共用 `MIN_MEANINGFUL_SUBTAGS_FOR_BREAKDOWN`（当前为 2），改阈值须同步 UI 与 `promptKit`。
+- 展示逻辑与分类强制逻辑共用 `MIN_MEANINGFUL_SUBTAGS_FOR_BREAKDOWN` / `MIN_SUBTAG_HIT_COUNT_FOR_CHIP`（当前均为 2），改阈值须同步 UI 与 `promptKit`。
+- 「其他」桶：各 App 每个有 taxonomy 的父类（不含 praise/vague）独立计「其他」命中；≥ `GENERAL_ENRICH_MIN_COUNT`（20）且过 `GENERAL_ENRICH_COOLDOWN_DAYS`（3）冷却 → enrich→reclassify（`runGeneralBucketEnrichStage`），非固定周期 blind 重跑。
 - 摘要仍可用于分析 / Ask 等需自然语言概括的场景，但须遵守上文 scope；Top 反馈在有 breakdown 时以 chip 为唯一下钻方式。
 - 改摘要 scope 逻辑时同步 `tagDisplaySummary.mjs`、`tagSummaries.mjs`、`computeStats` 与本规则。

@@ -19,8 +19,8 @@ import {
   persistTranslationResult,
   translateReviewWithPipeline,
 } from "../lib/translateReview.mjs";
-import { enrichFeatureRequestSubs, enrichTaxonomyIntents, getUniversalSubcategories } from "../lib/taxonomyEnrich.mjs";
-import { runTaxonomyStage, resetLowHitSubsForReclassify } from "../lib/taxonomy.mjs";
+import { enrichFeatureRequestSubs, enrichTaxonomyIntents, getUniversalSubcategories, runGeneralBucketEnrichStage } from "../lib/taxonomyEnrich.mjs";
+import { runTaxonomyStage, resetLowHitSubsForReclassify, resetReviewsForCatchAllReclassify } from "../lib/taxonomy.mjs";
 import { createDeepSeekCaller } from "../lib/deepseek.mjs";
 
 const UNIVERSAL_KEYS = new Set(UNIVERSAL_CATEGORIES.map((c) => c.key));
@@ -418,6 +418,43 @@ async function processApp(app, { skipFetch = false } = {}) {
     console.error("低命中子问题重分类失败（已跳过）：", e.message);
   }
 
+  // 2.7 「其他」桶信号：general 够多 → enrich 新 sub → 重读「其他」下评论
+  let generalReclassified = 0;
+  try {
+    const { data: auditRows, error: auditErr } = await supabase
+      .from("reviews")
+      .select("content, ai_tags")
+      .eq("app_id", app.id)
+      .not("ai_classified_at", "is", null);
+    if (auditErr) throw auditErr;
+
+    const { app: enrichedApp, results: generalEnrichResults } = await runGeneralBucketEnrichStage({
+      supabase,
+      app,
+      callModel,
+      reviews: auditRows ?? [],
+      logger: console,
+    });
+    app = enrichedApp;
+    seedCategories = app.seed_categories ?? seedCategories;
+    for (const { parentKey, addedSubs } of generalEnrichResults) {
+      if (!addedSubs.length) continue;
+      const uniAfterGeneral = getUniversalSubcategories(app);
+      const reset = await resetReviewsForCatchAllReclassify({ supabase, app, parentKey });
+      if (reset > 0) {
+        console.log(`[general-enrich] 重置 ${parentKey}「其他」${reset} 条，重分类中…`);
+        generalReclassified += await classifyPendingReviews(app, {
+          seedCategories,
+          universalSubcategories: uniAfterGeneral,
+          existingCustomTagsMap,
+          baselineKeys,
+        });
+      }
+    }
+  } catch (e) {
+    console.error("general 桶 enrich/重分类失败（已跳过）：", e.message);
+  }
+
   // 3. 翻译：从未翻译 + 已标记但缺必需译文的（假完成）一并处理
   const needsTranslation = await listReviewsNeedingTranslation(supabase, app.id);
   console.log(`待翻译 ${needsTranslation.length} 条`);
@@ -448,7 +485,7 @@ async function processApp(app, { skipFetch = false } = {}) {
   // 4. 重新生成所有标签的摘要——不能只看"今天有没有抓到新评论"（fetched），重新分类老评论
   // （unclassified > 0，比如批量重置 ai_classified_at 触发的全量重分类）同样会改变标签内容，
   // 必须一起触发刷新，否则摘要会带着旧的（污染过的）样本继续放着，重分类等于白做
-  if (fetched.length > 0 || classifiedCount > 0 || taxonomyChanged || lowSubsReclassified > 0) {
+  if (fetched.length > 0 || classifiedCount > 0 || taxonomyChanged || lowSubsReclassified > 0 || generalReclassified > 0) {
     const { refreshed } = await refreshTagSummaries({
       supabase,
       appId: app.id,

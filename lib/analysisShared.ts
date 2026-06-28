@@ -25,8 +25,21 @@ export function sortSubTagsForDisplay<T extends { count: number; label?: string 
   });
 }
 
+/** 与 promptKit MIN_SUBTAG_HIT_COUNT_FOR_CHIP 对齐：单条命中不单独出 chip */
+export const MIN_SUBTAG_HIT_COUNT_FOR_CHIP = 2;
+
+export function filterSubTagsForChipDisplay<T extends { count: number; label?: string | null }>(
+  subTags: Record<string, T>,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(subTags).filter(
+      ([key, v]) => isCatchAllSubTag(key, v.label) || v.count >= MIN_SUBTAG_HIT_COUNT_FOR_CHIP,
+    ),
+  );
+}
+
 export function sortSubTagRecordForDisplay<T extends { count: number; label?: string | null }>(
   subTags: Record<string, T>,
 ): [string, T][] {
-  return sortSubTagsForDisplay(Object.entries(subTags));
+  return sortSubTagsForDisplay(Object.entries(filterSubTagsForChipDisplay(subTags)));
 }
