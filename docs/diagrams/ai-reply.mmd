@@ -6,12 +6,12 @@ flowchart TB
   class NOTE_REPLY note
 
   subgraph prep [回复策略 · 离线预备]
-    direction LR
+    direction TB
     RS[语气 / 句式 / 联系方式]
     SHARED[产品背景 + 专名术语]
     CHANGED{配置有变?}
     TRIG[cron 或保存设置后]
-    COMP[压成短回复策略<br/>失败则用规则兜底]
+    COMP["压成短回复策略<br/>失败则用规则兜底"]
     STORE[(存入 App<br/>供生成复用)]
     RS --> CHANGED
     SHARED --> CHANGED
@@ -20,20 +20,20 @@ flowchart TB
   end
 
   subgraph gen [生成单条回复草稿]
-    direction LR
+    direction TB
     UI[选中一条评论]
     ROUTE[请求 AI 回复建议]
-    APPCACHE[读 App 缓存<br/>TTL 5min]
+    APPCACHE["读 App 缓存<br/>TTL 5min"]
     POLICY[载入回复策略]
-    HINTS[按场景标注<br/>好评 / 投诉 / 退款等]
-    SYS[固定策略 + 本条评论<br/>模型 context cache]
+    HINTS["按场景标注<br/>好评 / 投诉 / 退款等"]
+    SYS["固定策略 + 本条评论<br/>模型 context cache"]
     WRITE[用评论语言写 2~4 句]
-    FIX[修正语种混杂<br/>剔除未授权联系方式]
+    FIX["修正语种混杂<br/>剔除未授权联系方式"]
     UI --> ROUTE --> APPCACHE --> POLICY --> HINTS --> SYS --> WRITE --> FIX
   end
 
   subgraph extra [可选 · 给开发者看译文]
-    direction LR
+    direction TB
     SHOW[先展示回帖正文]
     TRCHK{需要译文?}
     TR[另译成中文/英文]
