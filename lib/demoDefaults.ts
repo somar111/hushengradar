@@ -1,7 +1,7 @@
 import type { AppRow } from "./supabase";
 
-/** Demo 面板默认展示的 Google Play App（Honor of Kings 国际版） */
-export const DEFAULT_DEMO_APP_EXTERNAL_ID = "com.levelinfinite.sgameGlobal";
+/** Demo 面板默认展示的 Google Play App（WPS Office） */
+export const DEFAULT_DEMO_APP_EXTERNAL_ID = "cn.wps.moffice_eng";
 
 export const DEFAULT_DEMO_TIME_RANGE = "month" as const;
 
