@@ -7,6 +7,23 @@
 
 ---
 
+## TO DO
+
+- 加参数 `thumbup`，以及在评论查看/回复里能筛选（最新 / 最多点赞 / 评分（从高到低 / 从低到高），以及：默认的情况下，在参数相同时的排序）
+- 改名字：改成呼声雷达-应用商店版
+- 解决项目混合使用 `.ts` 和 `.mjs` 的问题（全面拥抱 TypeScript（推荐））
+- There is some over-engineering (Moderate to High in some areas) and AI scaffolding (Quite high) (although they're not catastrophic) — HOW?
+- Grok: 60–70% of the code feels AI-influenced (especially in `lib/`).
+- 被建议做：code refactoring
+
+### 项目矩阵
+
+- 呼声雷达-应用商店版
+- 呼声雷达 - 电商版
+- 呼声雷达 - 本地生活版
+
+---
+
 ## 背景与目标
 
 商店评论对产品迭代很重要，但实际用起来很麻烦：

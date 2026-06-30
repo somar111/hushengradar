@@ -31,18 +31,8 @@ export default function Home() {
           <p className="text-base text-gray-500 mb-8 max-w-lg mx-auto leading-relaxed">
             {'“原本每天 1 小时翻评论，现在 5 分钟看完AI精准洞察”'}
           </p>
-          <div className="flex flex-col items-center justify-center gap-3 mb-12">
+          <div className="mb-12">
             <a href="/demo" className="text-base font-medium text-white bg-gray-900 hover:bg-gray-700 px-6 py-2.5 rounded-full transition-colors">查看 Demo ↗</a>
-            <a
-              href="https://github.com/somar111/hushengradar"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="GitHub 仓库"
-              className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 px-4 py-1.5 rounded-full transition-colors"
-            >
-              <span>Github repo：</span>
-              <img src="/github-svgrepo-com.svg" alt="" className="w-10 h-10" />
-            </a>
           </div>
 
         </div>
