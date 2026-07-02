@@ -7,7 +7,7 @@
 
 ---
 
-README 有些长，你喂给 AI 来看吧。如果你要复用的话：**taxonomy（分类 & 标签）** 和 **AI 回复建议系统（replyPlaybook + 生成逻辑）** 这两个部分还是花了很多心思的。它本质上不只限于 App，对其他品类的评论/反馈也基本适用，只要合理修改 `context` 和 `seed_categories` 即可。实际做的话，你会发现这两部分，尤其是 taxonomy，是蛮 tricky 的。
+README 有些长，你喂给 AI 来看吧。如果你要复用的话：**taxonomy（分类 & 标签）** 和 **AI 回复建议系统（replyPlaybook + 生成逻辑）** 这两个部分要做成目前这样可用的状态还是得花多心思的。它本质上不只限于 App，对其他品类的评论/反馈也基本适用，只要合理修改 `context` 和 `seed_categories` 即可。实际做的话，你会发现这两部分，尤其是 taxonomy，是蛮 tricky 的。
 
 ## TO DO
 
