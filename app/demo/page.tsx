@@ -3000,6 +3000,15 @@ function DemoPageInner() {
               style={{ fontFamily: "'smiley-sans', sans-serif" }}>
               呼声雷达
             </Link>
+            <a
+              href="https://github.com/somar111/hushengradar"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="GitHub 仓库"
+              className="opacity-55 hover:opacity-100 transition-opacity"
+            >
+              <img src="/github-svgrepo-com.svg" alt="" className="w-6 h-6 brightness-0 invert" />
+            </a>
             <InfoTooltip text="声明：本页为产品演示（Demo），与所展示评论所属的 App 官方无任何关联；评论数据均为应用商店公开可见内容" size={14} />
           </div>
           <SegmentedControl<RightPanel>
