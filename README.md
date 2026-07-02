@@ -15,7 +15,6 @@ README 有些长，你喂给 AI 来看吧。如果你要复用的话：**taxonom
 - 数据安全的设计、审计
 - 具体接入真实 API，并且加上其他维度的参数，如 `thumbup`
 - 解决项目混合使用 `.ts` 和 `.mjs` 的问题（全面拥抱 TypeScript（推荐））
-- There is some over-engineering (Moderate to High in some areas) and AI scaffolding (Quite high) (although they're not catastrophic) — HOW?
 
 ---
 
